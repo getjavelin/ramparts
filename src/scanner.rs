@@ -637,7 +637,7 @@ impl MCPScanner {
     pub fn new_with_timeout(http_timeout: u64) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(http_timeout))
-            .user_agent("rampart/0.2.0")
+            .user_agent("ramparts/0.2.0")
             .build()
             .unwrap_or_default();
         Self {
@@ -954,7 +954,7 @@ impl MCPScanner {
                         "prompts": {}
                     },
                     "clientInfo": {
-                        "name": "rampart",
+                        "name": "ramparts",
                         "version": "0.2.0"
                     }
                 }
@@ -1017,7 +1017,7 @@ impl MCPScanner {
             "params": {
                 "protocolVersion": "2025-06-18",
                 "clientInfo": {
-                    "name": "rampart",
+                    "name": "ramparts",
                     "version": "0.2.0"
                 }
             }
@@ -1126,7 +1126,7 @@ impl MCPScanner {
                             .post(url)
                             .header("Content-Type", "application/json")
                             .header("Accept", "application/json, text/event-stream")
-                            .header("User-Agent", "rampart/0.2.0")
+                            .header("User-Agent", "ramparts/0.2.0")
                             .header("MCP-Protocol-Version", "2025-06-18")
                             .json(&request);
 

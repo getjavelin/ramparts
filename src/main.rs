@@ -17,7 +17,7 @@ use utils::error_utils;
 
 #[derive(Parser)]
 #[command(
-    name = "rampart",
+    name = "ramparts",
     about = "A CLI tool for scanning Model Context Protocol (MCP) servers",
     version,
     long_about = "Scans MCP servers to discover available tools, resources, and capabilities with comprehensive security analysis.
@@ -48,10 +48,10 @@ IMPACT LEVELS:
   • LOW: Minor security issue that may need monitoring
 
 EXAMPLES:
-  • Basic scan: rampart scan http://localhost:3000
-  • Security scan: rampart scan http://localhost:3000
-  • From IDE config: rampart scan-config
-  • Initialize config: rampart init-config"
+  • Basic scan: ramparts scan http://localhost:3000
+  • Security scan: ramparts scan http://localhost:3000
+  • From IDE config: ramparts scan-config
+  • Initialize config: ramparts init-config"
 )]
 struct Cli {
     #[command(subcommand)]

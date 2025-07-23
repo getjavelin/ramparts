@@ -81,15 +81,15 @@ jobs:
         run: |-
           if [[ ${{ matrix.target }} == "x86_64_linux" ]] ; then
             echo "crate_target=x86_64-unknown-linux-gnu" >> ${GITHUB_OUTPUT}
-            echo "crate_release=rampart-linux-x86_64" >> ${GITHUB_OUTPUT}
+            echo "crate_release=ramparts-linux-x86_64" >> ${GITHUB_OUTPUT}
             echo "crate_ext=" >> ${GITHUB_OUTPUT}
           elif [[ ${{ matrix.target }} == "x86_64_windows" ]] ; then
             echo "crate_target=x86_64-pc-windows-msvc" >> ${GITHUB_OUTPUT}
-            echo "crate_release=rampart-windows-x86_64.exe" >> ${GITHUB_OUTPUT}
+            echo "crate_release=ramparts-windows-x86_64.exe" >> ${GITHUB_OUTPUT}
             echo "crate_ext=.exe" >> ${GITHUB_OUTPUT}
           elif [[ ${{ matrix.target }} == "x86_64_apple" ]] ; then
             echo "crate_target=x86_64-apple-darwin" >> ${GITHUB_OUTPUT}
-            echo "crate_release=rampart-macos-x86_64" >> ${GITHUB_OUTPUT}
+            echo "crate_release=ramparts-macos-x86_64" >> ${GITHUB_OUTPUT}
             echo "crate_ext=" >> ${GITHUB_OUTPUT}
           else
             echo "Not maching the target...!"
@@ -117,7 +117,7 @@ jobs:
       - name: Create release assets
         run: |
           mkdir -p release
-          cp target/${{ steps.set_env.outputs.crate_target }}/release/rampart${{ steps.set_env.outputs.crate_ext }} release/${{ steps.set_env.outputs.crate_release }}
+          cp target/${{ steps.set_env.outputs.crate_target }}/release/ramparts${{ steps.set_env.outputs.crate_ext }} release/${{ steps.set_env.outputs.crate_release }}
 
           # Create checksums
           cd release

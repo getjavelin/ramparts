@@ -97,7 +97,7 @@ async fn health_check() -> Json<Value> {
     Json(json!({
         "status": "healthy",
         "timestamp": chrono::Utc::now().to_rfc3339(),
-        "service": "rampart-server",
+        "service": "ramparts-server",
         "version": "0.2.0",
         "protocol_version": "2025-06-18"
     }))
@@ -136,7 +136,7 @@ async fn protocol_info() -> Json<Value> {
 
 async fn api_docs() -> Json<Value> {
     Json(json!({
-        "service": "Rampart Microservice",
+        "service": "Ramparts Microservice",
         "version": "0.2.0",
         "protocol_version": "2025-06-18",
         "endpoints": {

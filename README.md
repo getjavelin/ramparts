@@ -2,7 +2,7 @@
 
 # Ramparts: mcp (model context protocol) scanner
 
-<img src="assets/rampart.png" alt="Ramparts Banner" width="250" />
+<img src="assets/ramparts.png" alt="Ramparts Banner" width="250" />
 
 *A fast, lightweight security scanner for Model Context Protocol (MCP) servers with built-in vulnerability detection.*
 
@@ -238,7 +238,7 @@ ramparts scan-config
 # Scan an MCP server
 ramparts scan <url> [options]
 
-# Start Rampart server mode
+# Start Ramparts server mode
 ramparts server [options]
 
 # Scan from IDE configuration
@@ -276,7 +276,7 @@ Options:
 
 ## Configuration
 
-Ramparts uses a `rampart.yaml` configuration file for customizing security rules and thresholds:
+Ramparts uses a `ramparts.yaml` configuration file for customizing security rules and thresholds:
 
 ### Initialize Configuration
 
@@ -286,10 +286,10 @@ Create a custom configuration file:
 ramparts init-config
 ```
 
-This creates a `rampart.yaml` file:
+This creates a `ramparts.yaml` file:
 
 ```yaml
-# Example rampart.yaml
+# Example ramparts.yaml
 security:
   # LLM analysis settings
   llm_batch_size: 10

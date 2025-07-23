@@ -53,9 +53,9 @@ jobs:
       - name: Create release assets
         run: |
           mkdir -p release
-          cp target/x86_64-unknown-linux-gnu/release/rampart release/rampart-linux-x86_64
-          cp target/x86_64-pc-windows-msvc/release/rampart.exe release/rampart-windows-x86_64.exe
-          cp target/x86_64-apple-darwin/release/rampart release/rampart-macos-x86_64
+          cp target/x86_64-unknown-linux-gnu/release/ramparts release/ramparts-linux-x86_64
+          cp target/x86_64-pc-windows-msvc/release/ramparts.exe release/ramparts-windows-x86_64.exe
+          cp target/x86_64-apple-darwin/release/ramparts release/ramparts-macos-x86_64
           
           # Create checksums
           cd release
@@ -67,8 +67,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./release/rampart-linux-x86_64
-          asset_name: rampart-linux-x86_64
+          asset_path: ./release/ramparts-linux-x86_64
+          asset_name: ramparts-linux-x86_64
           asset_content_type: application/octet-stream
 
       - name: Upload Windows asset
@@ -77,8 +77,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./release/rampart-windows-x86_64.exe
-          asset_name: rampart-windows-x86_64.exe
+          asset_path: ./release/ramparts-windows-x86_64.exe
+          asset_name: ramparts-windows-x86_64.exe
           asset_content_type: application/octet-stream
 
       - name: Upload macOS asset
@@ -87,8 +87,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./release/rampart-macos-x86_64
-          asset_name: rampart-macos-x86_64
+          asset_path: ./release/ramparts-macos-x86_64
+          asset_name: ramparts-macos-x86_64
           asset_content_type: application/octet-stream
 
       - name: Upload checksums
