@@ -1,4 +1,4 @@
-name: Cron E2E - Ramparts
+name: Cloud E2E - Ramparts
 
 on:
   schedule:
@@ -15,8 +15,6 @@ env:
 
 jobs:
   javelin-e2e:
-    needs:
-      - javelin-env
     permissions:
       contents: 'read'
     runs-on: ubuntu-24.04
