@@ -156,8 +156,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.DEVOPS_GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./release/checksums.txt
-          asset_name: checksums.txt
+          asset_path: ./release/${{ matrix.target }}_checksums.txt
+          asset_name: ${{ matrix.target }}_checksums.txt
           asset_content_type: text/plain
 
   # javelin-crate:
