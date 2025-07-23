@@ -1,11 +1,11 @@
 [package]
-name = "rampart"
-version = "0.4.0"
+name = "ramparts"
+version = "RELEASE_VERSION"
 edition = "2021"
 authors = ["Sharath Rajasekar <sharath@getjavelin.com>"]
 description = "A CLI tool for scanning Model Context Protocol (MCP) servers"
 license = "Apache-2.0"
-repository = "https://github.com/your-org/rampart"
+repository = "https://github.com/getjavelin/ramparts"
 keywords = ["mcp", "model-context-protocol", "scanner", "cli"]
 categories = ["command-line-utilities", "network-programming"]
 
