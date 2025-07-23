@@ -57,7 +57,10 @@ Rampart is designed for developers using local, remote MCP servers or building t
 
 **If you're building MCP servers** - whether you're creating tools, resources, or prompts - Rampart gives you confidence that your implementation doesn't expose vulnerabilities to AI agents. It's especially useful for developers who want to ensure their MCP tools are secure by design.
 
-**If you're part of a development team** working with AI systems, Rampart fits naturally into your security workflow. You can integrate it into your CI/CD pipelines to automatically scan MCP servers during deployment, or use it during development to catch security issues early.
+
+## Why Rust?
+
+The Rampart mcp scanner is implemented in Rust to prioritize performance, reliability, and broad portability. Rust offers native execution speed with minimal memory overhead, making it well-suited for analyzing large prompt contexts, tool manifests, or server topologies—without the need for a heavyweight runtime. Rampart was built with a view of operating in CI pipelines, agent sandboxes, or constrained edge environments which made the ability to compile to a single, compact binary essential.
 
 ## Key Features
 
@@ -74,7 +77,6 @@ Rampart is designed for developers using local, remote MCP servers or building t
 ## Use Cases
 
 - **Security Audits**: Comprehensive assessment of MCP server security posture
-- **CI/CD Integration**: Automated security scanning in deployment pipelines
 - **Development**: Testing MCP servers during development and testing phases
 - **Compliance**: Meeting security requirements for AI agent deployments
 
@@ -390,76 +392,15 @@ chmod +x $(which rampart)
 rampart init-config
 ```
 
-## Contributors
-
-<div align="center">
-
-### Thanks to all our contributors! 🎉
-
-<a href="https://github.com/getjavelin/rampart/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=getjavelin/rampart" alt="Contributors" />
-</a>
-
-*Contributors are automatically generated from [contrib.rocks](https://contrib.rocks).*
-
-</div>
-
-### How to Contribute
-
-We welcome contributions to Rampart! Here are some ways you can help:
-
-- **🐛 Report bugs** - Open an issue with detailed reproduction steps
-- **💡 Suggest features** - Share your ideas for improvements
-- **📝 Improve documentation** - Help make the docs clearer
-- **🔧 Submit pull requests** - Fix bugs or add new features
-- **⭐ Star the repository** - Show your support
-
-### Getting Started
-
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
-3. **Make your changes** and add tests
-4. **Commit your changes**: `git commit -m 'Add amazing feature'`
-5. **Push to the branch**: `git push origin feature/amazing-feature`
-6. **Open a Pull Request**
-
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/getjavelin/rampart.git
-cd rampart
-
-# Install dependencies
-cargo build
-
-# Run tests
-cargo test
-
-# Run linter
-cargo clippy
-
-# Format code
-cargo fmt
-```
-
-## Why Rust?
-
-The Rampart mcp scanner is implemented in Rust to prioritize performance, reliability, and broad portability. Rust offers native execution speed with minimal memory overhead, making it well-suited for analyzing large prompt contexts, tool manifests, or server topologies—without the need for a heavyweight runtime. Rampart was built with a view of operating in CI pipelines, agent sandboxes, or constrained edge environments which made the ability to compile to a single, compact binary essential.
-
 ## Contributing
 
 We welcome contributions to Rampart mcp scan. If you have suggestions, bug reports, or feature requests, please open an issue on our GitHub repository.
 
 ## Support
 
-- **Documentation**: [docs/](docs/)
 - **Issues**: [GitHub Issues](https://github.com/getjavelin/rampart/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/getjavelin/rampart/discussions)
 
 ## Additional Resources
 
 - [MCP Protocol Documentation](https://modelcontextprotocol.io/)
-- [Security Best Practices](docs/SECURITY_ASSESSMENTS.md)
 - [Configuration Examples](examples/config_example.json)
-- [LLM Auth Bypass Guide](docs/LLM_AUTH_BYPASS.md)
