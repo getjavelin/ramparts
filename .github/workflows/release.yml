@@ -112,6 +112,7 @@ jobs:
 
       - name: Build release binaries
         run: |
+          rustup target add ${{ steps.set_env.outputs.crate_target }}
           cargo build --release --target ${{ steps.set_env.outputs.crate_target }}
 
       - name: Create release assets
