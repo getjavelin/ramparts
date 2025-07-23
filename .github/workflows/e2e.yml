@@ -44,10 +44,10 @@ jobs:
       - name: Run integration tests
         run: |
           # Test CLI help
-          ./target/release/rampart --help
+          ./target/release/ramparts --help
           
           # Test init-config command
-          ./target/release/rampart init-config --force
+          ./target/release/ramparts init-config --force
           
           # Test server startup (timeout after 5 seconds)
-          timeout 5s ./target/release/rampart server --port 3000 || true
+          timeout 5s ./target/release/ramparts server --port 3000 || true
