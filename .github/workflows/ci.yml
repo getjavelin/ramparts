@@ -17,6 +17,183 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          components: rustfmt, clippy
+          override: true
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Check formatting
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+      - name: Run Clippy linter
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-features -- -D warnings
+
+  check:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - uses: actions-rs/cargo@v1
+        with:
+          command: check
+
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all-features
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: target/debug/deps
+
+  security:
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - run: cargo install cargo-audit
+      - run: cargo audit --deny warnings
+
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
+
+  integration:
+    runs-on: ubuntu-latest
+    needs: [check, build]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --test '*' --all-features
+      - name: Upload integration test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: target/debug/deps
+
   # ============================================================================
   # RELEASE - Automated releases
   # ============================================================================
@@ -24,14 +201,18 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [check, test, security, build, integration]
+    needs: [lint, check, test, security, build, integration]
     if: github.event_name == 'release' && github.event.action == 'published'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
 
       - name: Cache dependencies
         uses: actions/cache@v4
@@ -56,50 +237,20 @@ jobs:
           cp target/x86_64-unknown-linux-gnu/release/ramparts release/ramparts-linux-x86_64
           cp target/x86_64-pc-windows-msvc/release/ramparts.exe release/ramparts-windows-x86_64.exe
           cp target/x86_64-apple-darwin/release/ramparts release/ramparts-macos-x86_64
-          
           # Create checksums
           cd release
           sha256sum * > checksums.txt
 
-      - name: Upload release assets
-        uses: actions/upload-release-asset@v2
+      - name: Upload all release assets
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./release/ramparts-linux-x86_64
-          asset_name: ramparts-linux-x86_64
-          asset_content_type: application/octet-stream
-
-      - name: Upload Windows asset
-        uses: actions/upload-release-asset@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./release/ramparts-windows-x86_64.exe
-          asset_name: ramparts-windows-x86_64.exe
-          asset_content_type: application/octet-stream
-
-      - name: Upload macOS asset
-        uses: actions/upload-release-asset@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./release/ramparts-macos-x86_64
-          asset_name: ramparts-macos-x86_64
-          asset_content_type: application/octet-stream
-
-      - name: Upload checksums
-        uses: actions/upload-release-asset@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./release/checksums.txt
-          asset_name: checksums.txt
-          asset_content_type: text/plain
+          files: |
+            ./release/ramparts-linux-x86_64
+            ./release/ramparts-windows-x86_64.exe
+            ./release/ramparts-macos-x86_64
+            ./release/checksums.txt
 
   # ============================================================================
   # DEPLOYMENT - Cargo publish
@@ -108,14 +259,18 @@ jobs:
   deploy:
     name: Deploy to Crates.io
     runs-on: ubuntu-latest
-    needs: [check, test, security, build, integration]
+    needs: [lint, check, test, security, build, integration]
     if: github.event_name == 'release' && github.event.action == 'published'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
 
       - name: Cache dependencies
         uses: actions/cache@v4
@@ -140,7 +295,7 @@ jobs:
   notify:
     name: Notify
     runs-on: ubuntu-latest
-    needs: [check, test, security, build, integration]
+    needs: [lint, check, test, security, build, integration]
     if: always()
     steps:
       - name: Notify on failure
