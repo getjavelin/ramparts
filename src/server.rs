@@ -1,4 +1,7 @@
-use crate::core::{MCPScannerCore, ScanRequest, ScanResponse, BatchScanRequest, BatchScanResponse, ValidationResponse};
+use crate::core::{
+    BatchScanRequest, BatchScanResponse, MCPScannerCore, ScanRequest, ScanResponse,
+    ValidationResponse,
+};
 use crate::scanner::TransportType;
 use axum::{
     extract::State,
@@ -80,9 +83,8 @@ impl MCPScannerServer {
             .with_state(state);
 
         let addr = format!("{}:{}", self.config.host, self.config.port);
-        info!("Starting MCP Scanner Server on http://{}", addr);
+        info!("Starting MCP Scanner Server on http://{addr}");
         info!("Protocol version: 2025-06-18");
-
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         axum::serve(listener, app).await?;
@@ -119,7 +121,7 @@ async fn protocol_info() -> Json<Value> {
             },
             "capabilities": [
                 "tools/list",
-                "resources/list", 
+                "resources/list",
                 "prompts/list",
                 "server/info"
             ]
@@ -218,7 +220,7 @@ async fn scan_endpoint(
                     })),
                 ));
             }
-        },
+        }
         TransportType::Stdio => {
             // Validate STDIO command format
             let command = if request.url.starts_with("stdio://") {
@@ -226,7 +228,7 @@ async fn scan_endpoint(
             } else {
                 &request.url
             };
-            
+
             if command.trim().is_empty() {
                 return Err((
                     StatusCode::BAD_REQUEST,
@@ -254,14 +256,23 @@ async fn scan_endpoint(
         }
     }
 
-    info!("Received scan request for URL: {} (transport: {:?})", request.url, transport_type);
-    
+    info!(
+        "Received scan request for URL: {} (transport: {:?})",
+        request.url, transport_type
+    );
+
     let response = state.core.scan(request).await;
-    
+
     if response.success {
         Ok(Json(response))
     } else {
-        error!("Scan failed: {}", response.error.as_ref().unwrap_or(&"Unknown error".to_string()));
+        error!(
+            "Scan failed: {}",
+            response
+                .error
+                .as_ref()
+                .unwrap_or(&"Unknown error".to_string())
+        );
         Err((
             StatusCode::BAD_REQUEST,
             Json(json!({
@@ -273,20 +284,24 @@ async fn scan_endpoint(
     }
 }
 
-
-
 async fn validate_endpoint(
     State(state): State<ServerState>,
     Json(request): Json<ScanRequest>,
 ) -> Result<Json<ValidationResponse>, (StatusCode, Json<Value>)> {
     info!("Received validation request");
-    
+
     let response = state.core.validate_config(&request);
-    
+
     if response.success && response.valid {
         Ok(Json(response))
     } else {
-        error!("Validation failed: {}", response.error.as_ref().unwrap_or(&"Unknown error".to_string()));
+        error!(
+            "Validation failed: {}",
+            response
+                .error
+                .as_ref()
+                .unwrap_or(&"Unknown error".to_string())
+        );
         Err((
             StatusCode::BAD_REQUEST,
             Json(json!({
@@ -314,18 +329,22 @@ async fn batch_scan_endpoint(
         ));
     }
 
-    info!("Received batch scan request for {} URLs", request.urls.len());
-    
+    info!(
+        "Received batch scan request for {} URLs",
+        request.urls.len()
+    );
+
     let response = state.core.batch_scan(request).await;
-    
+
     if !response.success {
-        error!("Batch scan failed: {} successful, {} failed", response.successful, response.failed);
+        error!(
+            "Batch scan failed: {} successful, {} failed",
+            response.successful, response.failed
+        );
     }
-    
+
     Ok(Json(response))
 }
-
-
 
 // Tests removed for now - would need axum-test dependency
 
@@ -358,4 +377,4 @@ mod tests {
         assert!(!request.url.is_empty());
         assert!(request.url.starts_with("https://"));
     }
-} 
+}

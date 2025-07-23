@@ -2,18 +2,18 @@ use clap::{Parser, Subcommand};
 use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
-mod scanner;
-mod types;
-mod utils;
-mod security;       
 mod config;
 mod core;
+mod scanner;
+mod security;
 mod server;
+mod types;
+mod utils;
 
 use scanner::MCPScanner;
-use types::{ScanConfigBuilder, config_utils};
-use utils::error_utils;
 use server::MCPScannerServer;
+use types::{config_utils, ScanConfigBuilder};
+use utils::error_utils;
 
 #[derive(Parser)]
 #[command(
@@ -58,27 +58,27 @@ struct Cli {
     command: Commands,
 
     /// Enable verbose logging for detailed operation tracking
-    /// 
+    ///
     /// This provides detailed logs about:
     ///   • HTTP requests and responses
     ///   • Security assessment progress
     ///   • Tool, resource, and prompt discovery
     ///   • Error details and debugging information
-    /// 
+    ///
     /// Useful for troubleshooting connection issues or understanding scan behavior.
     /// Note: Use --debug for JSON-RPC protocol debugging.
     #[arg(short, long)]
     verbose: bool,
 
     /// Enable debug output for detailed operation tracking
-    /// 
+    ///
     /// This provides detailed logs about:
     ///   • HTTP requests and responses
     ///   • Security assessment progress
     ///   • Tool, resource, and prompt discovery
     ///   • Error details and debugging information
     ///   • JSON-RPC protocol communication
-    /// 
+    ///
     /// Useful for troubleshooting connection issues or understanding scan behavior.
     #[arg(short, long)]
     debug: bool,
@@ -100,7 +100,7 @@ enum Commands {
         #[arg(long, value_name = "FORMAT")]
         format: Option<String>,
     },
-    
+
     /// Scan MCP servers from IDE configuration files (~/.cursor/mcp.json, ~/.codium/windsurf/mcp_config.json)
     ScanConfig {
         /// Authentication headers for the MCP servers (format: "Header: Value")
@@ -111,20 +111,20 @@ enum Commands {
         #[arg(long, value_name = "FORMAT")]
         format: Option<String>,
     },
-    
+
     /// Generate a default config.yaml file
     InitConfig {
         /// Overwrite existing config.yaml if it exists
         #[arg(short, long)]
         force: bool,
     },
-    
+
     /// Start the MCP Scanner microservice
     Server {
         /// Port to run the server on
         #[arg(short, long, default_value = "3000")]
         port: u16,
-        
+
         /// Host to bind the server to
         #[arg(long, default_value = "0.0.0.0")]
         host: String,
@@ -138,7 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration and setup logging
     let config_manager = config::ScannerConfigManager::new();
     let scanner_config = config_manager.load_config().unwrap_or_default();
-    
+
     // Determine logging level (CLI args take precedence over config)
     let level = if cli.debug || cli.verbose {
         Level::DEBUG
@@ -164,7 +164,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting MCP Scanner");
 
     match cli.command {
-        Commands::Scan { url, auth_headers, format } => {
+        Commands::Scan {
+            url,
+            auth_headers,
+            format,
+        } => {
             let auth_headers_map = parse_auth_headers(&auth_headers);
             let output_format = format.unwrap_or(scanner_config.scanner.format.clone());
             let options = ScanConfigBuilder::new()
@@ -174,28 +178,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .format(output_format.clone())
                 .auth_headers(auth_headers_map)
                 .build();
-            
+
             // Validate configuration
             if let Err(e) = config_utils::validate_scan_config(&options) {
                 error!("Invalid configuration: {}", e);
                 std::process::exit(1);
             }
-            
+
             let options_clone = options.clone();
             let scanner = MCPScanner::new_with_timeout(scanner_config.scanner.http_timeout);
-            
+
             match scanner.scan_single(&url, options).await {
                 Ok(result) => {
                     utils::print_result(&result, &output_format, options_clone.detailed);
                 }
                 Err(e) => {
-                    error!("{}", error_utils::create_error_msg("Scan operation", &e.to_string()));
+                    error!(
+                        "{}",
+                        error_utils::create_error_msg("Scan operation", &e.to_string())
+                    );
                     std::process::exit(1);
                 }
             }
         }
-        
-        Commands::ScanConfig { auth_headers, format } => {
+
+        Commands::ScanConfig {
+            auth_headers,
+            format,
+        } => {
             let auth_headers_map = parse_auth_headers(&auth_headers);
             let output_format = format.unwrap_or(scanner_config.scanner.format.clone());
             let options = ScanConfigBuilder::new()
@@ -205,36 +215,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .format(output_format.clone())
                 .auth_headers(auth_headers_map)
                 .build();
-            
+
             // Validate configuration
             if let Err(e) = config_utils::validate_scan_config(&options) {
                 error!("Invalid configuration: {}", e);
                 std::process::exit(1);
             }
-            
+
             let scanner = MCPScanner::new_with_timeout(scanner_config.scanner.http_timeout);
-            
+
             match scanner.scan_from_config(options).await {
                 Ok(results) => {
                     for result in results {
-                        utils::print_result(&result, &output_format, scanner_config.scanner.detailed);
+                        utils::print_result(
+                            &result,
+                            &output_format,
+                            scanner_config.scanner.detailed,
+                        );
                     }
                 }
                 Err(e) => {
-                    error!("{}", error_utils::create_error_msg("IDE configuration scan operation", &e.to_string()));
+                    error!(
+                        "{}",
+                        error_utils::create_error_msg(
+                            "IDE configuration scan operation",
+                            &e.to_string()
+                        )
+                    );
                     std::process::exit(1);
                 }
             }
         }
-        
+
         Commands::InitConfig { force } => {
             let config_manager = config::ScannerConfigManager::new();
-            
+
             if config_manager.has_config_file() && !force {
                 println!("config.yaml already exists. Use --force to overwrite.");
                 std::process::exit(1);
             }
-            
+
             match config_manager.save_config(&config::ScannerConfig::default()) {
                 Ok(_) => {
                     println!("Created config.yaml with default settings");
@@ -246,10 +266,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        
+
         Commands::Server { port, host } => {
             info!("Starting MCP Scanner microservice on {}:{}", host, port);
-            
+
             match MCPScannerServer::new() {
                 Ok(server) => {
                     let server = server.with_port(port).with_host(host);

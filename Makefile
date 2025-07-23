@@ -162,22 +162,28 @@ clean: ## Clean all build artifacts
 	@rm -rf $(DIST_DIR)
 	@echo "Clean complete"
 
+.PHONY: fmt-check
+fmt-check: ## Check code formatting (does not modify files)
+	@echo "Checking code formatting..."
+	@$(CARGO) fmt --all -- --check
+	@echo "Formatting check complete"
+
 .PHONY: check
-check: ## Check code without building
-	@echo "Checking code..."
-	@$(CARGO) check
+check: ## Check code without building (all features)
+	@echo "Checking code (all features)..."
+	@$(CARGO) check --all-features
 	@echo "Code check complete"
 
 .PHONY: test
-test: ## Run tests
-	@echo "Running tests..."
-	@$(CARGO) test
+test: ## Run tests (all features)
+	@echo "Running tests (all features)..."
+	@$(CARGO) test --all-features
 	@echo "Tests complete"
 
 .PHONY: lint
-lint: ## Run clippy linting
-	@echo "Running clippy..."
-	@$(CARGO) clippy -- -D warnings
+lint: ## Run clippy linting (all features)
+	@echo "Running clippy (all features)..."
+	@$(CARGO) clippy --all-features -- -D warnings
 	@echo "Clippy complete"
 
 .PHONY: fmt
@@ -397,6 +403,26 @@ install-targets: ## Install all target toolchains
 		$(RUSTUP) target add $$target; \
 	done
 	@echo "Target installation complete"
+
+.PHONY: coverage
+coverage: ## Run code coverage with tarpaulin (Linux only)
+	@echo "Running code coverage (Linux only, requires cargo-tarpaulin)..."
+	@which cargo-tarpaulin > /dev/null || cargo install cargo-tarpaulin
+	@cargo tarpaulin --all-features --out Html --output-dir coverage
+	@echo "Coverage report generated in coverage/"
+
+.PHONY: integration-test
+integration-test: ## Run integration tests (CLI, config, server startup)
+	@echo "Running integration tests..."
+	@cargo build --release
+	@./target/release/$(PROJECT_NAME) --help
+	@./target/release/$(PROJECT_NAME) init-config --force
+	@timeout 5s ./target/release/$(PROJECT_NAME) server --port 3000 || true
+	@echo "Integration tests complete"
+
+.PHONY: ci-quality
+ci-quality: fmt-check check lint test audit coverage integration-test ## Run all CI quality checks
+	@echo "All CI quality checks complete"
 
 .PHONY: verify
 verify: check test clippy ## Run all verification steps

@@ -56,7 +56,7 @@ url = "2.4"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Table formatting for output
-tabled = "0.15"
+tabled = "0.20"
 
 # Progress indicators
 indicatif = "0.17"

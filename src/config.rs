@@ -1,13 +1,12 @@
-use std::path::{Path, PathBuf};
-use std::fs;
-use std::collections::HashMap;
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use anyhow::{Result, anyhow};
-use tracing::{info, debug};
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use tracing::{debug, info};
 
 /// MCP Configuration structure for reading from IDE config files
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MCPConfig {
     /// List of MCP server configurations from IDE config files
     pub servers: Option<Vec<MCPServerConfig>>,
@@ -60,8 +59,10 @@ pub struct MCPServerOptions {
 
 fn is_verbose_or_debug() -> bool {
     // Check for MCP_DEBUG or RUST_LOG=debug/info
-    std::env::var("MCP_DEBUG").ok().as_deref() == Some("1") ||
-    std::env::var("RUST_LOG").map(|v| v.contains("debug") || v.contains("info")).unwrap_or(false)
+    std::env::var("MCP_DEBUG").ok().as_deref() == Some("1")
+        || std::env::var("RUST_LOG")
+            .map(|v| v.contains("debug") || v.contains("info"))
+            .unwrap_or(false)
 }
 
 /// IDE configuration file manager for MCP scanner
@@ -73,66 +74,80 @@ impl MCPConfigManager {
     /// Create a new configuration manager with default IDE config paths
     pub fn new() -> Self {
         let mut paths = Vec::new();
-        
+
         if let Some(home_dir) = dirs::home_dir() {
             // Cursor IDE MCP config
             let cursor_config = home_dir.join(".cursor").join("mcp.json");
             paths.push(cursor_config);
-            
+
             // Codium/Windsurf MCP config
-            let codium_config = home_dir.join(".codium").join("windsurf").join("mcp_config.json");
+            let codium_config = home_dir
+                .join(".codium")
+                .join("windsurf")
+                .join("mcp_config.json");
             paths.push(codium_config);
-            
+
             // VS Code MCP config (if it exists)
             let vscode_config = home_dir.join(".vscode").join("mcp.json");
             paths.push(vscode_config);
-            
+
             // Neovim MCP config (if it exists)
             let neovim_config = home_dir.join(".config").join("nvim").join("mcp.json");
             paths.push(neovim_config);
-            
+
             // Helix editor MCP config (if it exists)
             let helix_config = home_dir.join(".config").join("helix").join("mcp.json");
             paths.push(helix_config);
         }
-        
-        Self { config_paths: paths }
+
+        Self {
+            config_paths: paths,
+        }
     }
-    
+
     /// Load configuration from all available IDE config files
     pub fn load_config(&self) -> Result<MCPConfig> {
         let mut merged_config = MCPConfig::default();
-        
+
         for path in &self.config_paths {
             if let Ok(config) = self.load_config_from_path(path) {
                 self.merge_config(&mut merged_config, &config);
-                info!("Loaded MCP configuration from IDE config: {}", path.display());
+                info!(
+                    "Loaded MCP configuration from IDE config: {}",
+                    path.display()
+                );
                 if !is_verbose_or_debug() {
                     println!("Loaded MCP server config from: {}", path.display());
                 }
             } else {
-                debug!("No MCP configuration found at IDE config: {}", path.display());
+                debug!(
+                    "No MCP configuration found at IDE config: {}",
+                    path.display()
+                );
             }
         }
-        
+
         Ok(merged_config)
     }
-    
+
     /// Load configuration from a specific IDE config path
     pub fn load_config_from_path(&self, path: &Path) -> Result<MCPConfig> {
         if !path.exists() {
-            return Err(anyhow!("IDE configuration file does not exist: {}", path.display()));
+            return Err(anyhow!(
+                "IDE configuration file does not exist: {}",
+                path.display()
+            ));
         }
-        
+
         let content = fs::read_to_string(path)
             .map_err(|e| anyhow!("Failed to read IDE config file {}: {}", path.display(), e))?;
-        
+
         let config: MCPConfig = serde_json::from_str(&content)
             .map_err(|e| anyhow!("Failed to parse IDE config file {}: {}", path.display(), e))?;
-        
+
         Ok(config)
     }
-    
+
     /// Merge two configurations, with the second one taking precedence
     fn merge_config(&self, base: &mut MCPConfig, other: &MCPConfig) {
         // Merge servers
@@ -146,7 +161,7 @@ impl MCPConfigManager {
                 }
             }
         }
-        
+
         // Merge global options
         if let Some(other_options) = &other.options {
             match &mut base.options {
@@ -169,7 +184,7 @@ impl MCPConfigManager {
                 }
             }
         }
-        
+
         // Merge auth headers
         if let Some(other_auth_headers) = &other.auth_headers {
             match &mut base.auth_headers {
@@ -184,7 +199,7 @@ impl MCPConfigManager {
             }
         }
     }
-    
+
     /// Check if any IDE configuration files exist
     pub fn has_config_files(&self) -> bool {
         self.config_paths.iter().any(|path| path.exists())
@@ -196,12 +211,12 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
-    
+
     #[test]
     fn test_load_config_from_path() {
         let temp_dir = tempdir().unwrap();
         let config_path = temp_dir.path().join("test_config.json");
-        
+
         let config_content = r#"{
             "servers": [
                 {
@@ -215,30 +230,28 @@ mod tests {
                 "format": "json"
             }
         }"#;
-        
+
         fs::write(&config_path, config_content).unwrap();
-        
+
         let manager = MCPConfigManager::new();
         let config = manager.load_config_from_path(&config_path).unwrap();
-        
+
         assert!(config.servers.is_some());
         assert_eq!(config.servers.unwrap().len(), 1);
         assert!(config.options.is_some());
     }
-    
+
     #[test]
     fn test_merge_config() {
         let mut base = MCPConfig::default();
         let other = MCPConfig {
-            servers: Some(vec![
-                MCPServerConfig {
-                    name: Some("server1".to_string()),
-                    url: "http://localhost:3000".to_string(),
-                    description: None,
-                    auth_headers: None,
-                    options: None,
-                }
-            ]),
+            servers: Some(vec![MCPServerConfig {
+                name: Some("server1".to_string()),
+                url: "http://localhost:3000".to_string(),
+                description: None,
+                auth_headers: None,
+                options: None,
+            }]),
             options: Some(MCPGlobalOptions {
                 timeout: Some(60),
                 http_timeout: None,
@@ -247,10 +260,10 @@ mod tests {
             }),
             auth_headers: None,
         };
-        
+
         let manager = MCPConfigManager::new();
         manager.merge_config(&mut base, &other);
-        
+
         assert!(base.servers.is_some());
         assert_eq!(base.servers.unwrap().len(), 1);
         assert!(base.options.is_some());
@@ -418,36 +431,36 @@ impl ScannerConfigManager {
         let config_path = PathBuf::from("config.yaml");
         Self { config_path }
     }
-    
+
     /// Load configuration from config.yaml
     pub fn load_config(&self) -> Result<ScannerConfig> {
         if !self.config_path.exists() {
             info!("No config.yaml found, using default configuration");
             return Ok(ScannerConfig::default());
         }
-        
+
         let content = fs::read_to_string(&self.config_path)
             .map_err(|e| anyhow!("Failed to read config.yaml: {}", e))?;
-        
+
         let config: ScannerConfig = serde_yaml::from_str(&content)
             .map_err(|e| anyhow!("Failed to parse config.yaml: {}", e))?;
-        
+
         info!("Loaded configuration from config.yaml");
         Ok(config)
     }
-    
+
     /// Save configuration to config.yaml
     pub fn save_config(&self, config: &ScannerConfig) -> Result<()> {
         let content = serde_yaml::to_string(config)
             .map_err(|e| anyhow!("Failed to serialize configuration: {}", e))?;
-        
+
         fs::write(&self.config_path, content)
             .map_err(|e| anyhow!("Failed to write config.yaml: {}", e))?;
-        
+
         info!("Saved configuration to config.yaml");
         Ok(())
     }
-    
+
     /// Check if config.yaml exists
     pub fn has_config_file(&self) -> bool {
         self.config_path.exists()
