@@ -1,0 +1,16 @@
+# Sample MCP Server URLs for batch scanning
+# One URL per line, comments start with #
+
+# Local development servers
+http://localhost:3000
+http://localhost:3001
+http://localhost:3002
+
+# Example public MCP servers (replace with actual URLs)
+https://api.example.com/mcp
+https://mcp.example.org/server
+http://192.168.1.100:8080
+
+# Test servers
+http://test-mcp.example.com:3000
+https://staging-mcp.example.com 

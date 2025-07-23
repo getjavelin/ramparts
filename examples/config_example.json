@@ -1,0 +1,49 @@
+{
+  "servers": [
+    {
+      "name": "github-mcp-server",
+      "url": "https://api.github.com/mcp",
+      "description": "GitHub MCP server for repository operations",
+      "auth_headers": {
+        "Authorization": "Bearer your-github-token"
+      },
+      "options": {
+        "timeout": 60,
+        "detailed": true,
+        "format": "json"
+      }
+    },
+    {
+      "name": "openai-mcp-server",
+      "url": "https://api.openai.com/v1/mcp",
+      "description": "OpenAI MCP server for AI operations",
+      "auth_headers": {
+        "Authorization": "Bearer your-openai-api-key"
+      },
+      "options": {
+        "timeout": 120,
+        "http_timeout": 30,
+        "detailed": false,
+        "format": "table"
+      }
+    },
+    {
+      "name": "local-file-server",
+      "url": "http://localhost:3000",
+      "description": "Local file system MCP server",
+      "options": {
+        "timeout": 30,
+        "detailed": true
+      }
+    }
+  ],
+  "options": {
+    "timeout": 180,
+    "http_timeout": 30,
+    "format": "table",
+    "detailed": false
+  },
+  "auth_headers": {
+    "User-Agent": "mcp-scanner/0.1.0"
+  }
+} 

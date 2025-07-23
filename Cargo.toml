@@ -1,0 +1,83 @@
+[package]
+name = "rampart"
+version = "0.4.0"
+edition = "2021"
+authors = ["Sharath Rajasekar <sharath@getjavelin.com>"]
+description = "A CLI tool for scanning Model Context Protocol (MCP) servers"
+license = "Apache-2.0"
+repository = "https://github.com/your-org/rampart"
+keywords = ["mcp", "model-context-protocol", "scanner", "cli"]
+categories = ["command-line-utilities", "network-programming"]
+
+# Cargo-release configuration for semantic versioning
+[package.metadata.release]
+# Allow releases from main/master branch
+allow-branch = ["main", "master"]
+# Create git tags
+tag = true
+# Push to remote
+push = true
+# Tag name format
+tag-name = "v{version}"
+# Sign commits and tags
+sign-commit = false
+sign-tag = false
+
+[dependencies]
+# CLI argument parsing
+clap = { version = "4.4", features = ["derive"] }
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
+
+# Async streams
+futures-util = "0.3"
+
+# JSON handling
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# URL parsing
+url = "2.4"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Table formatting for output
+tabled = "0.15"
+
+# Progress indicators
+indicatif = "0.17"
+
+# Configuration
+config = "0.14"
+
+# Directory handling
+dirs = "5.0"
+
+# Color output
+colored = "2.0"
+spinners = "4.1.1"
+
+# Web framework for microservice
+axum = { version = "0.7", features = ["macros"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# JSON-RPC handling for microservice
+jsonrpc-core = "18.0"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.8"
