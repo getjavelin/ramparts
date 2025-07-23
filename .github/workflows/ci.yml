@@ -90,7 +90,7 @@ jobs:
           flags: unittests
           name: codecov-umbrella
           fail_ci_if_error: false
-          token: ${{ secrets.RAMPART }}
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   # ============================================================================
   # SECURITY - Security and dependency checks
