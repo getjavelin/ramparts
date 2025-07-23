@@ -34,12 +34,12 @@ pub mod error_utils {
 
     /// Create a standardized error message
     pub fn create_error_msg(operation: &str, details: &str) -> String {
-        format!("{} failed: {}", operation, details)
+        format!("{operation} failed: {details}")
     }
 
     /// Wrap an error with context
     pub fn wrap_error<T>(result: Result<T>, context: &str) -> Result<T> {
-        result.map_err(|e| anyhow!("{}: {}", context, e))
+        result.map_err(|e| anyhow!("{context}: {e}"))
     }
 }
 
@@ -53,12 +53,12 @@ where
 {
     let array = response["result"][result_key]
         .as_array()
-        .ok_or_else(|| anyhow!("Invalid {} response format", result_key))?;
+        .ok_or_else(|| anyhow!("Invalid {result_key} response format"))?;
 
     let mut items = Vec::new();
     for item_value in array {
         let item: T = serde_json::from_value(item_value.clone())
-            .map_err(|e| anyhow!("Failed to parse {} item: {}", result_key, e))?;
+            .map_err(|e| anyhow!("Failed to parse {result_key} item: {e}"))?;
         items.push(item);
     }
 
@@ -384,7 +384,7 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
             mime_type: r.mime_type.clone().unwrap_or_else(|| "N/A".to_string()),
         }))
         .to_string();
-        println!("{}", resource_table);
+        println!("{resource_table}");
     }
 
     // Prompts
@@ -396,7 +396,7 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
             arguments: p.arguments.as_ref().map(|args| args.len()).unwrap_or(0),
         }))
         .to_string();
-        println!("{}", prompt_table);
+        println!("{prompt_table}");
     }
 
     // Security Assessments Completed
@@ -428,7 +428,7 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
     if !result.errors.is_empty() {
         println!("\n{}", "Errors".bold().red());
         for error in &result.errors {
-            println!("- {}", error.red());
+            println!("- {error}");
         }
     }
 
@@ -443,7 +443,7 @@ fn print_text_result(result: &ScanResult) {
     if let Some(server_info) = &result.server_info {
         println!("Server: {} v{}", server_info.name, server_info.version);
         if let Some(desc) = &server_info.description {
-            println!("Description: {}", desc);
+            println!("Description: {desc}");
         }
         if !server_info.capabilities.is_empty() {
             println!("Capabilities: {}", server_info.capabilities.join(", "));
@@ -515,7 +515,7 @@ fn print_text_result(result: &ScanResult) {
 fn format_status(status: &ScanStatus) -> String {
     match status {
         ScanStatus::Success => "SUCCESS".green().to_string(),
-        ScanStatus::Failed(msg) => format!("FAILED: {}", msg).red().to_string(),
+        ScanStatus::Failed(msg) => format!("FAILED: {msg}").red().to_string(),
         ScanStatus::Timeout => "TIMEOUT".yellow().to_string(),
         ScanStatus::ConnectionError(msg) => format!("CONNECTION ERROR: {msg}").red().to_string(),
     }

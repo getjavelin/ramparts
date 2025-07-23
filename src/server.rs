@@ -83,7 +83,7 @@ impl MCPScannerServer {
             .with_state(state);
 
         let addr = format!("{}:{}", self.config.host, self.config.port);
-        info!("Starting MCP Scanner Server on http://{}", addr);
+        info!("Starting MCP Scanner Server on http://{addr}");
         info!("Protocol version: 2025-06-18");
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
