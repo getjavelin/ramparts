@@ -666,7 +666,7 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
 
         if show_details {
             println!("\n🤖 LLM Response:");
-            println!("{}", content);
+            println!("{content}");
         }
 
         Ok(content.to_string())

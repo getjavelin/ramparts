@@ -150,7 +150,7 @@ pub fn print_result(result: &ScanResult, format: &str, detailed: bool) {
         "text" => print_text_result(result),
         "raw" => print_raw_json_result(result),
         _ => {
-            eprintln!("Unknown format: {}. Using table format.", format);
+            eprintln!("Unknown format: {format}. Using table format.");
             print_table_result(result, detailed);
         }
     }
@@ -158,7 +158,7 @@ pub fn print_result(result: &ScanResult, format: &str, detailed: bool) {
 
 fn print_json_result(result: &ScanResult) {
     let json = serde_json::to_string_pretty(result).unwrap();
-    println!("{}", json);
+    println!("{json}");
 }
 
 fn print_raw_json_result(result: &ScanResult) {
@@ -284,7 +284,7 @@ fn print_raw_json_result(result: &ScanResult) {
     }
 
     let json = serde_json::to_string_pretty(&serde_json::Value::Object(raw_result)).unwrap();
-    println!("{}", json);
+    println!("{json}");
 }
 
 fn print_table_result(result: &ScanResult, detailed: bool) {
@@ -306,7 +306,7 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
         println!("Name: {}", server_info.name);
         println!("Version: {}", server_info.version);
         if let Some(desc) = &server_info.description {
-            println!("Description: {}", desc);
+            println!("Description: {desc}");
         }
         if !server_info.capabilities.is_empty() {
             println!("Capabilities: {}", server_info.capabilities.join(", "));
@@ -322,10 +322,10 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
                 println!("{}", "=".repeat(60));
                 println!("Tool: {}", tool.name.bold());
                 if let Some(desc) = &tool.description {
-                    println!("Description: {}", desc);
+                    println!("Description: {desc}");
                 }
                 if let Some(category) = &tool.category {
-                    println!("Category: {}", category);
+                    println!("Category: {category}");
                 }
                 if !tool.tags.is_empty() {
                     println!("Tags: {}", tool.tags.join(", "));
@@ -507,7 +507,7 @@ fn print_text_result(result: &ScanResult) {
     if !result.errors.is_empty() {
         println!("Errors:");
         for error in &result.errors {
-            println!("  - {}", error);
+            println!("  - {error}");
         }
     }
 }
