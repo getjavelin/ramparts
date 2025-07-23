@@ -52,6 +52,21 @@ jobs:
             exit 1
           fi
 
+      - name: Setting up the Crate Version
+        env:
+          RELEASE_NAME: ${{ github.event.release.name }}
+        shell: bash
+        run: |-
+          sed -i 's/^version = ".*"/version = "${{ env.RELEASE_NAME }}"/' Cargo.toml
+
+      - name: Upload cargo-toml
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cargo-toml
+          path: Cargo.toml
+          retention-days: 1
+
   javelin-artifact:
     needs:
       - javelin-validate
@@ -67,13 +82,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setting up the Crate Version
-        env:
-          CARGO_VER_FILE: Cargo.toml
-          RELEASE_NAME: ${{ github.event.release.name }}
+      - name: Download cargo-toml
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-toml
+
+      - name: Check Cargo.toml
         shell: bash
         run: |-
-          sed -i 's/^version = ".*"/version = "${{ env.RELEASE_NAME }}"/' ${{ env.CARGO_VER_FILE }}
+          cat Cargo.toml
 
       - name: Setting up Envs
         id: set_env
