@@ -8,7 +8,7 @@ on:
 env:
   PY_VER: 3.11.8
   RELEASE_BRANCH: "main"
-  REGEX_PATTERN: "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+  REGEX_PATTERN: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
   RELEASE_NAME: ${{ github.event.release.name }}
 
 jobs:
