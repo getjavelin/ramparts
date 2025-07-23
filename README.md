@@ -9,7 +9,7 @@
 [![Crates.io](https://img.shields.io/crates/v/rampart)](https://crates.io/crates/rampart)
 [![GitHub stars](https://img.shields.io/github/stars/getjavelin/rampart?style=social)](https://github.com/getjavelin/rampart)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.80+-blue.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.88+-blue.svg)](https://www.rust-lang.org/)
 [![Tests](https://img.shields.io/github/actions/workflow/status/getjavelin/rampart/ci.yml?label=tests)](https://github.com/getjavelin/rampart/actions)
 [![Clippy](https://img.shields.io/github/actions/workflow/status/getjavelin/rampart/ci.yml?label=lint)](https://github.com/getjavelin/rampart/actions)
 [![Release](https://img.shields.io/github/release/getjavelin/rampart)](https://github.com/getjavelin/rampart/releases)
