@@ -151,6 +151,28 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Install MSVC build tools
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build binaries - x86_64-pc-windows-gnu
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update && sudo apt-get install -y mingw-w64
+          rustup target add x86_64-pc-windows-gnu
+          cargo build --release --target x86_64-pc-windows-gnu
+
+      - name: Build binaries - x86_64-unknown-linux-gnu
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          rustup target add x86_64-unknown-linux-gnu
+          cargo build --release --target x86_64-unknown-linux-gnu
+
+      - name: Build binaries - x86_64-apple-darwin
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          rustup target add x86_64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+
       - name: Build release
         run: cargo build --release
 
