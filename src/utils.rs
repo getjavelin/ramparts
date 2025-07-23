@@ -517,7 +517,7 @@ fn format_status(status: &ScanStatus) -> String {
         ScanStatus::Success => "SUCCESS".green().to_string(),
         ScanStatus::Failed(msg) => format!("FAILED: {}", msg).red().to_string(),
         ScanStatus::Timeout => "TIMEOUT".yellow().to_string(),
-                    ScanStatus::ConnectionError(msg) => format!("CONNECTION ERROR: {msg}").red().to_string(),
+        ScanStatus::ConnectionError(msg) => format!("CONNECTION ERROR: {msg}").red().to_string(),
     }
 }
 
