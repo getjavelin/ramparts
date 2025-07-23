@@ -33,12 +33,13 @@ MCP servers can expose powerful capabilities to AI agents, including:
 - **System commands** (process execution, system administration)
 
 Without proper security analysis, these capabilities can become attack vectors for:
+- **Tool Poisoning** - bypassing AI safety measures
+- **MCP Rug Pulls** - unauthorized changes to MCP tool descriptions after initial user approval.
+- **Data exfiltration** - leaking sensitive information
+- **Privilege escalation** - gaining unauthorized access
 - **Path traversal attacks** - accessing files outside intended directories
 - **Command injection** - executing unauthorized system commands
 - **SQL injection** - manipulating database queries
-- **Prompt injection** - bypassing AI safety measures
-- **Data exfiltration** - leaking sensitive information
-- **Privilege escalation** - gaining unauthorized access
 
 ### What Ramparts Does
 
