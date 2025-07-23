@@ -398,13 +398,9 @@ We welcome contributions to Rampart mcp scan. If you have suggestions, bug repor
 
 ## Support
 
-- **Documentation**: [docs/](docs/)
 - **Issues**: [GitHub Issues](https://github.com/getjavelin/rampart/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/getjavelin/rampart/discussions)
 
 ## Additional Resources
 
 - [MCP Protocol Documentation](https://modelcontextprotocol.io/)
-- [Security Best Practices](docs/SECURITY_ASSESSMENTS.md)
 - [Configuration Examples](examples/config_example.json)
-- [LLM Auth Bypass Guide](docs/LLM_AUTH_BYPASS.md)
