@@ -517,7 +517,7 @@ fn format_status(status: &ScanStatus) -> String {
         ScanStatus::Success => "SUCCESS".green().to_string(),
         ScanStatus::Failed(msg) => format!("FAILED: {}", msg).red().to_string(),
         ScanStatus::Timeout => "TIMEOUT".yellow().to_string(),
-        ScanStatus::ConnectionError(msg) => format!("CONNECTION ERROR: {}", msg).red().to_string(),
+                    ScanStatus::ConnectionError(msg) => format!("CONNECTION ERROR: {msg}").red().to_string(),
     }
 }
 
@@ -579,8 +579,7 @@ fn print_enhanced_security_table(result: &ScanResult) {
             println!("  ✅ All tools passed security checks");
         } else {
             println!(
-                "  ⚠️  {} tools have security warnings ({} total warnings)",
-                tools_with_warnings, total_warnings
+                "  ⚠️  {tools_with_warnings} tools have security warnings ({total_warnings} total warnings)"
             );
         }
         println!();
@@ -610,7 +609,7 @@ fn print_enhanced_security_table(result: &ScanResult) {
                 if let Some(analysis_details) =
                     security_issues.tool_analysis_details.get(&tool.name)
                 {
-                    println!("      📋 Analysis: {}", analysis_details);
+                    println!("      📋 Analysis: {analysis_details}");
                 }
 
                 // Show specific security issues
@@ -623,7 +622,7 @@ fn print_enhanced_security_table(result: &ScanResult) {
                     };
                     println!("      ├── {}: {}", severity_color, issue.message);
                     if let Some(details) = &issue.details {
-                        println!("      │   Details: {}", details);
+                        println!("      │   Details: {details}");
                     }
                 }
             }
@@ -675,8 +674,7 @@ fn print_enhanced_security_table(result: &ScanResult) {
         println!("  • Tools scanned: {}", result.tools.len());
         if total_warnings > 0 {
             println!(
-                "  • Warnings found: {} tools with {} total warnings",
-                tools_with_warnings, total_warnings
+                "  • Warnings found: {tools_with_warnings} tools with {total_warnings} total warnings"
             );
         } else {
             println!(

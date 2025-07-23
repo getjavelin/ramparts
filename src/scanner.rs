@@ -111,7 +111,7 @@ impl STDIOTransport {
         // Send JSON-RPC request with newline delimiter
         let request_str = serde_json::to_string(&request)?;
         stdin
-            .write_all(format!("{}\n", request_str).as_bytes())
+            .write_all(format!("{request_str}\n").as_bytes())
             .await?;
         stdin.flush().await?;
 
@@ -855,7 +855,7 @@ impl MCPScanner {
                         );
                         let mut failed_result = ScanResult::new(server.url.clone());
                         failed_result.status = ScanStatus::Failed(e.to_string());
-                        failed_result.add_error(format!("IDE config scan failed: {}", e));
+                        failed_result.add_error(format!("IDE config scan failed: {e}"));
                         results.push(failed_result);
                     }
                 }
@@ -1312,7 +1312,7 @@ impl MCPScanner {
 
                 // Add http:// if no scheme is provided
                 if !url.contains("://") {
-                    url = format!("http://{}", url);
+                    url = format!("http://{url}");
                 }
 
                 // Validate URL
