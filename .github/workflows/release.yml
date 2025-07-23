@@ -57,10 +57,10 @@ jobs:
       - javelin-validate
     permissions:
       contents: 'read'
-    runs-on: ubuntu-24.04
     strategy:
       matrix:
-        target: [ x86_64_linux, x86_64_windows, x86_64_apple ]
+        target: [ ubuntu-24.04, windows-2022, macOS-15 ]
+      runs-on: ${{ matrix.target }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -79,15 +79,15 @@ jobs:
         id: set_env
         shell: bash
         run: |-
-          if [[ ${{ matrix.target }} == "x86_64_linux" ]] ; then
+          if [[ ${{ matrix.target }} == "ubuntu-24.04" ]] ; then
             echo "crate_target=x86_64-unknown-linux-gnu" >> ${GITHUB_OUTPUT}
             echo "crate_release=ramparts-linux-x86_64" >> ${GITHUB_OUTPUT}
             echo "crate_ext=" >> ${GITHUB_OUTPUT}
-          elif [[ ${{ matrix.target }} == "x86_64_windows" ]] ; then
+          elif [[ ${{ matrix.target }} == "windows-2022" ]] ; then
             echo "crate_target=x86_64-pc-windows-msvc" >> ${GITHUB_OUTPUT}
             echo "crate_release=ramparts-windows-x86_64.exe" >> ${GITHUB_OUTPUT}
             echo "crate_ext=.exe" >> ${GITHUB_OUTPUT}
-          elif [[ ${{ matrix.target }} == "x86_64_apple" ]] ; then
+          elif [[ ${{ matrix.target }} == "macOS-15" ]] ; then
             echo "crate_target=x86_64-apple-darwin" >> ${GITHUB_OUTPUT}
             echo "crate_release=ramparts-macos-x86_64" >> ${GITHUB_OUTPUT}
             echo "crate_ext=" >> ${GITHUB_OUTPUT}
@@ -112,61 +112,36 @@ jobs:
 
       - name: Build release binaries
         run: |
-          rustup target add ${{ steps.set_env.outputs.crate_target }}
-          cargo build --release --target ${{ steps.set_env.outputs.crate_target }}
+          cargo build --release
 
       - name: Create release assets
         run: |
           mkdir -p release
-          cp target/${{ steps.set_env.outputs.crate_target }}/release/ramparts${{ steps.set_env.outputs.crate_ext }} release/${{ steps.set_env.outputs.crate_release }}
+          cp target/release/ramparts${{ steps.set_env.outputs.crate_ext }} release/${{ steps.set_env.outputs.crate_release }}${{ steps.set_env.outputs.crate_ext }}
 
           # Create checksums
           cd release
           sha256sum * > ${{ matrix.target }}_checksums.txt
 
-      # - name: Upload release assets
-      #   uses: actions/upload-release-asset@v1
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   with:
-      #     upload_url: ${{ github.event.release.upload_url }}
-      #     asset_path: ./release/${{ steps.set_env.outputs.crate_release }}
-      #     asset_name: ${{ steps.set_env.outputs.crate_release }}
-      #     asset_content_type: application/octet-stream
-
-      - name: Upload checksums
-        uses: actions/upload-artifact@v4
-        with:
-          name: checksums-${{ matrix.target }}
-          path: release/checksums.txt
-          if-no-files-found: error
-          retention-days: 1
-
-  javelin-checksums:
-    needs:
-      - javelin-artifact
-    permissions:
-      contents: 'read'
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Download checksums
-        uses: actions/download-artifact@v4
-        with:
-          path: release
-          pattern: checksums-*
-
-      - name: Combine Checksums
-        run: |
-          find release -name "*.txt" -exec cat {} \; > checksums.txt
-
-      - name: Upload All to GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload release assets
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: |
-            release/**/*.{exe,sha256}
-            checksums.txt
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./release/${{ steps.set_env.outputs.crate_release }}${{ steps.set_env.outputs.crate_ext }}
+          asset_name: ${{ steps.set_env.outputs.crate_release }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload checksums
+        uses: actions/upload-release-asset@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./release/checksums.txt
+          asset_name: checksums.txt
+          asset_content_type: text/plain
 
   # javelin-crate:
   #   name: Deploy to Crates.io
