@@ -1,28 +1,28 @@
 <div align="center">
 
-# Rampart: mcp (model context protocol) scanner
+# Ramparts: mcp (model context protocol) scanner
 
-<img src="assets/rampart.png" alt="Rampart Banner" width="250" />
+<img src="assets/rampart.png" alt="Ramparts Banner" width="250" />
 
 *A fast, lightweight security scanner for Model Context Protocol (MCP) servers with built-in vulnerability detection.*
 
-[![Crates.io](https://img.shields.io/crates/v/rampart)](https://crates.io/crates/rampart)
-[![GitHub stars](https://img.shields.io/github/stars/getjavelin/rampart?style=social)](https://github.com/getjavelin/rampart)
+[![Crates.io](https://img.shields.io/crates/v/ramparts)](https://crates.io/crates/ramparts)
+[![GitHub stars](https://img.shields.io/github/stars/getjavelin/ramparts?style=social)](https://github.com/getjavelin/ramparts)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/github/actions/workflow/status/getjavelin/rampart/ci.yml?label=tests)](https://github.com/getjavelin/rampart/actions)
-[![Clippy](https://img.shields.io/github/actions/workflow/status/getjavelin/rampart/ci.yml?label=lint)](https://github.com/getjavelin/rampart/actions)
-[![Release](https://img.shields.io/github/release/getjavelin/rampart)](https://github.com/getjavelin/rampart/releases)
+[![Tests](https://img.shields.io/github/actions/workflow/status/getjavelin/ramparts/pr-check.yml?label=tests)](https://github.com/getjavelin/ramparts/actions)
+[![Clippy](https://img.shields.io/github/actions/workflow/status/getjavelin/rampart/pr-check.yml?label=lint)](https://github.com/getjavelin/ramparts/actions)
+[![Release](https://img.shields.io/github/release/getjavelin/ramparts)](https://github.com/getjavelin/ramparts/releases)
 
 </div>
 
 ## Overview
 
-**Rampart** is a scanner designed for the **Model Context Protocol (MCP)** ecosystem. As AI agents and LLMs increasingly rely on external tools and resources through MCP servers, ensuring the security of these connections has become critical.   
+**Ramparts** is a scanner designed for the **Model Context Protocol (MCP)** ecosystem. As AI agents and LLMs increasingly rely on external tools and resources through MCP servers, ensuring the security of these connections has become critical.   
 
 The Model Context Protocol (MCP) is an open standard that enables AI assistants to securely connect to external data sources and tools. It allows AI agents to access databases, file systems, and APIs through toolcalling to retrieve real-time information and interact with external or internal services.
 
-Rampart is under active development.
+Ramparts is under active development.
 
 ### The Security Challenge
 
@@ -40,27 +40,27 @@ Without proper security analysis, these capabilities can become attack vectors f
 - **Data exfiltration** - leaking sensitive information
 - **Privilege escalation** - gaining unauthorized access
 
-### What Rampart Does
+### What Ramparts Does
 
-Rampart provides **security scanning** of MCP servers by:
+Ramparts provides **security scanning** of MCP servers by:
 
 1. **Discovering Capabilities**: Scans all MCP endpoints to identify available tools, resources, and prompts
 2. **Static Analysis**: Performs rule-based checks for common vulnerabilities
 3. **LLM-Powered Analysis**: Uses AI models to detect sophisticated security issues
 4. **Risk Assessment**: Categorizes findings by severity and provides actionable recommendations
 
-## Who Rampart is For
+## Who Ramparts is For
 
-Rampart is designed for developers using local, remote MCP servers or building their own MCP servers and interested in scanning it for any vulnerabilities it may expose. Developers may use Rampart locally to scan the MCP servers they use in their local development environment (e.g., Cursor, Windsurf, Claude Code etc.,). 
+Ramparts is designed for developers using local, remote MCP servers or building their own MCP servers and interested in scanning it for any vulnerabilities it may expose. Developers may use Ramparts locally to scan the MCP servers they use in their local development environment (e.g., Cursor, Windsurf, Claude Code etc.,). 
 
-**If you're using MCP servers** - whether they're running locally on your machine or hosted remotely - Rampart helps you understand what security risks they might pose. You can scan third-party MCP servers before connecting to them, or validate your own local MCP servers before deploying them to production.
+**If you're using MCP servers** - whether they're running locally on your machine or hosted remotely - Ramparts helps you understand what security risks they might pose. You can scan third-party MCP servers before connecting to them, or validate your own local MCP servers before deploying them to production.
 
-**If you're building MCP servers** - whether you're creating tools, resources, or prompts - Rampart gives you confidence that your implementation doesn't expose vulnerabilities to AI agents. It's especially useful for developers who want to ensure their MCP tools are secure by design.
+**If you're building MCP servers** - whether you're creating tools, resources, or prompts - Ramparts gives you confidence that your implementation doesn't expose vulnerabilities to AI agents. It's especially useful for developers who want to ensure their MCP tools are secure by design.
 
 
 ## Why Rust?
 
-The Rampart mcp scanner is implemented in Rust to prioritize performance, reliability, and broad portability. Rust offers native execution speed with minimal memory overhead, making it well-suited for analyzing large prompt contexts, tool manifests, or server topologies—without the need for a heavyweight runtime. Rampart was built with a view of operating in CI pipelines, agent sandboxes, or constrained edge environments which made the ability to compile to a single, compact binary essential.
+The Ramparts mcp scanner is implemented in Rust to prioritize performance, reliability, and broad portability. Rust offers native execution speed with minimal memory overhead, making it well-suited for analyzing large prompt contexts, tool manifests, or server topologies—without the need for a heavyweight runtime. Ramparts was built with a view of operating in CI pipelines, agent sandboxes, or constrained edge environments which made the ability to compile to a single, compact binary essential.
 
 ## Key Features
 
@@ -86,13 +86,13 @@ The Rampart mcp scanner is implemented in Rust to prioritize performance, reliab
 
 **From crates.io (Recommended)**
 ```bash
-cargo install rampart
+cargo install ramparts
 ```
 
 **From source**
 ```bash
-git clone https://github.com/getjavelin/rampart.git
-cd rampart
+git clone https://github.com/getjavelin/ramparts.git
+cd ramparts
 cargo install --path .
 ```
 
@@ -100,18 +100,18 @@ cargo install --path .
 
 **Scan an MCP server**
 ```bash
-rampart scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $GITHUB_TOKEN"
+ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $GITHUB_TOKEN"
 ```
 
 **Scan with custom output format**
 ```bash
-rampart scan <url> --output json
-rampart scan <url> --output raw
+ramparts scan <url> --output json
+ramparts scan <url> --output raw
 ```
 
 **Scan with verbose output**
 ```bash
-rampart scan <url> --verbose
+ramparts scan <url> --verbose
 ```
 
 ### Example Output
@@ -162,49 +162,49 @@ Summary:
 
 **GitHub Copilot**
 ```bash
-rampart scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $GITHUB_TOKEN"
+ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $GITHUB_TOKEN"
 ```
 
 **Local MCP server**
 ```bash
-rampart scan http://localhost:3000/mcp/
+ramparts scan http://localhost:3000/mcp/
 ```
 
 **Custom MCP server with API key**
 ```bash
-rampart scan https://api.example.com/mcp/ --auth-headers "X-API-Key: $API_KEY"
+ramparts scan https://api.example.com/mcp/ --auth-headers "X-API-Key: $API_KEY"
 ```
 
 **With custom timeout**
 ```bash
-rampart scan <url> --timeout 60
+ramparts scan <url> --timeout 60
 ```
 
 ### Advanced Scanning Options
 
 **Scan with custom severity threshold**
 ```bash
-rampart scan <url> --min-severity HIGH
+ramparts scan <url> --min-severity HIGH
 ```
 
 **Scan with specific output format**
 ```bash
-rampart scan <url> --output json --pretty
+ramparts scan <url> --output json --pretty
 ```
 
 **Scan with custom configuration**
 ```bash
-rampart scan <url> --config custom-rampart.yaml
+ramparts scan <url> --config custom-ramparts.yaml
 ```
 
 ## Advanced Usage
 
 ### Server Mode
 
-Start Rampart as a server for continuous monitoring:
+Start Ramparts as a server for continuous monitoring:
 
 ```bash
-rampart server --port 8080
+ramparts server --port 8080
 ```
 
 ### Batch Scanning
@@ -218,7 +218,7 @@ https://server2.com/mcp/
 https://server3.com/mcp/" > servers.txt
 
 # Run batch scan
-rampart scan --batch servers.txt
+ramparts scan --batch servers.txt
 ```
 
 ### Scan from IDE Configuration
@@ -226,7 +226,7 @@ rampart scan --batch servers.txt
 Scan MCP servers configured in your IDE:
 
 ```bash
-rampart scan-config
+ramparts scan-config
 ```
 
 ## CLI Reference
@@ -235,20 +235,20 @@ rampart scan-config
 
 ```bash
 # Scan an MCP server
-rampart scan <url> [options]
+ramparts scan <url> [options]
 
 # Start Rampart server mode
-rampart server [options]
+ramparts server [options]
 
 # Scan from IDE configuration
-rampart scan-config
+ramparts scan-config
 
 # Initialize configuration file
-rampart init-config
+ramparts init-config
 
 # Show help
-rampart --help
-rampart scan --help
+ramparts --help
+ramparts scan --help
 ```
 
 ### Scan Options
@@ -275,14 +275,14 @@ Options:
 
 ## Configuration
 
-Rampart uses a `rampart.yaml` configuration file for customizing security rules and thresholds:
+Ramparts uses a `rampart.yaml` configuration file for customizing security rules and thresholds:
 
 ### Initialize Configuration
 
 Create a custom configuration file:
 
 ```bash
-rampart init-config
+ramparts init-config
 ```
 
 This creates a `rampart.yaml` file:
@@ -331,12 +331,12 @@ performance:
 
 ### Text Format (Default)
 ```bash
-rampart scan <url>
+ramparts scan <url>
 ```
 
 ### JSON Format
 ```bash
-rampart scan <url> --output json
+ramparts scan <url> --output json
 ```
 
 ```json
@@ -361,7 +361,7 @@ rampart scan <url> --output json
 
 ### Raw Format
 ```bash
-rampart scan <url> --output raw
+ramparts scan <url> --output raw
 ```
 
 ## Troubleshooting
@@ -371,34 +371,34 @@ rampart scan <url> --output raw
 **Connection Timeout**
 ```bash
 # Increase timeout
-rampart scan <url> --timeout 60
+ramparts scan <url> --timeout 60
 ```
 
 **Authentication Errors**
 ```bash
 # Check your auth headers format
-rampart scan <url> --auth-headers "Authorization: Bearer $TOKEN"
+ramparts scan <url> --auth-headers "Authorization: Bearer $TOKEN"
 ```
 
 **Permission Denied**
 ```bash
 # Check file permissions
-chmod +x $(which rampart)
+chmod +x $(which ramparts)
 ```
 
 **Configuration File Not Found**
 ```bash
 # Initialize configuration
-rampart init-config
+ramparts init-config
 ```
 
 ## Contributing
 
-We welcome contributions to Rampart mcp scan. If you have suggestions, bug reports, or feature requests, please open an issue on our GitHub repository.
+We welcome contributions to Ramparts mcp scan. If you have suggestions, bug reports, or feature requests, please open an issue on our GitHub repository.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/getjavelin/rampart/issues)
+- **Issues**: [GitHub Issues](https://github.com/getjavelin/ramparts/issues)
 
 ## Additional Resources
 

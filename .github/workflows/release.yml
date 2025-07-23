@@ -1,0 +1,207 @@
+name: Release Build - Ramparts
+
+on:
+  release:
+    types:
+      - published
+
+env:
+  PY_VER: 3.11.8
+  RELEASE_BRANCH: "main"
+  REGEX_PATTERN: "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+  RELEASE_NAME: ${{ github.event.release.name }}
+
+jobs:
+  javelin-validate:
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Validate Release Branch
+        id: validate_branch
+        shell: bash
+        run: |-
+          export TAG_COMMIT=$(git rev-list -n 1 ${{ github.ref_name }})
+          export TAG_BRANCH=$(git branch -r --contains ${TAG_COMMIT} | grep -v HEAD | head -n 1 | sed 's/origin\///' | sed 's/^[ \t]*//')
+          if [[ "${TAG_BRANCH}" == "${{ env.RELEASE_BRANCH }}" ]] ; then
+            echo "Valid Branch for Release : ${TAG_BRANCH}"
+            echo "enable_branch_build=true" >> ${GITHUB_OUTPUT}
+          else
+            echo "Invalid Branch for Release : ${TAG_BRANCH}"
+            echo "enable_branch_build=false" >> ${GITHUB_OUTPUT}
+            exit 1
+          fi
+
+      - name: Validate Release Tag
+        if: ${{ steps.validate_branch.outputs.enable_branch_build == 'true' }}
+        id: validate_tag
+        shell: bash
+        run: |-
+          if [[ "${{ env.RELEASE_NAME }}" =~ ${{ env.REGEX_PATTERN }} ]] ; then
+            echo "Valid version format: ${{ env.RELEASE_NAME }}"
+            echo "enable_tag_build=true" >> ${GITHUB_OUTPUT}
+          else
+            echo "Invalid version format: ${{ env.RELEASE_NAME }}"
+            echo "enable_tag_build=false" >> ${GITHUB_OUTPUT}
+            exit 1
+          fi
+
+  javelin-artifact:
+    needs:
+      - javelin-validate
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        target: [ x86_64_linux, x86_64_windows, x86_64_apple ]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setting up the Crate Version
+        env:
+          PY_VER_FILE: "Cargo.toml"
+          RELEASE_NAME: ${{ github.event.release.name }}
+        shell: bash
+        run: |-
+          export RELEASE_VERSION=$(echo ${{ env.RELEASE_NAME }} | sed 's|^v||g')
+          if cat ${{ env.PY_VER_FILE }} | grep 'version = "RELEASE_VERSION"' ; then
+            sed -i "s|^version = \"RELEASE_VERSION\"|version = \"${RELEASE_VERSION}\"|g" ${{ env.PY_VER_FILE }}
+            cat ${file}
+          else
+            echo "Version entry format is wrong in the ${{ env.PY_VER_FILE }} file...!"
+            cat ${file}
+            exit 1
+          fi
+
+      - name: Setting up Envs
+        id: set_env
+        shell: bash
+        run: |-
+          if [[ ${{ matrix.target }} == "x86_64_linux" ]] ; then
+            echo "crate_target=x86_64-unknown-linux-gnu" >> ${GITHUB_OUTPUT}
+            echo "crate_release=rampart-linux-x86_64" >> ${GITHUB_OUTPUT}
+            echo "crate_ext=" >> ${GITHUB_OUTPUT}
+          elif [[ ${{ matrix.target }} == "x86_64_windows" ]] ; then
+            echo "crate_target=x86_64-pc-windows-msvc" >> ${GITHUB_OUTPUT}
+            echo "crate_release=rampart-windows-x86_64.exe" >> ${GITHUB_OUTPUT}
+            echo "crate_ext=.exe" >> ${GITHUB_OUTPUT}
+          elif [[ ${{ matrix.target }} == "x86_64_apple" ]] ; then
+            echo "crate_target=x86_64-apple-darwin" >> ${GITHUB_OUTPUT}
+            echo "crate_release=rampart-macos-x86_64" >> ${GITHUB_OUTPUT}
+            echo "crate_ext=" >> ${GITHUB_OUTPUT}
+          else
+            echo "Not maching the target...!"
+            exit 1
+          fi
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build release binaries
+        run: |
+          cargo build --release --target ${{ steps.set_env.outputs.crate_target }}
+
+      - name: Create release assets
+        run: |
+          mkdir -p release
+          cp target/${{ steps.set_env.outputs.crate_target }}/release/rampart${{ steps.set_env.outputs.crate_ext }} release/${{ steps.set_env.outputs.crate_release }}
+
+          # Create checksums
+          cd release
+          sha256sum * > ${{ matrix.target }}_checksums.txt
+
+      # - name: Upload release assets
+      #   uses: actions/upload-release-asset@v1
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   with:
+      #     upload_url: ${{ github.event.release.upload_url }}
+      #     asset_path: ./release/${{ steps.set_env.outputs.crate_release }}
+      #     asset_name: ${{ steps.set_env.outputs.crate_release }}
+      #     asset_content_type: application/octet-stream
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums-${{ matrix.target }}
+          path: release/checksums.txt
+          if-no-files-found: error
+          retention-days: 1
+
+  javelin-checksums:
+    needs:
+      - javelin-artifact
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download checksums
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: checksums-*
+
+      - name: Combine Checksums
+        run: |
+          find release -name "*.txt" -exec cat {} \; > checksums.txt
+
+      - name: Upload All to GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: |
+            release/**/*.{exe,sha256}
+            checksums.txt
+
+  # javelin-crate:
+  #   name: Deploy to Crates.io
+  #   permissions:
+  #     contents: 'read'
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #       with:
+  #         persist-credentials: false
+
+  #     - name: Install Rust toolchain
+  #       uses: dtolnay/rust-toolchain@stable
+
+  #     - name: Cache dependencies
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: |
+  #           ~/.cargo/registry
+  #           ~/.cargo/git
+  #           target
+  #         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+  #         restore-keys: |
+  #           ${{ runner.os }}-cargo-
+
+  #     - name: Publish to Crates.io
+  #       env:
+  #         CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+  #       run: |-
+  #         cargo publish
