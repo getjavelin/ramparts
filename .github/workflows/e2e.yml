@@ -25,22 +25,6 @@ jobs:
         with:
           persist-credentials: true
 
-      - name: Setting up the Crate Version
-        env:
-          CARGO_VER_FILE: "Cargo.toml"
-          RELEASE_NAME: ${{ github.event.release.name }}
-        shell: bash
-        run: |-
-          export RELEASE_VERSION="0.0.1"
-          if cat ${{ env.CARGO_VER_FILE }} | grep 'version = "RELEASE_VERSION"' ; then
-            sed -i "s|^version = \"RELEASE_VERSION\"|version = \"${RELEASE_VERSION}\"|g" ${{ env.CARGO_VER_FILE }}
-            cat ${file}
-          else
-            echo "Version entry format is wrong in the ${{ env.CARGO_VER_FILE }} file...!"
-            cat ${file}
-            exit 1
-          fi
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 

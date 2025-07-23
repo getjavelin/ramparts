@@ -1,6 +1,6 @@
 [package]
 name = "ramparts"
-version = "RELEASE_VERSION"
+version = "0.4.0"
 edition = "2021"
 authors = ["Sharath Rajasekar <sharath@getjavelin.com>"]
 description = "A CLI tool for scanning Model Context Protocol (MCP) servers"
