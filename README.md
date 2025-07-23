@@ -57,7 +57,10 @@ Rampart is designed for developers using local, remote MCP servers or building t
 
 **If you're building MCP servers** - whether you're creating tools, resources, or prompts - Rampart gives you confidence that your implementation doesn't expose vulnerabilities to AI agents. It's especially useful for developers who want to ensure their MCP tools are secure by design.
 
-**If you're part of a development team** working with AI systems, Rampart fits naturally into your security workflow. You can integrate it into your CI/CD pipelines to automatically scan MCP servers during deployment, or use it during development to catch security issues early.
+
+## Why Rust?
+
+The Rampart mcp scanner is implemented in Rust to prioritize performance, reliability, and broad portability. Rust offers native execution speed with minimal memory overhead, making it well-suited for analyzing large prompt contexts, tool manifests, or server topologies—without the need for a heavyweight runtime. Rampart was built with a view of operating in CI pipelines, agent sandboxes, or constrained edge environments which made the ability to compile to a single, compact binary essential.
 
 ## Key Features
 
@@ -74,7 +77,6 @@ Rampart is designed for developers using local, remote MCP servers or building t
 ## Use Cases
 
 - **Security Audits**: Comprehensive assessment of MCP server security posture
-- **CI/CD Integration**: Automated security scanning in deployment pipelines
 - **Development**: Testing MCP servers during development and testing phases
 - **Compliance**: Meeting security requirements for AI agent deployments
 
@@ -389,10 +391,6 @@ chmod +x $(which rampart)
 # Initialize configuration
 rampart init-config
 ```
-
-## Why Rust?
-
-The Rampart mcp scanner is implemented in Rust to prioritize performance, reliability, and broad portability. Rust offers native execution speed with minimal memory overhead, making it well-suited for analyzing large prompt contexts, tool manifests, or server topologies—without the need for a heavyweight runtime. Rampart was built with a view of operating in CI pipelines, agent sandboxes, or constrained edge environments which made the ability to compile to a single, compact binary essential.
 
 ## Contributing
 
