@@ -1,8 +1,8 @@
+use crate::security::SecurityScanResult;
+use anyhow::Result;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
-use anyhow::Result;
-use crate::security::SecurityScanResult;
 
 // ============================================================================
 // CORE TYPES - Main data structures for MCP scanning
@@ -74,20 +74,22 @@ impl ScanConfigBuilder {
 /// Configuration validation utilities
 pub mod config_utils {
     use super::*;
-    
+
     pub fn validate_scan_config(options: &ScanOptions) -> Result<()> {
         if options.timeout == 0 {
             return Err(anyhow::anyhow!("Timeout must be greater than 0"));
         }
-        
+
         if options.http_timeout == 0 {
             return Err(anyhow::anyhow!("HTTP timeout must be greater than 0"));
         }
-        
+
         if options.timeout < options.http_timeout {
-            return Err(anyhow::anyhow!("Total timeout must be greater than or equal to HTTP timeout"));
+            return Err(anyhow::anyhow!(
+                "Total timeout must be greater than or equal to HTTP timeout"
+            ));
         }
-        
+
         Ok(())
     }
 }
@@ -272,14 +274,14 @@ impl ToolResponse {
 
     pub fn from_json_response(response: &serde_json::Value) -> Result<Self> {
         let mut tool_response = ToolResponse::new();
-        
+
         if let Some(tools_array) = response["result"]["tools"].as_array() {
             for tool_value in tools_array {
                 let tool = Self::parse_tool_from_json(tool_value)?;
                 tool_response.add_tool(tool);
             }
         }
-        
+
         Ok(tool_response)
     }
 
@@ -288,21 +290,21 @@ impl ToolResponse {
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Tool name is required"))?
             .to_string();
-            
+
         let description = tool_value["description"].as_str().map(|s| s.to_string());
-        
+
         let input_schema = tool_value["inputSchema"].clone();
         let output_schema = tool_value["outputSchema"].clone();
-        
+
         let mut parameters = HashMap::new();
         if let Some(params) = tool_value["parameters"].as_object() {
             for (key, value) in params {
                 parameters.insert(key.clone(), value.clone());
             }
         }
-        
+
         let category = tool_value["category"].as_str().map(|s| s.to_string());
-        
+
         let mut tags = Vec::new();
         if let Some(tags_array) = tool_value["tags"].as_array() {
             for tag in tags_array {
@@ -311,14 +313,22 @@ impl ToolResponse {
                 }
             }
         }
-        
+
         let deprecated = tool_value["deprecated"].as_bool().unwrap_or(false);
-        
+
         Ok(MCPTool {
             name,
             description,
-            input_schema: if input_schema.is_null() { None } else { Some(input_schema) },
-            output_schema: if output_schema.is_null() { None } else { Some(output_schema) },
+            input_schema: if input_schema.is_null() {
+                None
+            } else {
+                Some(input_schema)
+            },
+            output_schema: if output_schema.is_null() {
+                None
+            } else {
+                Some(output_schema)
+            },
             parameters,
             category,
             tags,
@@ -344,14 +354,14 @@ impl PromptResponse {
 
     pub fn from_json_response(response: &serde_json::Value) -> Result<Self> {
         let mut prompt_response = PromptResponse::new();
-        
+
         if let Some(prompts_array) = response["result"]["prompts"].as_array() {
             for prompt_value in prompts_array {
                 let prompt = Self::parse_prompt_from_json(prompt_value)?;
                 prompt_response.add_prompt(prompt);
             }
         }
-        
+
         Ok(prompt_response)
     }
 
@@ -360,9 +370,9 @@ impl PromptResponse {
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Prompt name is required"))?
             .to_string();
-            
+
         let description = prompt_value["description"].as_str().map(|s| s.to_string());
-        
+
         let mut arguments = None;
         if let Some(args_array) = prompt_value["arguments"].as_array() {
             let mut args = Vec::new();
@@ -371,10 +381,10 @@ impl PromptResponse {
                     .as_str()
                     .ok_or_else(|| anyhow::anyhow!("Argument name is required"))?
                     .to_string();
-                    
+
                 let arg_description = arg_value["description"].as_str().map(|s| s.to_string());
                 let required = arg_value["required"].as_bool();
-                
+
                 args.push(MCPPromptArgument {
                     name: arg_name,
                     description: arg_description,
@@ -383,7 +393,7 @@ impl PromptResponse {
             }
             arguments = Some(args);
         }
-        
+
         Ok(MCPPrompt {
             name,
             description,
@@ -391,4 +401,4 @@ impl PromptResponse {
             raw_json: Some(prompt_value.clone()),
         })
     }
-} 
+}

@@ -1,18 +1,21 @@
-use crate::types::*;
-use crate::utils::{Timer, parse_jsonrpc_array_response, retry_with_backoff, performance::track_performance, error_utils};
-use crate::security::{SecurityScanner, SecurityScanResult};
 use crate::config::MCPConfigManager;
+use crate::security::{SecurityScanResult, SecurityScanner};
+use crate::types::*;
+use crate::utils::{
+    error_utils, parse_jsonrpc_array_response, performance::track_performance, retry_with_backoff,
+    Timer,
+};
 use anyhow::{anyhow, Result};
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use tracing::{info, warn, debug};
+use tracing::{debug, info, warn};
 
+use std::path::Path;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::process::Command;
 use tokio::time::{timeout, Duration};
 use url::Url;
-use tokio::process::Command;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use std::path::Path;
 
 // ============================================================================
 // TRANSPORT LAYER - Support for multiple MCP transport mechanisms
@@ -65,7 +68,7 @@ impl STDIOTransport {
         // - stdio:///path/to/executable --arg1 --arg2
         // - /path/to/executable
         // - executable --arg1 --arg2
-        
+
         let command = if url.starts_with("stdio://") {
             url.strip_prefix("stdio://").unwrap_or(url)
         } else {
@@ -90,38 +93,52 @@ impl STDIOTransport {
     }
 
     pub async fn send_request(&mut self, request: Value) -> Result<Value> {
-        let process = self.process.as_mut()
+        let process = self
+            .process
+            .as_mut()
             .ok_or_else(|| anyhow!("STDIO process not started"))?;
 
-        let stdin = process.stdin.as_mut()
+        let stdin = process
+            .stdin
+            .as_mut()
             .ok_or_else(|| anyhow!("STDIO stdin not available"))?;
 
-        let stdout = process.stdout.as_mut()
+        let stdout = process
+            .stdout
+            .as_mut()
             .ok_or_else(|| anyhow!("STDIO stdout not available"))?;
 
         // Send JSON-RPC request with newline delimiter
         let request_str = serde_json::to_string(&request)?;
-        stdin.write_all(format!("{}\n", request_str).as_bytes()).await?;
+        stdin
+            .write_all(format!("{}\n", request_str).as_bytes())
+            .await?;
         stdin.flush().await?;
 
         // Read response with timeout
         let mut buffer = Vec::new();
         let mut response_buffer = [0u8; 4096];
-        
+
         loop {
-            match tokio::time::timeout(Duration::from_secs(30), stdout.read(&mut response_buffer)).await {
+            match tokio::time::timeout(Duration::from_secs(30), stdout.read(&mut response_buffer))
+                .await
+            {
                 Ok(Ok(n)) => {
                     if n == 0 {
                         break; // EOF
                     }
                     buffer.extend_from_slice(&response_buffer[..n]);
-                    
+
                     // Check if we have a complete JSON response
                     if let Ok(response_str) = String::from_utf8(buffer.clone()) {
                         for line in response_str.lines() {
                             if !line.trim().is_empty() {
                                 if let Ok(json_response) = serde_json::from_str::<Value>(line) {
-                                    debug!("STDIO response: {}", serde_json::to_string_pretty(&json_response).unwrap_or_default());
+                                    debug!(
+                                        "STDIO response: {}",
+                                        serde_json::to_string_pretty(&json_response)
+                                            .unwrap_or_default()
+                                    );
                                     return Ok(json_response);
                                 }
                             }
@@ -189,12 +206,10 @@ impl JsonRpcRequest {
 }
 
 // Optimized capability configuration
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CapabilityConfig {
     pub timeout_ms: Option<u64>,
 }
-
 
 // Enum for different scan capabilities with optimized structure
 #[derive(Debug, Clone)]
@@ -222,44 +237,83 @@ impl ScanCapability {
     }
 
     // Optimized execution with generic request handling
-    pub async fn execute(&self, scanner: &MCPScanner, url: &str, options: &ScanOptions, session: &MCPSession, transport_type: &TransportType) -> Result<CapabilityResult> {
+    pub async fn execute(
+        &self,
+        scanner: &MCPScanner,
+        url: &str,
+        options: &ScanOptions,
+        session: &MCPSession,
+        transport_type: &TransportType,
+    ) -> Result<CapabilityResult> {
         let timer = Timer::start();
         let capability_name = self.name();
-        
+
         // Build request based on capability type
         let request = self.build_request();
-        
+
         // Execute with capability-specific timeout
         let (response, _) = if let Some(timeout_ms) = self.get_config().timeout_ms {
             let timeout_duration = Duration::from_millis(timeout_ms);
-            match tokio::time::timeout(timeout_duration, scanner.send_jsonrpc_request_with_headers_and_session(url, request, options, transport_type, session.session_id.clone())).await {
+            match tokio::time::timeout(
+                timeout_duration,
+                scanner.send_jsonrpc_request_with_headers_and_session(
+                    url,
+                    request,
+                    options,
+                    transport_type,
+                    session.session_id.clone(),
+                ),
+            )
+            .await
+            {
                 Ok(result) => result?,
-                Err(_) => return Err(anyhow!("Capability {} timed out after {}ms", capability_name, timeout_ms)),
+                Err(_) => {
+                    return Err(anyhow!(
+                        "Capability {} timed out after {}ms",
+                        capability_name,
+                        timeout_ms
+                    ))
+                }
             }
         } else {
-            scanner.send_jsonrpc_request_with_headers_and_session(url, request, options, transport_type, session.session_id.clone()).await?
+            scanner
+                .send_jsonrpc_request_with_headers_and_session(
+                    url,
+                    request,
+                    options,
+                    transport_type,
+                    session.session_id.clone(),
+                )
+                .await?
         };
-        
+
         // Use tracing for debug logging
-        debug!("{} response: {}", capability_name, serde_json::to_string_pretty(&response).unwrap_or_default());
-        
+        debug!(
+            "{} response: {}",
+            capability_name,
+            serde_json::to_string_pretty(&response).unwrap_or_default()
+        );
+
         // Parse response based on capability type
         let (data, count) = self.parse_response(&response)?;
-        
+
         let execution_time = timer.elapsed_ms();
-        info!("{} capability completed in {}ms, found {} items", capability_name, execution_time, count);
-        
-        let result = CapabilityResult::success(
-            capability_name.to_string(),
-            data,
-            execution_time
+        info!(
+            "{} capability completed in {}ms, found {} items",
+            capability_name, execution_time, count
         );
-        
+
+        let result = CapabilityResult::success(capability_name.to_string(), data, execution_time);
+
         // Log execution time for monitoring
         if result.is_slow_execution() {
-            warn!("{} capability took {}ms (slow execution)", capability_name, result.execution_time_ms());
+            warn!(
+                "{} capability took {}ms (slow execution)",
+                capability_name,
+                result.execution_time_ms()
+            );
         }
-        
+
         Ok(result)
     }
 
@@ -268,23 +322,29 @@ impl ScanCapability {
         match self {
             ScanCapability::Tool(_) => {
                 let request = JsonRpcRequest::new("tools/list", 2).to_json();
-                debug!("tool_scan request: {}", serde_json::to_string_pretty(&request).unwrap_or_default());
+                debug!(
+                    "tool_scan request: {}",
+                    serde_json::to_string_pretty(&request).unwrap_or_default()
+                );
                 request
             }
             ScanCapability::Resource(_) => {
                 let request = JsonRpcRequest::new("resources/list", 3).to_json();
-                debug!("resource_scan request: {}", serde_json::to_string_pretty(&request).unwrap_or_default());
+                debug!(
+                    "resource_scan request: {}",
+                    serde_json::to_string_pretty(&request).unwrap_or_default()
+                );
                 request
             }
             ScanCapability::Prompt(_) => {
                 let request = JsonRpcRequest::new("prompts/list", 4).to_json();
-                debug!("prompt_scan request: {}", serde_json::to_string_pretty(&request).unwrap_or_default());
+                debug!(
+                    "prompt_scan request: {}",
+                    serde_json::to_string_pretty(&request).unwrap_or_default()
+                );
                 request
             }
-            ScanCapability::ServerInfo(_) => {
-                
-                JsonRpcRequest::new("server/info", 5).to_json()
-            }
+            ScanCapability::ServerInfo(_) => JsonRpcRequest::new("server/info", 5).to_json(),
         }
     }
 
@@ -311,14 +371,22 @@ impl ScanCapability {
                 let count = prompt_response.total_count;
                 info!("Prompt scan found {} prompts", count);
                 for (i, prompt) in prompt_response.prompts.iter().enumerate() {
-                    info!("Prompt {}: {} ({})", i + 1, prompt.name, prompt.description.as_deref().unwrap_or("No description"));
+                    info!(
+                        "Prompt {}: {} ({})",
+                        i + 1,
+                        prompt.name,
+                        prompt.description.as_deref().unwrap_or("No description")
+                    );
                 }
                 Ok((serde_json::to_value(prompt_response)?, count))
             }
             ScanCapability::ServerInfo(_) => {
                 // Just return the server info as-is
                 let server_info = response["result"]["serverInfo"].clone();
-                info!("Server info scan found server: {}", server_info["name"].as_str().unwrap_or("Unknown"));
+                info!(
+                    "Server info scan found server: {}",
+                    server_info["name"].as_str().unwrap_or("Unknown")
+                );
                 Ok((server_info, 1))
             }
         }
@@ -363,7 +431,11 @@ pub struct CapabilityResult {
 }
 
 impl CapabilityResult {
-    pub fn success(capability_name: String, data: serde_json::Value, execution_time_ms: u64) -> Self {
+    pub fn success(
+        capability_name: String,
+        data: serde_json::Value,
+        execution_time_ms: u64,
+    ) -> Self {
         Self {
             capability_name,
             success: true,
@@ -413,8 +485,6 @@ impl CapabilityChain {
         self
     }
 
-
-
     pub fn with_default_capabilities() -> Self {
         Self::new()
             .add_capability(ScanCapability::server_info_scan())
@@ -424,76 +494,131 @@ impl CapabilityChain {
     }
 
     // Optimized execution with parallel support
-    pub async fn execute(&self, scanner: &MCPScanner, url: &str, options: &ScanOptions, session: &MCPSession, transport_type: &TransportType) -> Vec<CapabilityResult> {
+    pub async fn execute(
+        &self,
+        scanner: &MCPScanner,
+        url: &str,
+        options: &ScanOptions,
+        session: &MCPSession,
+        transport_type: &TransportType,
+    ) -> Vec<CapabilityResult> {
         if self.parallel_execution {
-            self.execute_parallel(scanner, url, options, session, transport_type).await
+            self.execute_parallel(scanner, url, options, session, transport_type)
+                .await
         } else {
-            self.execute_sequential(scanner, url, options, session, transport_type).await
+            self.execute_sequential(scanner, url, options, session, transport_type)
+                .await
         }
     }
 
     // Sequential execution (original behavior)
-    async fn execute_sequential(&self, scanner: &MCPScanner, url: &str, options: &ScanOptions, session: &MCPSession, transport_type: &TransportType) -> Vec<CapabilityResult> {
+    async fn execute_sequential(
+        &self,
+        scanner: &MCPScanner,
+        url: &str,
+        options: &ScanOptions,
+        session: &MCPSession,
+        transport_type: &TransportType,
+    ) -> Vec<CapabilityResult> {
         let mut results = Vec::with_capacity(self.capabilities.len());
-        
+
         for capability in &self.capabilities {
-            info!("Executing capability: [\x1b[1m{}\x1b[0m]", capability.name());
-            match capability.execute(scanner, url, options, session, transport_type).await {
+            info!(
+                "Executing capability: [\x1b[1m{}\x1b[0m]",
+                capability.name()
+            );
+            match capability
+                .execute(scanner, url, options, session, transport_type)
+                .await
+            {
                 Ok(result) => {
                     let result_clone = result.clone();
                     results.push(result);
                     if !result_clone.success {
-                        warn!("Capability [\x1b[1m{}\x1b[0m] failed: {:?}", capability.name(), result_clone.error);
+                        warn!(
+                            "Capability [\x1b[1m{}\x1b[0m] failed: {:?}",
+                            capability.name(),
+                            result_clone.error
+                        );
                     }
                 }
                 Err(e) => {
                     let failure_result = CapabilityResult::failure(
                         capability.name().to_string(),
                         e.to_string(),
-                        0 // Execution time not available in error case
+                        0, // Execution time not available in error case
                     );
                     results.push(failure_result);
-                    warn!("Capability [\x1b[1m{}\x1b[0m] failed with error: {}", capability.name(), e);
+                    warn!(
+                        "Capability [\x1b[1m{}\x1b[0m] failed with error: {}",
+                        capability.name(),
+                        e
+                    );
                 }
             }
         }
-        
+
         results
     }
 
     // Parallel execution for better performance
-    async fn execute_parallel(&self, scanner: &MCPScanner, url: &str, options: &ScanOptions, session: &MCPSession, transport_type: &TransportType) -> Vec<CapabilityResult> {
+    async fn execute_parallel(
+        &self,
+        scanner: &MCPScanner,
+        url: &str,
+        options: &ScanOptions,
+        session: &MCPSession,
+        transport_type: &TransportType,
+    ) -> Vec<CapabilityResult> {
         use futures_util::future::join_all;
-        
-        let futures: Vec<_> = self.capabilities.iter().map(|capability| {
-            let scanner = scanner.clone();
-            let url = url.to_string();
-            let options = options.clone();
-            let session = session.clone();
-            let capability = capability.clone();
-            let transport_type = transport_type.clone();
-            
-            async move {
-                info!("Executing capability: [\x1b[1m{}\x1b[0m]", capability.name());
-                match capability.execute(&scanner, &url, &options, &session, &transport_type).await {
-                    Ok(result) => {
-                        if !result.success {
-                            warn!("Capability [\x1b[1m{}\x1b[0m] failed: {:?}", capability.name(), result.error);
+
+        let futures: Vec<_> = self
+            .capabilities
+            .iter()
+            .map(|capability| {
+                let scanner = scanner.clone();
+                let url = url.to_string();
+                let options = options.clone();
+                let session = session.clone();
+                let capability = capability.clone();
+                let transport_type = transport_type.clone();
+
+                async move {
+                    info!(
+                        "Executing capability: [\x1b[1m{}\x1b[0m]",
+                        capability.name()
+                    );
+                    match capability
+                        .execute(&scanner, &url, &options, &session, &transport_type)
+                        .await
+                    {
+                        Ok(result) => {
+                            if !result.success {
+                                warn!(
+                                    "Capability [\x1b[1m{}\x1b[0m] failed: {:?}",
+                                    capability.name(),
+                                    result.error
+                                );
+                            }
+                            result
                         }
-                        result
-                    }
-                    Err(e) => {
-                        let failure_result = CapabilityResult::failure(
-                            capability.name().to_string(),
-                            e.to_string(),
-                            0
-                        );
-                        warn!("Capability [\x1b[1m{}\x1b[0m] failed with error: {}", capability.name(), e);
-                        failure_result
+                        Err(e) => {
+                            let failure_result = CapabilityResult::failure(
+                                capability.name().to_string(),
+                                e.to_string(),
+                                0,
+                            );
+                            warn!(
+                                "Capability [\x1b[1m{}\x1b[0m] failed with error: {}",
+                                capability.name(),
+                                e
+                            );
+                            failure_result
+                        }
                     }
                 }
-            }
-        }).collect();
+            })
+            .collect();
 
         join_all(futures).await
     }
@@ -515,8 +640,8 @@ impl MCPScanner {
             .user_agent("rampart/0.2.0")
             .build()
             .unwrap_or_default();
-        Self { 
-            client, 
+        Self {
+            client,
             http_timeout,
             capability_chain: CapabilityChain::with_default_capabilities(),
         }
@@ -533,10 +658,7 @@ impl MCPScanner {
         info!("Detected transport type: {:?}", transport_type);
 
         // Normalize URL with error context
-        let normalized_url = error_utils::wrap_error(
-            self.normalize_url(url),
-            "URL normalization"
-        )?;
+        let normalized_url = error_utils::wrap_error(self.normalize_url(url), "URL normalization")?;
         result.url = normalized_url.clone();
 
         // Perform the scan with performance tracking
@@ -546,7 +668,8 @@ impl MCPScanner {
                 Ok(result) => result,
                 Err(_) => Err(anyhow!("Scan operation timed out")),
             }
-        }).await;
+        })
+        .await;
 
         match scan_result {
             Ok(scan_data) => {
@@ -555,11 +678,11 @@ impl MCPScanner {
                 result.tools = scan_data.tools.clone();
                 result.resources = scan_data.resources.clone();
                 result.prompts = scan_data.prompts.clone();
-                
+
                 // Load scanner configuration
                 let config_manager = crate::config::ScannerConfigManager::new();
                 let scanner_config = config_manager.load_config().unwrap_or_default();
-                
+
                 // Perform security scanning with configuration
                 let security_scanner = if scanner_config.security.enabled {
                     SecurityScanner::with_config(scanner_config)
@@ -570,20 +693,26 @@ impl MCPScanner {
 
                 // Always perform the security scan (no enhanced/standard distinction)
                 // Batch scan tools for security issues
-                match security_scanner.scan_tools_batch(&scan_data.tools, options.detailed).await {
+                match security_scanner
+                    .scan_tools_batch(&scan_data.tools, options.detailed)
+                    .await
+                {
                     Ok((tool_issues, analysis_details)) => {
                         security_result.add_tool_issues(tool_issues);
                         // Store the analysis details for each tool
                         for (tool_name, details) in analysis_details {
                             security_result.add_tool_analysis_details(tool_name, details);
                         }
-                    },
+                    }
                     Err(e) => warn!("Failed to batch scan tools for security issues: {}", e),
                 }
 
                 // Batch scan prompts for security issues
                 if !scan_data.prompts.is_empty() {
-                    match security_scanner.scan_prompts_batch(&scan_data.prompts, options.detailed).await {
+                    match security_scanner
+                        .scan_prompts_batch(&scan_data.prompts, options.detailed)
+                        .await
+                    {
                         Ok(prompt_issues) => security_result.add_prompt_issues(prompt_issues),
                         Err(e) => warn!("Failed to batch scan prompts for security issues: {}", e),
                     }
@@ -591,19 +720,30 @@ impl MCPScanner {
 
                 // Batch scan resources for security issues
                 if !scan_data.resources.is_empty() {
-                    match security_scanner.scan_resources_batch(&scan_data.resources, options.detailed).await {
+                    match security_scanner
+                        .scan_resources_batch(&scan_data.resources, options.detailed)
+                        .await
+                    {
                         Ok(resource_issues) => security_result.add_resource_issues(resource_issues),
-                        Err(e) => warn!("Failed to batch scan resources for security issues: {}", e),
+                        Err(e) => {
+                            warn!("Failed to batch scan resources for security issues: {}", e)
+                        }
                     }
                 }
 
                 result.security_issues = Some(security_result);
                 result.response_time_ms = Timer::start().elapsed_ms(); // Track actual scan time
-                info!("Scan completed successfully in [\x1b[1m{}\x1b[0m]ms", result.response_time_ms);
+                info!(
+                    "Scan completed successfully in [\x1b[1m{}\x1b[0m]ms",
+                    result.response_time_ms
+                );
             }
             Err(e) => {
                 result.status = ScanStatus::Failed(e.to_string());
-                result.add_error(error_utils::create_error_msg("Scan operation", &e.to_string()));
+                result.add_error(error_utils::create_error_msg(
+                    "Scan operation",
+                    &e.to_string(),
+                ));
                 warn!("Scan failed: [\x1b[1m{}\x1b[0m]", e);
             }
         }
@@ -614,25 +754,30 @@ impl MCPScanner {
     // Scan MCP servers from IDE configuration files
     pub async fn scan_from_config(&self, options: ScanOptions) -> Result<Vec<ScanResult>> {
         let config_manager = MCPConfigManager::new();
-        
+
         if !config_manager.has_config_files() {
             return Err(anyhow!("No MCP IDE configuration files found"));
         }
-        
+
         let config = config_manager.load_config()?;
         let mut results = Vec::new();
-        
+
         if let Some(servers) = config.servers {
-            info!("Found [\x1b[1m{}\x1b[0m] MCP servers in IDE configuration files", servers.len());
-            
+            info!(
+                "Found [\x1b[1m{}\x1b[0m] MCP servers in IDE configuration files",
+                servers.len()
+            );
+
             for server in servers {
-                info!("Scanning MCP server from IDE config: [\x1b[1m{}\x1b[0m] ({})", 
-                    server.name.as_deref().unwrap_or("unnamed"), 
-                    server.url);
-                
+                info!(
+                    "Scanning MCP server from IDE config: [\x1b[1m{}\x1b[0m] ({})",
+                    server.name.as_deref().unwrap_or("unnamed"),
+                    server.url
+                );
+
                 // Merge server-specific options with global options
                 let mut server_options = options.clone();
-                
+
                 // Apply global options from config
                 if let Some(global_options) = &config.options {
                     if let Some(timeout) = global_options.timeout {
@@ -648,7 +793,7 @@ impl MCPScanner {
                         server_options.detailed = detailed;
                     }
                 }
-                
+
                 // Apply server-specific options
                 if let Some(server_specific_options) = &server.options {
                     if let Some(timeout) = server_specific_options.timeout {
@@ -664,10 +809,10 @@ impl MCPScanner {
                         server_options.detailed = detailed;
                     }
                 }
-                
+
                 // Merge authentication headers
                 let mut auth_headers = options.auth_headers.clone();
-                
+
                 // Add global auth headers
                 if let Some(global_auth_headers) = &config.auth_headers {
                     match &mut auth_headers {
@@ -681,7 +826,7 @@ impl MCPScanner {
                         }
                     }
                 }
-                
+
                 // Add server-specific auth headers
                 if let Some(server_auth_headers) = &server.auth_headers {
                     match &mut auth_headers {
@@ -695,16 +840,19 @@ impl MCPScanner {
                         }
                     }
                 }
-                
+
                 server_options.auth_headers = auth_headers;
-                
+
                 // Scan the MCP server
                 match self.scan_single(&server.url, server_options).await {
                     Ok(result) => {
                         results.push(result);
                     }
                     Err(e) => {
-                        warn!("Failed to scan MCP server [\x1b[1m{}\x1b[0m]: {}", server.url, e);
+                        warn!(
+                            "Failed to scan MCP server [\x1b[1m{}\x1b[0m]: {}",
+                            server.url, e
+                        );
                         let mut failed_result = ScanResult::new(server.url.clone());
                         failed_result.status = ScanStatus::Failed(e.to_string());
                         failed_result.add_error(format!("IDE config scan failed: {}", e));
@@ -715,27 +863,39 @@ impl MCPScanner {
         } else {
             warn!("No MCP servers found in IDE configuration files");
         }
-        
+
         Ok(results)
     }
 
     // Perform the scan
-    async fn perform_scan(&self, url: &str, options: &ScanOptions, transport_type: &TransportType) -> Result<ScanData> {
+    async fn perform_scan(
+        &self,
+        url: &str,
+        options: &ScanOptions,
+        transport_type: &TransportType,
+    ) -> Result<ScanData> {
         let mut scan_data = ScanData::new();
 
         // Initialize MCP client session
-        let session = self.initialize_mcp_session(url, options, transport_type).await?;
-        
+        let session = self
+            .initialize_mcp_session(url, options, transport_type)
+            .await?;
+
         // Get server info from initialization
         if let Some(ref server_info) = session.server_info {
             scan_data.server_info = Some(server_info.clone());
         }
 
         // Execute capability chain
-        let capability_results = self.capability_chain.execute(self, url, options, &session, transport_type).await;
-        
+        let capability_results = self
+            .capability_chain
+            .execute(self, url, options, &session, transport_type)
+            .await;
+
         // Process capability results using trait
-        let mut processor = ScanDataProcessor { scan_data: &mut scan_data };
+        let mut processor = ScanDataProcessor {
+            scan_data: &mut scan_data,
+        };
         for result in capability_results {
             if result.success {
                 match result.capability_name.as_str() {
@@ -749,25 +909,38 @@ impl MCPScanner {
                         let _ = processor.process_prompt_scan(result.data.unwrap());
                     }
                     _ => {
-                        info!("Unknown capability result: [\x1b[1m{}\x1b[0m]", result.capability_name);
+                        info!(
+                            "Unknown capability result: [\x1b[1m{}\x1b[0m]",
+                            result.capability_name
+                        );
                     }
                 }
             } else {
-                warn!("Capability [\x1b[1m{}\x1b[0m] failed: {:?}", result.capability_name, result.error);
+                warn!(
+                    "Capability [\x1b[1m{}\x1b[0m] failed: {:?}",
+                    result.capability_name, result.error
+                );
             }
         }
 
         // Send shutdown notification
-        let _ = self.shutdown_session(url, &session, options, transport_type).await;
+        let _ = self
+            .shutdown_session(url, &session, options, transport_type)
+            .await;
 
         Ok(scan_data)
     }
 
     // Initialize an MCP session
-    async fn initialize_mcp_session(&self, url: &str, options: &ScanOptions, transport_type: &TransportType) -> Result<MCPSession> {
+    async fn initialize_mcp_session(
+        &self,
+        url: &str,
+        options: &ScanOptions,
+        transport_type: &TransportType,
+    ) -> Result<MCPSession> {
         // Try different protocol versions for compatibility, prioritizing latest
         let protocol_versions = ["2025-06-18", "2024-11-05", "2024-11-01", "2024-10-01"];
-        
+
         for protocol_version in protocol_versions {
             let request = json!({
                 "jsonrpc": "2.0",
@@ -787,16 +960,36 @@ impl MCPScanner {
                 }
             });
 
-            match self.send_jsonrpc_request_with_headers_and_session(url, request, options, transport_type, None).await {
+            match self
+                .send_jsonrpc_request_with_headers_and_session(
+                    url,
+                    request,
+                    options,
+                    transport_type,
+                    None,
+                )
+                .await
+            {
                 Ok((response, session_id)) => {
                     // Use utility function for debug logging
-                    debug!("Initialize response: [\x1b[1m{}\x1b[0m]", serde_json::to_string_pretty(&response).unwrap_or_default());
-                    
+                    debug!(
+                        "Initialize response: [\x1b[1m{}\x1b[0m]",
+                        serde_json::to_string_pretty(&response).unwrap_or_default()
+                    );
+
                     // Parse server info from response
                     let server_info = MCPServerInfo {
-                        name: response["result"]["serverInfo"]["name"].as_str().unwrap_or("Unknown").to_string(),
-                        version: response["result"]["serverInfo"]["version"].as_str().unwrap_or("Unknown").to_string(),
-                        description: response["result"]["serverInfo"]["description"].as_str().map(|s| s.to_string()),
+                        name: response["result"]["serverInfo"]["name"]
+                            .as_str()
+                            .unwrap_or("Unknown")
+                            .to_string(),
+                        version: response["result"]["serverInfo"]["version"]
+                            .as_str()
+                            .unwrap_or("Unknown")
+                            .to_string(),
+                        description: response["result"]["serverInfo"]["description"]
+                            .as_str()
+                            .map(|s| s.to_string()),
                         capabilities: self.extract_capabilities(&response),
                         metadata: HashMap::new(),
                     };
@@ -807,12 +1000,15 @@ impl MCPScanner {
                     });
                 }
                 Err(e) => {
-                    warn!("Failed to initialize with protocol version [\x1b[1m{}\x1b[0m]: {}", protocol_version, e);
+                    warn!(
+                        "Failed to initialize with protocol version [\x1b[1m{}\x1b[0m]: {}",
+                        protocol_version, e
+                    );
                     continue;
                 }
             }
         }
-        
+
         // Try a simpler initialize request without capabilities
         let simple_request = json!({
             "jsonrpc": "2.0",
@@ -827,14 +1023,34 @@ impl MCPScanner {
             }
         });
 
-        match self.send_jsonrpc_request_with_headers_and_session(url, simple_request, options, transport_type, None).await {
+        match self
+            .send_jsonrpc_request_with_headers_and_session(
+                url,
+                simple_request,
+                options,
+                transport_type,
+                None,
+            )
+            .await
+        {
             Ok((response, session_id)) => {
-                debug!("Simple initialize response: [\x1b[1m{}\x1b[0m]", serde_json::to_string_pretty(&response).unwrap_or_default());
-                
+                debug!(
+                    "Simple initialize response: [\x1b[1m{}\x1b[0m]",
+                    serde_json::to_string_pretty(&response).unwrap_or_default()
+                );
+
                 let server_info = MCPServerInfo {
-                    name: response["result"]["serverInfo"]["name"].as_str().unwrap_or("Unknown").to_string(),
-                    version: response["result"]["serverInfo"]["version"].as_str().unwrap_or("Unknown").to_string(),
-                    description: response["result"]["serverInfo"]["description"].as_str().map(|s| s.to_string()),
+                    name: response["result"]["serverInfo"]["name"]
+                        .as_str()
+                        .unwrap_or("Unknown")
+                        .to_string(),
+                    version: response["result"]["serverInfo"]["version"]
+                        .as_str()
+                        .unwrap_or("Unknown")
+                        .to_string(),
+                    description: response["result"]["serverInfo"]["description"]
+                        .as_str()
+                        .map(|s| s.to_string()),
                     capabilities: self.extract_capabilities(&response),
                     metadata: HashMap::new(),
                 };
@@ -845,15 +1061,26 @@ impl MCPScanner {
                 });
             }
             Err(e) => {
-                warn!("Failed to initialize with simple request: [\x1b[1m{}\x1b[0m]", e);
+                warn!(
+                    "Failed to initialize with simple request: [\x1b[1m{}\x1b[0m]",
+                    e
+                );
             }
         }
-        
-        Err(anyhow!("Failed to initialize MCP session with any protocol version"))
+
+        Err(anyhow!(
+            "Failed to initialize MCP session with any protocol version"
+        ))
     }
 
     // Send a shutdown notification to the MCP server
-    async fn shutdown_session(&self, url: &str, session: &MCPSession, options: &ScanOptions, transport_type: &TransportType) -> Result<()> {
+    async fn shutdown_session(
+        &self,
+        url: &str,
+        session: &MCPSession,
+        options: &ScanOptions,
+        transport_type: &TransportType,
+    ) -> Result<()> {
         let request = json!({
             "jsonrpc": "2.0",
             "id": 4,
@@ -862,56 +1089,86 @@ impl MCPScanner {
         });
 
         // We don't care about the response for shutdown
-        let _ = self.send_jsonrpc_request_with_headers_and_session(url, request, options, transport_type, session.session_id.clone()).await;
+        let _ = self
+            .send_jsonrpc_request_with_headers_and_session(
+                url,
+                request,
+                options,
+                transport_type,
+                session.session_id.clone(),
+            )
+            .await;
         Ok(())
     }
 
-
-
     // Send a JSON-RPC request with session ID support
-    async fn send_jsonrpc_request_with_headers_and_session(&self, url: &str, request: Value, options: &ScanOptions, transport_type: &TransportType, session_id: Option<String>) -> Result<(Value, Option<String>)> {
+    async fn send_jsonrpc_request_with_headers_and_session(
+        &self,
+        url: &str,
+        request: Value,
+        options: &ScanOptions,
+        transport_type: &TransportType,
+        session_id: Option<String>,
+    ) -> Result<(Value, Option<String>)> {
         match transport_type {
             TransportType::Http => {
                 retry_with_backoff(
                     || async {
                         // Debug: Log the exact request being sent
-                        tracing::debug!("Sending JSON-RPC request to [\x1b[1m{}\x1b[0m]: {}", url, serde_json::to_string_pretty(&request).unwrap_or_default());
-                        
-                        let mut req = self.client
+                        tracing::debug!(
+                            "Sending JSON-RPC request to [\x1b[1m{}\x1b[0m]: {}",
+                            url,
+                            serde_json::to_string_pretty(&request).unwrap_or_default()
+                        );
+
+                        let mut req = self
+                            .client
                             .post(url)
                             .header("Content-Type", "application/json")
                             .header("Accept", "application/json, text/event-stream")
                             .header("User-Agent", "rampart/0.2.0")
                             .header("MCP-Protocol-Version", "2025-06-18")
                             .json(&request);
-                        
+
                         // Add session ID header if provided
                         if let Some(ref session_id) = session_id {
                             req = req.header("Mcp-Session-Id", session_id);
-                            tracing::debug!("Adding session header: Mcp-Session-Id: [\x1b[1m{}\x1b[0m]", session_id);
+                            tracing::debug!(
+                                "Adding session header: Mcp-Session-Id: [\x1b[1m{}\x1b[0m]",
+                                session_id
+                            );
                         }
-                        
+
                         // Add authentication headers if provided
                         if let Some(ref auth_headers) = options.auth_headers {
                             for (key, value) in auth_headers {
                                 req = req.header(key, value);
-                                tracing::debug!("Adding auth header: [\x1b[1m{}\x1b[0m]: {}", key, if key.to_lowercase().contains("bearer") { "[REDACTED]" } else { value });
+                                tracing::debug!(
+                                    "Adding auth header: [\x1b[1m{}\x1b[0m]: {}",
+                                    key,
+                                    if key.to_lowercase().contains("bearer") {
+                                        "[REDACTED]"
+                                    } else {
+                                        value
+                                    }
+                                );
                             }
                         }
-                        
+
                         let response = req.send().await?;
-                        
+
                         // Debug: Log response status and headers
                         let status = response.status();
                         tracing::debug!("Response status: [\x1b[1m{}\x1b[0m]", status);
                         tracing::debug!("Response headers: {:?}", response.headers());
-                        
+
                         // Extract session ID from response headers
-                        let response_session_id = response.headers()
+                        let response_session_id = response
+                            .headers()
                             .get("mcp-session-id")
                             .and_then(|h| h.to_str().ok())
                             .map(|s| s.to_string());
-                        
+
                         // Check for SSE/streaming response
                         if let Some(content_type) = response.headers().get("content-type") {
                             let content_type_str = content_type.to_str().unwrap_or("");
@@ -920,52 +1177,64 @@ impl MCPScanner {
                                 return Ok((response_json, response_session_id));
                             }
                         }
-                        
+
                         let response_body = response.text().await.unwrap_or_default();
-                        
+
                         if !status.is_success() {
                             // Debug: Log the response body for error cases
-                            tracing::debug!("Error response body: [\x1b[1m{}\x1b[0m]", response_body);
-                            return Err(anyhow!("HTTP request returned status: {} - Body: {}", status, response_body));
+                            tracing::debug!(
+                                "Error response body: [\x1b[1m{}\x1b[0m]",
+                                response_body
+                            );
+                            return Err(anyhow!(
+                                "HTTP request returned status: {} - Body: {}",
+                                status,
+                                response_body
+                            ));
                         }
-                        
+
                         let response_json: Value = serde_json::from_str(&response_body)
                             .map_err(|e| anyhow!("Failed to parse JSON response: {}", e))?;
-                        
+
                         // Debug: Log the response
-                        tracing::debug!("JSON-RPC response: {}", serde_json::to_string_pretty(&response_json).unwrap_or_default());
-                        
+                        tracing::debug!(
+                            "JSON-RPC response: {}",
+                            serde_json::to_string_pretty(&response_json).unwrap_or_default()
+                        );
+
                         if let Some(error) = response_json.get("error") {
                             return Err(anyhow!("JSON-RPC error: {}", error));
                         }
-                        
+
                         Ok((response_json, response_session_id))
                     },
-                    3, // max_retries
+                    3,   // max_retries
                     500, // initial_delay_ms
-                ).await
-            },
+                )
+                .await
+            }
             TransportType::Stdio => {
                 // Handle STDIO transport
                 let mut stdio_transport = STDIOTransport::from_stdio_url(url)?;
                 stdio_transport.start().await?;
-                
+
                 // Send request via STDIO
                 let response = stdio_transport.send_request(request).await?;
-                
+
                 // STDIO doesn't support session IDs in the same way as HTTP
                 // but we can extract from response if available
-                let response_session_id = response.get("session_id")
+                let response_session_id = response
+                    .get("session_id")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                
+
                 // Clean up STDIO transport
                 let _ = stdio_transport.shutdown().await;
-                
+
                 if let Some(error) = response.get("error") {
                     return Err(anyhow!("JSON-RPC error from STDIO: {}", error));
                 }
-                
+
                 Ok((response, response_session_id))
             }
         }
@@ -974,18 +1243,18 @@ impl MCPScanner {
     // Handle an SSE response
     async fn handle_sse_response(&self, response: reqwest::Response) -> Result<Value> {
         use futures_util::StreamExt;
-        
+
         info!("Detected SSE response, parsing stream...");
-        
+
         let mut stream = response.bytes_stream();
         let mut buffer = String::new();
         let mut json_response = None;
-        
+
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| anyhow!("Failed to read SSE chunk: {}", e))?;
             let chunk_str = String::from_utf8_lossy(&chunk);
             buffer.push_str(&chunk_str);
-            
+
             // Parse SSE format: "data: {json}\n\n"
             for line in buffer.lines() {
                 if let Some(json_str) = line.strip_prefix("data: ") {
@@ -1002,13 +1271,13 @@ impl MCPScanner {
                     }
                 }
             }
-            
+
             // If we found a valid JSON response, break
             if json_response.is_some() {
                 break;
             }
         }
-        
+
         match json_response {
             Some(json) => {
                 if let Some(error) = json.get("error") {
@@ -1016,14 +1285,14 @@ impl MCPScanner {
                 }
                 Ok(json)
             }
-            None => Err(anyhow!("No valid JSON-RPC response found in SSE stream"))
+            None => Err(anyhow!("No valid JSON-RPC response found in SSE stream")),
         }
     }
 
     // Extract capabilities from the response
     fn extract_capabilities(&self, response: &Value) -> Vec<String> {
         let mut capabilities = Vec::new();
-        
+
         if let Some(caps) = response["result"]["capabilities"].as_object() {
             for (capability, _) in caps {
                 capabilities.push(capability.clone());
@@ -1036,22 +1305,21 @@ impl MCPScanner {
     // Normalize a URL
     fn normalize_url(&self, url: &str) -> Result<String> {
         let transport_type = TransportType::from_url(url);
-        
+
         match transport_type {
             TransportType::Http => {
                 let mut url = url.to_string();
-                
+
                 // Add http:// if no scheme is provided
                 if !url.contains("://") {
                     url = format!("http://{}", url);
                 }
 
                 // Validate URL
-                Url::parse(&url)
-                    .map_err(|e| anyhow!("Invalid URL: {}", e))?;
+                Url::parse(&url).map_err(|e| anyhow!("Invalid URL: {}", e))?;
 
                 Ok(url)
-            },
+            }
             TransportType::Stdio => {
                 // For STDIO, just return the command as-is
                 // Remove stdio:// prefix if present
@@ -1060,23 +1328,23 @@ impl MCPScanner {
                 } else {
                     url.to_string()
                 };
-                
+
                 // Validate that the command exists or is executable
                 let parts: Vec<&str> = normalized.split_whitespace().collect();
                 if parts.is_empty() {
                     return Err(anyhow!("Empty STDIO command"));
                 }
-                
+
                 let command = parts[0];
                 if !Path::new(command).exists() && !self.is_executable(command) {
                     warn!("STDIO command may not exist or be executable: {}", command);
                 }
-                
+
                 Ok(normalized)
             }
         }
     }
-    
+
     // Check if a command is executable (basic check)
     fn is_executable(&self, command: &str) -> bool {
         // Check if it's in PATH
@@ -1088,12 +1356,12 @@ impl MCPScanner {
                 }
             }
         }
-        
+
         // Check if it's an absolute path and exists
         if Path::new(command).exists() {
             return true;
         }
-        
+
         false
     }
 }
@@ -1156,4 +1424,4 @@ impl ScanData {
             prompts: Vec::new(),
         }
     }
-} 
+}

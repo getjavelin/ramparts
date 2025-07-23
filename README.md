@@ -390,6 +390,59 @@ chmod +x $(which rampart)
 rampart init-config
 ```
 
+## Contributors
+
+<div align="center">
+
+### Thanks to all our contributors! 🎉
+
+<a href="https://github.com/getjavelin/rampart/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=getjavelin/rampart" alt="Contributors" />
+</a>
+
+*Contributors are automatically generated from [contrib.rocks](https://contrib.rocks).*
+
+</div>
+
+### How to Contribute
+
+We welcome contributions to Rampart! Here are some ways you can help:
+
+- **🐛 Report bugs** - Open an issue with detailed reproduction steps
+- **💡 Suggest features** - Share your ideas for improvements
+- **📝 Improve documentation** - Help make the docs clearer
+- **🔧 Submit pull requests** - Fix bugs or add new features
+- **⭐ Star the repository** - Show your support
+
+### Getting Started
+
+1. **Fork the repository**
+2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
+3. **Make your changes** and add tests
+4. **Commit your changes**: `git commit -m 'Add amazing feature'`
+5. **Push to the branch**: `git push origin feature/amazing-feature`
+6. **Open a Pull Request**
+
+### Development Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/getjavelin/rampart.git
+cd rampart
+
+# Install dependencies
+cargo build
+
+# Run tests
+cargo test
+
+# Run linter
+cargo clippy
+
+# Format code
+cargo fmt
+```
+
 ## Why Rust?
 
 The Rampart mcp scanner is implemented in Rust to prioritize performance, reliability, and broad portability. Rust offers native execution speed with minimal memory overhead, making it well-suited for analyzing large prompt contexts, tool manifests, or server topologies—without the need for a heavyweight runtime. Rampart was built with a view of operating in CI pipelines, agent sandboxes, or constrained edge environments which made the ability to compile to a single, compact binary essential.
