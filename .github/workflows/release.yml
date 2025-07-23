@@ -161,7 +161,8 @@ jobs:
           asset_content_type: text/plain
 
   javelin-crate:
-    name: Deploy to Crates.io
+    needs:
+      - javelin-artifact
     permissions:
       contents: 'read'
     runs-on: ubuntu-24.04
