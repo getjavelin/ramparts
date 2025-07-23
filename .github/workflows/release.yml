@@ -60,7 +60,7 @@ jobs:
     strategy:
       matrix:
         target: [ ubuntu-24.04, windows-2022, macOS-15 ]
-      runs-on: ${{ matrix.target }}
+    runs-on: ${{ matrix.target }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
