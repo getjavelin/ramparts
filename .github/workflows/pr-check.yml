@@ -42,6 +42,14 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install yara
+          # Set environment variables for yara-sys
+          echo "YARA_LIBRARY_PATH=/opt/homebrew/lib" >> $GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-I/opt/homebrew/include" >> $GITHUB_ENV
+          # Also set for Intel Macs
+          if [ -d "/usr/local/lib" ]; then
+            echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
+            echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
+          fi
 
       - name: Install YARA (Windows)
         if: runner.os == 'Windows'
@@ -103,6 +111,14 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install yara
+          # Set environment variables for yara-sys
+          echo "YARA_LIBRARY_PATH=/opt/homebrew/lib" >> $GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-I/opt/homebrew/include" >> $GITHUB_ENV
+          # Also set for Intel Macs
+          if [ -d "/usr/local/lib" ]; then
+            echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
+            echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
+          fi
 
       - name: Install YARA (Windows)
         if: runner.os == 'Windows'
@@ -172,6 +188,14 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install yara
+          # Set environment variables for yara-sys
+          echo "YARA_LIBRARY_PATH=/opt/homebrew/lib" >> $GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-I/opt/homebrew/include" >> $GITHUB_ENV
+          # Also set for Intel Macs
+          if [ -d "/usr/local/lib" ]; then
+            echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
+            echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
+          fi
 
       - name: Install YARA (Windows)
         if: runner.os == 'Windows'
@@ -223,6 +247,14 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install yara
+          # Set environment variables for yara-sys
+          echo "YARA_LIBRARY_PATH=/opt/homebrew/lib" >> $GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-I/opt/homebrew/include" >> $GITHUB_ENV
+          # Also set for Intel Macs
+          if [ -d "/usr/local/lib" ]; then
+            echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
+            echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
+          fi
 
       - name: Install YARA (Windows)
         if: runner.os == 'Windows'

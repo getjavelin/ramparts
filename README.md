@@ -141,6 +141,24 @@ sudo make install
 yara --version
 ```
 
+#### Automated Setup Script
+
+For easier setup, you can use our automated setup script:
+
+```bash
+# Make the script executable
+chmod +x scripts/setup_yara.sh
+
+# Run the setup script
+./scripts/setup_yara.sh
+```
+
+This script will:
+- Detect your operating system
+- Install YARA via the appropriate package manager
+- Set up environment variables for development
+- Test the installation and compilation
+
 #### Alternative: Install Without YARA
 
 If you prefer to skip YARA installation, you can install Ramparts without YARA support:
@@ -198,6 +216,50 @@ cargo install --path . --no-default-features
 ```
 
 > **Note**: If you have YARA installed but want to disable it temporarily, you can control this via configuration (see Configuration section below).
+
+### Troubleshooting YARA Issues
+
+If you encounter build errors related to YARA, try these solutions:
+
+#### macOS Issues
+
+**Error: `'yara.h' file not found`**
+```bash
+# Set environment variables manually
+export YARA_LIBRARY_PATH="/opt/homebrew/lib"  # Apple Silicon
+export YARA_LIBRARY_PATH="/usr/local/lib"     # Intel Mac
+export BINDGEN_EXTRA_CLANG_ARGS="-I/opt/homebrew/include"  # Apple Silicon
+export BINDGEN_EXTRA_CLANG_ARGS="-I/usr/local/include"     # Intel Mac
+
+# Then rebuild
+cargo clean && cargo build
+```
+
+**Error: `dyld: Library not loaded`**
+```bash
+# Reinstall YARA and rebuild
+brew uninstall yara && brew install yara
+cargo clean && cargo build
+```
+
+#### Linux Issues
+
+**Error: `yara.h: No such file or directory`**
+```bash
+# Install development headers
+sudo apt-get install libyara-dev  # Ubuntu/Debian
+sudo yum install yara-devel       # CentOS/RHEL
+
+# Then rebuild
+cargo clean && cargo build
+```
+
+#### General Issues
+
+If you continue to have problems, you can temporarily disable YARA:
+```bash
+cargo install ramparts --no-default-features
+```
 
 ### Basic Usage
 
