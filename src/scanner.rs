@@ -553,6 +553,8 @@ impl DynamicYaraScanner {
         RuleStats {
             pre_scan_count: self.pre_scan_rules.len(),
             post_scan_count: self.post_scan_rules.len(),
+            pre_scan_rules: Vec::new(), // Empty for memory stats - not needed for this use case
+            post_scan_rules: Vec::new(), // Empty for memory stats - not needed for this use case
             pre_scan_tags: HashMap::new(), // Empty for now - could be populated with actual tag counts
             post_scan_tags: HashMap::new(), // Empty for now - could be populated with actual tag counts
         }
@@ -571,24 +573,32 @@ impl DynamicYaraScanner {
         for entry in glob(&pattern).map_err(|e| anyhow!("Glob error: {}", e))? {
             match entry {
                 Ok(path) => {
-                    match Rules::load_from_file(path.to_str().unwrap()) {
-                        Ok(rule) => {
-                            let rule_name = path
-                                .file_stem()
-                                .and_then(|s| s.to_str())
-                                .unwrap_or("unknown")
-                                .to_string();
+                    // Safely convert path to string, skipping files with non-UTF8 characters
+                    if let Some(path_str) = path.to_str() {
+                        match Rules::load_from_file(path_str) {
+                            Ok(rule) => {
+                                let rule_name = path
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("unknown")
+                                    .to_string();
 
-                            debug!("Loaded YARA rule: {} (phase: {})", path.display(), phase);
+                                debug!("Loaded YARA rule: {} (phase: {})", path.display(), phase);
 
-                            // Load metadata if available
-                            let metadata = self.load_rule_metadata(&path);
-                            let metadata_key = format!("{phase}:{rule_name}");
-                            self.rule_metadata.insert(metadata_key, metadata);
+                                // Load metadata if available
+                                let metadata = self.load_rule_metadata(&path);
+                                let metadata_key = format!("{phase}:{rule_name}");
+                                self.rule_metadata.insert(metadata_key, metadata);
 
-                            rules.push(Arc::new(rule));
+                                rules.push(Arc::new(rule));
+                            }
+                            Err(e) => warn!("Failed to load rule {}: {}", path.display(), e),
                         }
-                        Err(e) => warn!("Failed to load rule {}: {}", path.display(), e),
+                    } else {
+                        warn!(
+                            "Skipping rule file with non-UTF8 characters: {}",
+                            path.display()
+                        );
                     }
                 }
                 Err(e) => warn!("Failed to read rule file: {}", e),
@@ -788,19 +798,23 @@ impl DynamicYaraScanner {
     pub fn get_rule_stats(&self) -> RuleStats {
         let mut pre_scan_tags = HashMap::new();
         let mut post_scan_tags = HashMap::new();
+        let mut pre_scan_rules = Vec::new();
+        let mut post_scan_rules = Vec::new();
 
-        // Count tags for pre-scan rules
+        // Collect rule names and count tags for pre-scan rules
         for (key, metadata) in &self.rule_metadata {
             if key.starts_with("pre:") {
+                pre_scan_rules.push(metadata.name.clone());
                 for tag in &metadata.tags {
                     *pre_scan_tags.entry(tag.clone()).or_insert(0) += 1;
                 }
             }
         }
 
-        // Count tags for post-scan rules
+        // Collect rule names and count tags for post-scan rules
         for (key, metadata) in &self.rule_metadata {
             if key.starts_with("post:") {
+                post_scan_rules.push(metadata.name.clone());
                 for tag in &metadata.tags {
                     *post_scan_tags.entry(tag.clone()).or_insert(0) += 1;
                 }
@@ -810,6 +824,8 @@ impl DynamicYaraScanner {
         RuleStats {
             pre_scan_count: self.pre_scan_rules.len(),
             post_scan_count: self.post_scan_rules.len(),
+            pre_scan_rules,
+            post_scan_rules,
             pre_scan_tags,
             post_scan_tags,
         }
@@ -853,6 +869,8 @@ impl DynamicYaraScanner {
 pub struct RuleStats {
     pub pre_scan_count: usize,
     pub post_scan_count: usize,
+    pub pre_scan_rules: Vec<String>,
+    pub post_scan_rules: Vec<String>,
     pub pre_scan_tags: HashMap<String, usize>,
     pub post_scan_tags: HashMap<String, usize>,
 }
@@ -1032,12 +1050,8 @@ impl ScanCapability for DynamicYaraCapability {
                     ),
                     rule_metadata: None,
                     phase: Some("pre-scan".to_string()),
-                    rules_executed: if stats.pre_scan_count > 0 {
-                        Some(vec![
-                            "command_injection".to_string(),
-                            "path_traversal".to_string(),
-                            "secrets_leakage".to_string(),
-                        ])
+                    rules_executed: if !stats.pre_scan_rules.is_empty() {
+                        Some(stats.pre_scan_rules.clone())
                     } else {
                         None
                     },
@@ -1099,8 +1113,8 @@ impl ScanCapability for DynamicYaraCapability {
                     ),
                     rule_metadata: None,
                     phase: Some("post-scan".to_string()),
-                    rules_executed: if stats.post_scan_count > 0 {
-                        Some(vec!["post_scan_rules".to_string()])
+                    rules_executed: if !stats.post_scan_rules.is_empty() {
+                        Some(stats.post_scan_rules.clone())
                     } else {
                         Some(vec!["none".to_string()])
                     },
@@ -1318,6 +1332,36 @@ mod tests {
         } else {
             println!("No post-scan rules found (this is expected if none were created)");
         }
+    }
+
+    #[test]
+    fn test_dynamic_rule_names() {
+        // Test that the dynamic rule names are being collected correctly
+        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        let stats = scanner.get_rule_stats();
+
+        // Should have the expected pre-scan rules
+        #[cfg(feature = "yara-scanning")]
+        {
+            assert!(!stats.pre_scan_rules.is_empty());
+            assert!(stats
+                .pre_scan_rules
+                .contains(&"command_injection".to_string()));
+            assert!(stats.pre_scan_rules.contains(&"path_traversal".to_string()));
+            assert!(stats
+                .pre_scan_rules
+                .contains(&"secrets_leakage".to_string()));
+            println!("Pre-scan rules: {:?}", stats.pre_scan_rules);
+        }
+
+        #[cfg(not(feature = "yara-scanning"))]
+        {
+            assert!(stats.pre_scan_rules.is_empty());
+        }
+
+        // Post-scan rules should be empty for now
+        assert!(stats.post_scan_rules.is_empty());
+        println!("Post-scan rules: {:?}", stats.post_scan_rules);
     }
 }
 

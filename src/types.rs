@@ -430,3 +430,266 @@ impl PromptResponse {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_scan_config_builder() {
+        let config = ScanConfigBuilder::new()
+            .timeout(120)
+            .http_timeout(60)
+            .detailed(true)
+            .format("json".to_string())
+            .auth_headers(Some(HashMap::from([(
+                "Authorization".to_string(),
+                "Bearer token".to_string(),
+            )])))
+            .build();
+
+        assert_eq!(config.timeout, 120);
+        assert_eq!(config.http_timeout, 60);
+        assert_eq!(config.detailed, true);
+        assert_eq!(config.format, "json");
+        assert!(config.auth_headers.is_some());
+    }
+
+    #[test]
+    fn test_scan_config_builder_default() {
+        let config = ScanConfigBuilder::new().build();
+        assert_eq!(config.timeout, 60);
+        assert_eq!(config.http_timeout, 30);
+        assert_eq!(config.detailed, false);
+        assert_eq!(config.format, "text");
+        assert!(config.auth_headers.is_none());
+    }
+
+    #[test]
+    fn test_validate_scan_config_valid() {
+        let options = ScanOptions {
+            timeout: 60,
+            http_timeout: 30,
+            detailed: false,
+            format: "json".to_string(),
+            auth_headers: None,
+        };
+
+        let result = config_utils::validate_scan_config(&options);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_scan_config_invalid_timeout() {
+        let options = ScanOptions {
+            timeout: 0,
+            http_timeout: 30,
+            detailed: false,
+            format: "json".to_string(),
+            auth_headers: None,
+        };
+
+        let result = config_utils::validate_scan_config(&options);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Timeout must be greater than 0"));
+    }
+
+    #[test]
+    fn test_validate_scan_config_invalid_http_timeout() {
+        let options = ScanOptions {
+            timeout: 60,
+            http_timeout: 0,
+            detailed: false,
+            format: "json".to_string(),
+            auth_headers: None,
+        };
+
+        let result = config_utils::validate_scan_config(&options);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("HTTP timeout must be greater than 0"));
+    }
+
+    #[test]
+    fn test_validate_scan_config_timeout_less_than_http_timeout() {
+        let options = ScanOptions {
+            timeout: 10,
+            http_timeout: 30,
+            detailed: false,
+            format: "json".to_string(),
+            auth_headers: None,
+        };
+
+        let result = config_utils::validate_scan_config(&options);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Total timeout must be greater than or equal to HTTP timeout"));
+    }
+
+    #[test]
+    fn test_scan_result_new() {
+        let result = ScanResult::new("http://example.com".to_string());
+        assert_eq!(result.url, "http://example.com");
+        assert!(matches!(result.status, ScanStatus::Success));
+        assert_eq!(result.tools.len(), 0);
+        assert_eq!(result.resources.len(), 0);
+        assert_eq!(result.prompts.len(), 0);
+        assert_eq!(result.errors.len(), 0);
+    }
+
+    #[test]
+    fn test_scan_result_add_error() {
+        let mut result = ScanResult::new("http://example.com".to_string());
+        result.add_error("Test error".to_string());
+
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.errors[0], "Test error");
+    }
+
+    #[test]
+    fn test_tool_response_from_json() {
+        let response = json!({
+            "result": {
+                "tools": [
+                    {
+                        "name": "test_tool",
+                        "description": "A test tool",
+                        "inputSchema": {"type": "object"},
+                        "outputSchema": {"type": "string"}
+                    }
+                ]
+            }
+        });
+
+        let tool_response = ToolResponse::from_json_response(&response);
+        assert!(tool_response.is_ok());
+
+        let tool_response = tool_response.unwrap();
+        assert_eq!(tool_response.tools.len(), 1);
+        assert_eq!(tool_response.tools[0].name, "test_tool");
+        assert_eq!(
+            tool_response.tools[0].description,
+            Some("A test tool".to_string())
+        );
+    }
+
+    #[test]
+    fn test_tool_response_from_json_missing_result() {
+        let response = json!({
+            "other_key": {
+                "tools": []
+            }
+        });
+
+        let tool_response = ToolResponse::from_json_response(&response);
+        assert!(tool_response.is_ok());
+        assert_eq!(tool_response.unwrap().tools.len(), 0);
+    }
+
+    #[test]
+    fn test_prompt_response_from_json() {
+        let response = json!({
+            "result": {
+                "prompts": [
+                    {
+                        "name": "test_prompt",
+                        "description": "A test prompt",
+                        "arguments": [
+                            {
+                                "name": "arg1",
+                                "description": "First argument",
+                                "required": true
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let prompt_response = PromptResponse::from_json_response(&response);
+        assert!(prompt_response.is_ok());
+
+        let prompt_response = prompt_response.unwrap();
+        assert_eq!(prompt_response.prompts.len(), 1);
+        assert_eq!(prompt_response.prompts[0].name, "test_prompt");
+        assert_eq!(
+            prompt_response.prompts[0].description,
+            Some("A test prompt".to_string())
+        );
+        assert!(prompt_response.prompts[0].arguments.is_some());
+        assert_eq!(
+            prompt_response.prompts[0].arguments.as_ref().unwrap().len(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_prompt_response_from_json_missing_result() {
+        let response = json!({
+            "other_key": {
+                "prompts": []
+            }
+        });
+
+        let prompt_response = PromptResponse::from_json_response(&response);
+        assert!(prompt_response.is_ok());
+        assert_eq!(prompt_response.unwrap().prompts.len(), 0);
+    }
+
+    #[test]
+    fn test_yara_rule_metadata() {
+        let metadata = YaraRuleMetadata {
+            name: Some("test_rule".to_string()),
+            author: Some("Test Author".to_string()),
+            date: Some("2024-01-01".to_string()),
+            version: Some("1.0".to_string()),
+            description: Some("A test rule".to_string()),
+            severity: Some("HIGH".to_string()),
+            category: Some("security".to_string()),
+            confidence: Some("high".to_string()),
+            tags: vec!["security".to_string(), "test".to_string()],
+        };
+
+        assert_eq!(metadata.name, Some("test_rule".to_string()));
+        assert_eq!(metadata.author, Some("Test Author".to_string()));
+        assert_eq!(metadata.severity, Some("HIGH".to_string()));
+        assert_eq!(metadata.tags.len(), 2);
+    }
+
+    #[test]
+    fn test_yara_scan_result() {
+        let result = YaraScanResult {
+            target_type: "tool".to_string(),
+            target_name: "test_tool".to_string(),
+            rule_name: "test_rule".to_string(),
+            matched_text: Some("matched content".to_string()),
+            context: "test context".to_string(),
+            rule_metadata: None,
+            phase: Some("pre-scan".to_string()),
+            rules_executed: Some(vec!["rule1".to_string(), "rule2".to_string()]),
+            rules_passed: Some(vec!["rule1".to_string()]),
+            rules_failed: Some(vec!["rule2".to_string()]),
+            total_items_scanned: Some(10),
+            total_matches: Some(2),
+            status: Some("warning".to_string()),
+        };
+
+        assert_eq!(result.target_type, "tool");
+        assert_eq!(result.target_name, "test_tool");
+        assert_eq!(result.rule_name, "test_rule");
+        assert_eq!(result.matched_text, Some("matched content".to_string()));
+        assert_eq!(result.context, "test context");
+        assert_eq!(result.phase, Some("pre-scan".to_string()));
+        assert_eq!(result.total_items_scanned, Some(10));
+        assert_eq!(result.total_matches, Some(2));
+        assert_eq!(result.status, Some("warning".to_string()));
+    }
+}

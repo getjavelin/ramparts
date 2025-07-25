@@ -871,3 +871,165 @@ fn print_enhanced_security_table(result: &ScanResult) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_timer_functionality() {
+        let timer = Timer::start();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let elapsed = timer.elapsed_ms();
+
+        assert!(elapsed >= 10);
+        println!("Timer elapsed: {}ms", elapsed);
+    }
+
+    #[test]
+    fn test_error_utils() {
+        // Test create_error_msg
+        let error_msg = error_utils::create_error_msg("Test operation", "Something went wrong");
+        assert_eq!(error_msg, "Test operation failed: Something went wrong");
+
+        // Test wrap_error with success
+        let result: Result<i32, anyhow::Error> = Ok(42);
+        let wrapped = error_utils::wrap_error(result, "Test context");
+        assert!(wrapped.is_ok());
+        assert_eq!(wrapped.unwrap(), 42);
+
+        // Test wrap_error with failure
+        let result: Result<i32, anyhow::Error> = Err(anyhow!("Original error"));
+        let wrapped = error_utils::wrap_error(result, "Test context");
+        assert!(wrapped.is_err());
+        let error_msg = wrapped.unwrap_err().to_string();
+        assert!(error_msg.contains("Test context"));
+        assert!(error_msg.contains("Original error"));
+    }
+
+    #[test]
+    fn test_parse_jsonrpc_array_response() {
+        // Test successful parsing
+        let response = json!({
+            "result": {
+                "tools": [
+                    {"name": "tool1", "description": "Test tool 1"},
+                    {"name": "tool2", "description": "Test tool 2"}
+                ]
+            }
+        });
+
+        #[derive(Debug, Clone, serde::Deserialize, PartialEq)]
+        struct TestTool {
+            name: String,
+            description: String,
+        }
+
+        let result = parse_jsonrpc_array_response::<TestTool>(&response, "tools");
+        assert!(result.is_ok());
+
+        let tools = result.unwrap();
+        assert_eq!(tools.len(), 2);
+        assert_eq!(tools[0].name, "tool1");
+        assert_eq!(tools[1].name, "tool2");
+    }
+
+    #[test]
+    fn test_parse_jsonrpc_array_response_invalid_format() {
+        let response = json!({
+            "result": {
+                "tools": "not an array"
+            }
+        });
+
+        #[derive(Debug, Clone, serde::Deserialize)]
+        struct TestTool {
+            name: String,
+        }
+
+        let result = parse_jsonrpc_array_response::<TestTool>(&response, "tools");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid tools response format"));
+    }
+
+    #[test]
+    fn test_parse_jsonrpc_array_response_missing_key() {
+        let response = json!({
+            "result": {
+                "other_key": []
+            }
+        });
+
+        #[derive(Debug, Clone, serde::Deserialize)]
+        struct TestTool {
+            name: String,
+        }
+
+        let result = parse_jsonrpc_array_response::<TestTool>(&response, "tools");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid tools response format"));
+    }
+
+    #[tokio::test]
+    async fn test_retry_with_backoff_success() {
+        let attempts = std::sync::Arc::new(std::sync::Mutex::new(0));
+        let attempts_clone = attempts.clone();
+
+        let operation = move || {
+            let attempts_clone = attempts_clone.clone();
+            async move {
+                let mut count = attempts_clone.lock().unwrap();
+                *count += 1;
+                if *count == 1 {
+                    Err(anyhow!("First attempt fails"))
+                } else {
+                    Ok("Success".to_string())
+                }
+            }
+        };
+
+        let result: Result<String> = retry_with_backoff(operation, 3, 10).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Success");
+        assert_eq!(*attempts.lock().unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_retry_with_backoff_all_failures() {
+        let operation = || async { Err::<String, anyhow::Error>(anyhow!("Always fails")) };
+
+        let result: Result<String> = retry_with_backoff(operation, 2, 10).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Always fails"));
+    }
+
+    // TODO: Add test for track_performance when async closure type inference is resolved
+
+    #[test]
+    fn test_format_status() {
+        use crate::types::ScanStatus;
+
+        let success = format_status(&ScanStatus::Success);
+        assert!(success.contains("SUCCESS"));
+
+        let failed = format_status(&ScanStatus::Failed("Test error".to_string()));
+        assert!(failed.contains("FAILED"));
+        assert!(failed.contains("Test error"));
+
+        let timeout = format_status(&ScanStatus::Timeout);
+        assert!(timeout.contains("TIMEOUT"));
+
+        let connection_error = format_status(&ScanStatus::ConnectionError(
+            "Connection failed".to_string(),
+        ));
+        assert!(connection_error.contains("CONNECTION ERROR"));
+        assert!(connection_error.contains("Connection failed"));
+    }
+}

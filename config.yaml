@@ -1,6 +1,6 @@
 llm:
   provider: openai
-  model: gpt-3.5-turbo
+  model: gpt-4o
   base_url: https://api.openai.com/v1
   api_key: ''
   timeout: 30
@@ -9,12 +9,13 @@ llm:
 scanner:
   http_timeout: 30
   scan_timeout: 60
+  detailed: false
   format: table
   parallel: true
   max_retries: 3
   retry_delay_ms: 1000
-  llm_batch_size: 5
-  detailed: false
+  llm_batch_size: 10
+  enable_yara: true
 security:
   enabled: true
   min_severity: low

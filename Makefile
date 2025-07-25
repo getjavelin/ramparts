@@ -425,7 +425,36 @@ integration-test: ## Run integration tests (CLI, config, server startup)
 	@cargo build --release
 	@./target/release/$(PROJECT_NAME) --help
 	@./target/release/$(PROJECT_NAME) init-config --force
-	@timeout 5s ./target/release/$(PROJECT_NAME) server --port 3000 || true
+	@echo "Testing server startup and shutdown..."
+	@# Start server in background and capture PID
+	@./target/release/$(PROJECT_NAME) server --port 3000 & SERVER_PID=$$!; \
+		echo "Server started with PID: $$SERVER_PID"; \
+		# Wait for server to start (max 10 seconds)
+		sleep 2; \
+		# Test if server is responding
+		if curl -s http://localhost:3000/health > /dev/null 2>&1; then \
+			echo "✅ Server is responding on port 3000"; \
+		else \
+			echo "❌ Server not responding on port 3000"; \
+			exit 1; \
+		fi; \
+		# Kill server gracefully
+		kill $$SERVER_PID 2>/dev/null || true; \
+		# Wait for graceful shutdown (max 5 seconds)
+		for i in 1 2 3 4 5; do \
+			if ! kill -0 $$SERVER_PID 2>/dev/null; then \
+				echo "✅ Server shutdown gracefully"; \
+				break; \
+			fi; \
+			sleep 1; \
+		done; \
+		# Force kill if still running
+		if kill -0 $$SERVER_PID 2>/dev/null; then \
+			echo "⚠️  Force killing server process"; \
+			kill -9 $$SERVER_PID 2>/dev/null || true; \
+		fi; \
+		# Clean up any remaining processes
+		pkill -f "ramparts server" 2>/dev/null || true
 	@echo "Integration tests complete"
 
 .PHONY: ci-check
