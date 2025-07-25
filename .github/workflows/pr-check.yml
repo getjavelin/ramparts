@@ -36,7 +36,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y yara
+          sudo apt-get install -y yara libyara-dev
 
       - name: Install YARA (macOS)
         if: runner.os == 'macOS'
@@ -108,7 +108,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y yara
+          sudo apt-get install -y yara libyara-dev
 
       - name: Install YARA (macOS)
         if: runner.os == 'macOS'
@@ -188,7 +188,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y yara
+          sudo apt-get install -y yara libyara-dev
 
       - name: Install YARA (macOS)
         if: runner.os == 'macOS'
@@ -248,7 +248,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y yara
+          sudo apt-get install -y yara libyara-dev
 
       - name: Install YARA (macOS)
         if: runner.os == 'macOS'
