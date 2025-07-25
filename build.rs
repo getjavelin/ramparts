@@ -8,10 +8,10 @@ fn main() {
         if let Ok(library_path) = env::var("YARA_LIBRARY_PATH") {
             println!("cargo:rustc-link-search=native={library_path}");
             println!("cargo:rustc-link-lib=dylib=yara");
-            
+
             // Set environment variables for yara-sys build script
             env::set_var("YARA_LIBRARY_PATH", &library_path);
-            
+
             // Try to find include path from library path
             if let Some(parent) = Path::new(&library_path).parent() {
                 let include_path = parent.join("include");
@@ -20,7 +20,7 @@ fn main() {
                     env::set_var("BINDGEN_EXTRA_CLANG_ARGS", format!("-I{include_path_str}"));
                 }
             }
-            
+
             println!("cargo:rerun-if-changed=build.rs");
             return;
         }
