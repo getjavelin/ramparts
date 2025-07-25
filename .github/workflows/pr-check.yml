@@ -50,6 +50,7 @@ jobs:
             echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
             echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
           fi
+        shell: bash
 
       - name: Install YARA (Windows)
         if: runner.os == 'Windows'
@@ -76,6 +77,7 @@ jobs:
           else
             cargo check --all-features
           fi
+        shell: bash
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -87,6 +89,7 @@ jobs:
           else
             cargo clippy --all-features -- -D warnings
           fi
+        shell: bash
 
   javelin-sast-check:
     permissions:
@@ -119,6 +122,7 @@ jobs:
             echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
             echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
           fi
+        shell: bash
 
       - name: Install YARA (Windows)
         if: runner.os == 'Windows'
@@ -145,6 +149,7 @@ jobs:
           else
             cargo test --all-features
           fi
+        shell: bash
 
       - name: Run tests with coverage
         run: |
@@ -154,6 +159,7 @@ jobs:
           else
             cargo tarpaulin --all-features --out Html --output-dir coverage
           fi
+        shell: bash
         continue-on-error: true
 
       - name: Upload coverage to Codecov
@@ -196,6 +202,7 @@ jobs:
             echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
             echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
           fi
+        shell: bash
 
       - name: Install YARA (Windows)
         if: runner.os == 'Windows'
@@ -255,6 +262,7 @@ jobs:
             echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
             echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
           fi
+        shell: bash
 
       - name: Install YARA (Windows)
         if: runner.os == 'Windows'
@@ -281,6 +289,7 @@ jobs:
           else
             cargo build --release
           fi
+        shell: bash
 
       - name: Build debug
         run: |
@@ -289,6 +298,7 @@ jobs:
           else
             cargo build
           fi
+        shell: bash
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

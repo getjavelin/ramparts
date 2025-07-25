@@ -134,6 +134,7 @@ jobs:
             echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
             echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
           fi
+        shell: bash
 
       - name: Install YARA (Windows)
         if: runner.os == 'Windows'
@@ -160,6 +161,7 @@ jobs:
           else
             cargo build --release
           fi
+        shell: bash
 
       - name: Create release assets
         run: |
@@ -169,6 +171,7 @@ jobs:
           # Create checksums
           cd release
           sha256sum * > ${{ matrix.target }}_checksums.txt
+        shell: bash
 
       - name: Upload release assets
         uses: actions/upload-release-asset@v1
@@ -223,6 +226,7 @@ jobs:
             echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
             echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
           fi
+        shell: bash
 
       - name: Install YARA (Windows)
         if: runner.os == 'Windows'
