@@ -63,6 +63,16 @@ Ramparts is designed for developers using local, remote MCP servers or building 
 
 The Ramparts mcp scanner is implemented in Rust to prioritize performance, reliability, and broad portability. Rust offers native execution speed with minimal memory overhead, making it well-suited for analyzing large prompt contexts, tool manifests, or server topologies—without the need for a heavyweight runtime. Ramparts was built with a view of operating in CI pipelines, agent sandboxes, or constrained edge environments which made the ability to compile to a single, compact binary essential.
 
+## Features
+
+- **MCP Server Scanning**: Scan MCP servers for tools, resources, and prompts
+- **Security Analysis**: Built-in security scanning with LLM-based analysis
+- **Optional YARA Integration**: Advanced pattern-based scanning with configurable YARA rules
+- **Flexible Installation**: Install with or without YARA dependency based on your needs
+- **Multiple Transport Support**: HTTP and STDIO transport mechanisms
+- **Configuration Management**: Load settings from IDE configuration files and custom YAML configs
+- **Comprehensive Output**: Multiple output formats (JSON, table, text)
+
 ## Key Features
 
 **Coverage**: Analyzes all MCP endpoints (server/info, tools/list, resources/list, prompts/list) and evaluates each tool, resource, and prompt 
@@ -81,21 +91,113 @@ The Ramparts mcp scanner is implemented in Rust to prioritize performance, relia
 - **Development**: Testing MCP servers during development and testing phases
 - **Compliance**: Meeting security requirements for AI agent deployments
 
+## Prerequisites
+
+### YARA Installation
+
+Ramparts uses YARA rules for advanced pattern-based security scanning. YARA installation is **optional** but **recommended** for comprehensive security analysis.
+
+#### Install YARA
+
+**macOS (using Homebrew)**
+```bash
+brew install yara
+```
+
+**Ubuntu/Debian**
+```bash
+sudo apt update
+sudo apt install yara
+```
+
+**CentOS/RHEL/Fedora**
+```bash
+# CentOS/RHEL
+sudo yum install yara
+# or Fedora
+sudo dnf install yara
+```
+
+**Windows**
+```bash
+# Using vcpkg
+vcpkg install yara
+
+# Or download from: https://github.com/VirusTotal/yara/releases
+```
+
+**From Source**
+```bash
+git clone https://github.com/VirusTotal/yara.git
+cd yara
+./bootstrap.sh
+./configure
+make
+sudo make install
+```
+
+#### Verify Installation
+```bash
+yara --version
+```
+
+#### Alternative: Install Without YARA
+
+If you prefer to skip YARA installation, you can install Ramparts without YARA support:
+
+```bash
+cargo install ramparts --no-default-features
+```
+
+When YARA is disabled, you'll see a helpful message with installation instructions if needed:
+
+```
+📋 YARA Scanning Disabled
+
+YARA rule scanning is enabled in your config but YARA is not available.
+To enable YARA scanning, please:
+
+1. Install YARA on your system:
+   • macOS: brew install yara
+   • Ubuntu/Debian: sudo apt install yara
+   • CentOS/RHEL: sudo yum install yara
+
+2. Reinstall ramparts:
+   cargo install ramparts --force
+
+3. Or disable YARA in your config.yaml:
+   scanner:
+     enable_yara: false
+
+Continuing without YARA scanning...
+```
+
 ## Quick Start
 
 ### Installation
 
 **From crates.io (Recommended)**
 ```bash
+# With YARA support (recommended - install YARA first)
 cargo install ramparts
+
+# Without YARA support (lighter installation)
+cargo install ramparts --no-default-features
 ```
 
 **From source**
 ```bash
 git clone https://github.com/getjavelin/ramparts.git
 cd ramparts
+
+# With YARA support
 cargo install --path .
+
+# Without YARA support
+cargo install --path . --no-default-features
 ```
+
+> **Note**: If you have YARA installed but want to disable it temporarily, you can control this via configuration (see Configuration section below).
 
 ### Basic Usage
 
@@ -290,42 +392,122 @@ This creates a `ramparts.yaml` file:
 
 ```yaml
 # Example ramparts.yaml
-security:
-  # LLM analysis settings
+llm:
+  provider: "openai"
+  model: "gpt-4o"
+  base_url: "https://api.openai.com/v1"
+  api_key: ""
+  timeout: 30
+  max_tokens: 4000
+  temperature: 0.1
+
+scanner:
+  http_timeout: 30
+  scan_timeout: 60
+  detailed: false
+  format: "table"
+  parallel: true
+  max_retries: 3
+  retry_delay_ms: 1000
   llm_batch_size: 10
-  llm_timeout: 30
-  
-  # Severity thresholds
-  min_severity: "MEDIUM"
-  
-  # Custom security rules
-  custom_rules:
-    - name: "custom_path_check"
-      pattern: "path.*\\.\\./"
-      severity: "HIGH"
-      description: "Custom path traversal detection"
-  
-  # Vulnerability detection settings
-  vulnerability_detection:
-    enable_path_traversal: true
-    enable_command_injection: true
-    enable_sql_injection: true
-    enable_prompt_injection: true
-    enable_secret_leakage: true
-    enable_auth_bypass: true
+  # YARA Configuration
+  enable_yara: true  # Set to false to disable YARA scanning
 
-# Output settings
-output:
-  format: "text"  # text, json, raw
-  pretty_print: false
-  include_details: true
-  include_recommendations: true
+security:
+  enabled: true
+  min_severity: "low"
+  checks:
+    tool_poisoning: true
+    secrets_leakage: true
+    sql_injection: true
+    command_injection: true
+    path_traversal: true
+    auth_bypass: true
+    prompt_injection: true
+    pii_leakage: true
+    jailbreak: true
 
-# Performance settings
+logging:
+  level: "info"
+  colored: true
+  timestamps: true
+
 performance:
-  max_concurrent_requests: 10
-  request_timeout: 30
-  retry_attempts: 3
+  tracking: true
+  slow_threshold_ms: 5000
+```
+
+### YARA Configuration
+
+Ramparts supports flexible YARA configuration options:
+
+#### Enable/Disable YARA
+```yaml
+scanner:
+  enable_yara: true   # Enable YARA scanning (default)
+  # enable_yara: false  # Disable YARA scanning
+```
+
+#### YARA Behavior Matrix
+
+| YARA Installed | `enable_yara` | Result |
+|---------------|---------------|---------|
+| ✅ Yes | `true` | Full YARA scanning enabled |
+| ✅ Yes | `false` | YARA scanning disabled (silent) |
+| ❌ No | `true` | Shows installation message, continues without YARA |
+| ❌ No | `false` | No YARA scanning, no messages |
+
+#### YARA Rules Directory Structure
+
+Ramparts automatically loads YARA rules from the `rules/` directory:
+
+```
+rules/
+├── pre/           # Pre-scan rules (applied before LLM analysis)
+│   ├── secrets_leakage.yarac
+│   ├── command_injection.yarac
+│   ├── path_traversal.yarac
+│   └── sql_injection.yarac
+└── post/          # Post-scan rules (applied after LLM analysis)
+    └── (future enhancement)
+```
+
+#### Custom YARA Rules
+
+To add custom YARA rules:
+
+1. **Create rule source files** (`.yar` format)
+2. **Compile to `.yarac`** using YARA compiler:
+   ```bash
+   yarac your_rule.yar your_rule.yarac
+   ```
+3. **Place in rules directory** (`rules/pre/` or `rules/post/`)
+4. **Restart Ramparts** - rules are loaded automatically
+
+#### YARA Rule Development
+
+Example custom rule:
+```yara
+rule suspicious_eval_usage
+{
+    meta:
+        description = "Detects potentially dangerous eval() usage"
+        severity = "HIGH"
+        tags = "code-injection"
+    
+    strings:
+        $eval1 = "eval(" nocase
+        $exec1 = "exec(" nocase
+        $system1 = "system(" nocase
+    
+    condition:
+        any of them
+}
+```
+
+Compile and use:
+```bash
+yarac custom_rule.yar rules/pre/custom_rule.yarac
 ```
 
 ## Output Formats
@@ -393,6 +575,85 @@ chmod +x $(which ramparts)
 ramparts init-config
 ```
 
+### YARA-Related Issues
+
+**YARA Not Found During Installation**
+```bash
+# Error: failed to find YARA installation
+# Solution: Install YARA first, then reinstall ramparts
+brew install yara  # macOS
+sudo apt install yara  # Ubuntu/Debian
+cargo install ramparts --force
+```
+
+**YARA Rules Not Loading**
+```bash
+# Check if rules directory exists
+ls -la rules/
+ls -la rules/pre/
+
+# Check YARA rule compilation
+yarac --help
+yarac rules/src/your_rule.yar rules/pre/your_rule.yarac
+```
+
+**YARA Compilation Errors**
+```bash
+# Error: cannot compile .yar files
+# Solution: Check YARA syntax
+yara rules/src/your_rule.yar /dev/null
+
+# Common fixes:
+# 1. Check rule syntax
+# 2. Verify string escaping
+# 3. Ensure proper rule structure
+```
+
+**Mixed YARA Versions**
+```bash
+# Error: YARA version mismatch
+# Solution: Ensure consistent YARA version
+yara --version
+yarac --version
+
+# Reinstall YARA if versions differ
+brew reinstall yara  # macOS
+sudo apt remove yara && sudo apt install yara  # Ubuntu
+```
+
+**Performance Issues with YARA**
+```bash
+# If YARA scanning is slow, you can:
+# 1. Disable YARA temporarily
+echo "scanner:
+  enable_yara: false" > ramparts.yaml
+
+# 2. Or reduce rule complexity
+# 3. Or use --no-default-features installation
+cargo install ramparts --no-default-features --force
+```
+
+**YARA Rules Directory Permissions**
+```bash
+# Error: Permission denied accessing rules
+# Solution: Check directory permissions
+chmod -R 755 rules/
+chmod 644 rules/pre/*.yarac
+```
+
+**Custom Rules Not Working**
+```bash
+# Debug rule loading
+# 1. Check file extension (.yarac not .yar)
+ls rules/pre/*.yarac
+
+# 2. Test rule compilation
+yarac your_rule.yar test.yarac
+
+# 3. Verify rule syntax
+yara your_rule.yar test_file.txt
+```
+
 ## Contributing
 
 We welcome contributions to Ramparts mcp scan. If you have suggestions, bug reports, or feature requests, please open an issue on our GitHub repository.
@@ -405,3 +666,62 @@ We welcome contributions to Ramparts mcp scan. If you have suggestions, bug repo
 
 - [MCP Protocol Documentation](https://modelcontextprotocol.io/)
 - [Configuration Examples](examples/config_example.json)
+
+## Advanced YARA Integration
+
+Ramparts includes sophisticated YARA rule integration for advanced security pattern detection. YARA support is **optional** and can be configured based on your security requirements.
+
+### YARA Feature Overview
+
+- **🔧 Configurable**: Enable/disable YARA via config file
+- **📁 Auto-loading**: Automatically loads all `.yarac` files from rules directory
+- **⚡ Performance**: Pre-compiled rules for fast pattern matching
+- **🎯 Phased scanning**: Pre-scan and post-scan rule execution
+- **🛠 Extensible**: Easy addition of custom security rules
+
+### Default Security Rules
+
+Ramparts includes built-in YARA rules for common vulnerabilities:
+
+| Rule File | Purpose | Detects |
+|-----------|---------|---------|
+| `secrets_leakage.yarac` | API keys, tokens, passwords | Hardcoded credentials, API keys |
+| `command_injection.yarac` | System command execution | Dangerous command patterns |
+| `path_traversal.yarac` | Directory traversal attacks | `../`, absolute path patterns |
+| `sql_injection.yarac` | Database query manipulation | SQL injection patterns |
+
+### Directory Structure
+```
+rules/
+├── pre/           # Pre-scan rules (applied before LLM analysis)
+│   ├── secrets_leakage.yarac
+│   ├── command_injection.yarac
+│   ├── path_traversal.yarac
+│   └── sql_injection.yarac
+└── post/          # Post-scan rules (applied after LLM analysis)
+    └── (reserved for future enhancements)
+```
+
+### Rule Compilation Workflow
+
+```bash
+# 1. Create YARA source files (.yar)
+echo 'rule test_rule { strings: $a = "test" condition: $a }' > test.yar
+
+# 2. Compile to binary format (.yarac)
+yarac test.yar test.yarac
+
+# 3. Place in rules directory
+mv test.yarac rules/pre/
+
+# 4. Ramparts automatically loads on next scan
+```
+
+### Performance Considerations
+
+- **Pre-compiled rules**: `.yarac` files load faster than `.yar` source
+- **Memory efficient**: Rules are loaded once and reused
+- **Configurable**: Disable YARA if not needed to reduce resource usage
+- **Graceful fallback**: Continues operation if YARA unavailable
+
+For detailed YARA rule development, see the [YARA Documentation](https://yara.readthedocs.io/).

@@ -273,6 +273,19 @@ fn print_raw_json_result(result: &ScanResult) {
         );
     }
 
+    // Add YARA scan results if any
+    if !result.yara_results.is_empty() {
+        let yara_results_array = result
+            .yara_results
+            .iter()
+            .map(|yara_result| serde_json::to_value(yara_result).unwrap_or(serde_json::Value::Null))
+            .collect();
+        raw_result.insert(
+            "yara_results".to_string(),
+            serde_json::Value::Array(yara_results_array),
+        );
+    }
+
     // Add errors if any
     if !result.errors.is_empty() {
         let errors_array = result
@@ -424,6 +437,114 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
         print_enhanced_security_table(result);
     }
 
+    // YARA scan results
+    if !result.yara_results.is_empty() {
+        println!("\n{}", "YARA Scan Results".bold());
+        println!("{}", "=".repeat(80));
+
+        // Separate summary results from individual match results
+        let summary_results: Vec<_> = result.yara_results.iter()
+            .filter(|r| r.target_type == "summary")
+            .collect();
+        let match_results: Vec<_> = result.yara_results.iter()
+            .filter(|r| r.target_type != "summary")
+            .collect();
+
+        // Show summary information first
+        for summary in &summary_results {
+            let status_icon = match summary.status.as_deref() {
+                Some("passed") => "✅",
+                Some("warning") => "⚠️",
+                _ => "🔍",
+            };
+            
+            let status_text = match summary.status.as_deref() {
+                Some("passed") => "PASSED".green(),
+                Some("warning") => "WARNING".yellow(),
+                _ => "UNKNOWN".white(),
+            };
+
+            println!("{} {} - {}", status_icon, summary.target_name.to_uppercase(), status_text);
+            println!("  Context: {}", summary.context);
+            
+            if let Some(total_items) = summary.total_items_scanned {
+                println!("  Items scanned: {}", total_items);
+            }
+            if let Some(total_matches) = summary.total_matches {
+                println!("  Security matches: {}", total_matches);
+            }
+            if let Some(rules_executed) = &summary.rules_executed {
+                if !rules_executed.is_empty() && rules_executed[0] != "none" {
+                    println!("  Rules executed: {}", rules_executed.join(", "));
+                }
+            }
+            println!();
+        }
+
+        // Show individual match results if any
+        if !match_results.is_empty() {
+            println!("🔍 {} Individual Security Matches:", "Detailed Results".bold());
+            println!();
+
+            for yara_result in &match_results {
+                let status_icon = match yara_result.status.as_deref() {
+                    Some("warning") => "⚠️",
+                    _ => "🔍",
+                };
+
+                println!(
+                    "{} {} ({})",
+                    status_icon, yara_result.target_name, yara_result.target_type
+                );
+
+                if let Some(metadata) = &yara_result.rule_metadata {
+                    let severity = metadata.severity.as_deref().unwrap_or("MEDIUM");
+                    let severity_color = match severity {
+                        "CRITICAL" => severity.red().bold(),
+                        "HIGH" => severity.yellow().bold(),
+                        "MEDIUM" => severity.blue().bold(),
+                        _ => severity.green().bold(),
+                    };
+
+                    println!("  Rule: {} ({})", yara_result.rule_name, severity_color);
+
+                    if let Some(name) = &metadata.name {
+                        println!("  Name: {name}");
+                    }
+                    if let Some(desc) = &metadata.description {
+                        println!("  Description: {desc}");
+                    }
+                    if let Some(author) = &metadata.author {
+                        println!("  Author: {author}");
+                    }
+                    if let Some(version) = &metadata.version {
+                        println!("  Version: {version}");
+                    }
+                    if let Some(confidence) = &metadata.confidence {
+                        println!("  Confidence: {confidence}");
+                    }
+                    if !metadata.tags.is_empty() {
+                        println!("  Tags: {}", metadata.tags.join(", "));
+                    }
+                } else {
+                    println!("  Rule: {} (MEDIUM)", yara_result.rule_name);
+                }
+
+                if let Some(matched_text) = &yara_result.matched_text {
+                    println!("  Matched: {matched_text}");
+                }
+                println!("  Context: {}", yara_result.context);
+                println!();
+            }
+        }
+    } else {
+        // Show YARA execution status even when no results at all
+        println!("\n{}", "YARA Scan Results".bold());
+        println!("{}", "=".repeat(80));
+        println!("❌ YARA scanning not executed or no results available");
+        println!();
+    }
+
     // Errors
     if !result.errors.is_empty() {
         println!("\n{}", "Errors".bold().red());
@@ -501,6 +622,44 @@ fn print_text_result(result: &ScanResult) {
             for issue in &security_issues.resource_issues {
                 println!("    - {}: {}", issue.severity, issue.message);
             }
+        }
+    }
+
+    // YARA scan results
+    if !result.yara_results.is_empty() {
+        // Separate summary and match results
+        let summary_results: Vec<_> = result.yara_results.iter()
+            .filter(|r| r.target_type == "summary")
+            .collect();
+        let match_results: Vec<_> = result.yara_results.iter()
+            .filter(|r| r.target_type != "summary")
+            .collect();
+
+        println!("YARA Scan Results: {} total results", result.yara_results.len());
+        
+        // Show summary results
+        for summary in &summary_results {
+            let status = summary.status.as_deref().unwrap_or("unknown");
+            println!("  {} - {}: {}", summary.target_name.to_uppercase(), status.to_uppercase(), summary.context);
+            if let Some(total_matches) = summary.total_matches {
+                println!("    Security matches found: {}", total_matches);
+            }
+        }
+        
+        // Show individual matches
+        for yara_result in &match_results {
+            let severity = yara_result
+                .rule_metadata
+                .as_ref()
+                .and_then(|m| m.severity.as_ref())
+                .map(|s| s.as_str())
+                .unwrap_or("MEDIUM");
+            let status = yara_result.status.as_deref().unwrap_or("unknown");
+
+            println!(
+                "    {} ({}): {} - {} [{}]",
+                yara_result.target_name, yara_result.target_type, yara_result.rule_name, severity, status.to_uppercase()
+            );
         }
     }
 

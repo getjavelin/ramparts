@@ -4,6 +4,39 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Original YARA rule metadata from the rule definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct YaraRuleMetadata {
+    pub name: Option<String>,
+    pub author: Option<String>,
+    pub date: Option<String>,
+    pub version: Option<String>,
+    pub description: Option<String>,
+    pub severity: Option<String>,
+    pub category: Option<String>,
+    pub confidence: Option<String>,
+    pub tags: Vec<String>,
+}
+
+/// Result of a YARA scan operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct YaraScanResult {
+    pub target_type: String, // "tool", "prompt", "resource"
+    pub target_name: String,
+    pub rule_name: String,
+    pub matched_text: Option<String>,
+    pub context: String,
+    pub rule_metadata: Option<YaraRuleMetadata>,
+    // Execution summary fields (when target_type is "summary")
+    pub phase: Option<String>,
+    pub rules_executed: Option<Vec<String>>,
+    pub rules_passed: Option<Vec<String>>,
+    pub rules_failed: Option<Vec<String>>,
+    pub total_items_scanned: Option<usize>,
+    pub total_matches: Option<usize>,
+    pub status: Option<String>, // "success", "warning", "error"
+}
+
 // ============================================================================
 // CORE TYPES - Main data structures for MCP scanning
 // ============================================================================
@@ -128,6 +161,7 @@ pub struct ScanResult {
     pub resources: Vec<MCPResource>,
     pub prompts: Vec<MCPPrompt>,
     pub security_issues: Option<SecurityScanResult>,
+    pub yara_results: Vec<YaraScanResult>,
     pub errors: Vec<String>,
 }
 
@@ -152,6 +186,7 @@ impl ScanResult {
             resources: Vec::new(),
             prompts: Vec::new(),
             security_issues: None,
+            yara_results: Vec::new(),
             errors: Vec::new(),
         }
     }

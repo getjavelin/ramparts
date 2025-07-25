@@ -6,7 +6,7 @@
 # ============================================================================
 
 # Project information
-PROJECT_NAME := mcp-scanner
+PROJECT_NAME := ramparts
 VERSION := $(shell grep '^version = ' Cargo.toml | cut -d'"' -f2)
 AUTHOR := $(shell grep '^authors = ' Cargo.toml | cut -d'"' -f2 | cut -d'<' -f1 | xargs)
 
@@ -142,18 +142,26 @@ help: ## Show this help message
 	@echo ""
 	@echo "Examples:"
 	@echo "  make build                    # Build for current architecture"
+	@echo "  make ci-check                 # Run all CI quality checks (PR prep)"
 	@echo "  make build-linux-x86_64      # Build for Linux x86_64"
 	@echo "  make build-macos-aarch64     # Build for macOS ARM64"
 	@echo "  make build-all               # Build for all targets"
 	@echo "  make package                 # Create distribution packages"
 
 .PHONY: build
-build: ## Build for current architecture (auto-detected)
+build: ## Build for current architecture (auto-detected) with quality checks
+	@echo "Running quality checks before build..."
+	@echo "Checking code formatting..."
+	@$(CARGO) fmt --all -- --check || (echo "❌ Code formatting check failed. Run 'make fmt' to fix." && exit 1)
+	@echo "✅ Code formatting check passed"
+	@echo "Running clippy linting..."
+	@$(CARGO) clippy --all-features -- -D warnings || (echo "❌ Clippy check failed. Fix the warnings above." && exit 1)
+	@echo "✅ Clippy check passed"
 	@echo "Building for current architecture: $(CURRENT_TARGET)"
 	$(call check_target,$(CURRENT_TARGET))
 	$(call build_target,$(CURRENT_TARGET))
 	$(call copy_binary,$(CURRENT_TARGET),$(if $(findstring windows,$(CURRENT_TARGET)),.exe,))
-	@echo "Build complete for $(CURRENT_TARGET)"
+	@echo "✅ Build complete for $(CURRENT_TARGET)"
 
 .PHONY: clean
 clean: ## Clean all build artifacts
@@ -419,6 +427,28 @@ integration-test: ## Run integration tests (CLI, config, server startup)
 	@./target/release/$(PROJECT_NAME) init-config --force
 	@timeout 5s ./target/release/$(PROJECT_NAME) server --port 3000 || true
 	@echo "Integration tests complete"
+
+.PHONY: ci-check
+ci-check: ## Run all CI quality checks (format, clippy, tests, audit)
+	@echo "🔍 Running CI quality checks..."
+	@echo ""
+	@echo "📝 Checking code formatting..."
+	@$(CARGO) fmt --all -- --check || (echo "❌ Code formatting check failed. Run 'make fmt' to fix." && exit 1)
+	@echo "✅ Code formatting check passed"
+	@echo ""
+	@echo "🔍 Running clippy linting..."
+	@$(CARGO) clippy --all-features -- -D warnings || (echo "❌ Clippy check failed. Fix the warnings above." && exit 1)
+	@echo "✅ Clippy check passed"
+	@echo ""
+	@echo "🧪 Running tests..."
+	@$(CARGO) test --all-features || (echo "❌ Tests failed." && exit 1)
+	@echo "✅ Tests passed"
+	@echo ""
+	@echo "🔒 Auditing dependencies..."
+	@$(CARGO) audit || (echo "❌ Security audit failed." && exit 1)
+	@echo "✅ Security audit passed"
+	@echo ""
+	@echo "🎉 All CI checks passed! Ready for PR."
 
 .PHONY: ci-quality
 ci-quality: fmt-check check lint test audit coverage integration-test ## Run all CI quality checks

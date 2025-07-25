@@ -1,10 +1,122 @@
 // Security scan types used by the rest of the codebase
 
+use crate::constants::{messages, DEFAULT_LLM_BATCH_SIZE};
 use crate::types::{MCPPrompt, MCPResource, MCPTool};
 use anyhow::{anyhow, Result};
 use reqwest::Client;
 use serde_json::{json, Value};
 use spinners::{Spinner, Spinners};
+
+/// Trait for items that can be batch scanned for security issues
+pub trait BatchScannableItem {
+    /// Get the name of the item
+    fn name(&self) -> &str;
+
+    /// Format the item for LLM analysis with proper numbering
+    fn format_for_analysis(&self, index: usize) -> String;
+
+    /// Get the item type name (singular) for logging and prompts
+    fn item_type() -> &'static str;
+
+    /// Get the item type name (plural) for logging and prompts  
+    fn item_type_plural() -> &'static str;
+}
+
+impl BatchScannableItem for MCPTool {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn format_for_analysis(&self, index: usize) -> String {
+        // Create a concise summary of the input schema
+        let input_summary = if let Some(schema) = &self.input_schema {
+            if let Some(properties) = schema.get("properties") {
+                if let Some(props_obj) = properties.as_object() {
+                    let param_names: Vec<&str> = props_obj.keys().map(|k| k.as_str()).collect();
+                    format!("Parameters: {}", param_names.join(", "))
+                } else {
+                    "Parameters: complex schema".to_string()
+                }
+            } else {
+                "Parameters: no properties".to_string()
+            }
+        } else {
+            "Parameters: no schema".to_string()
+        };
+
+        format!(
+            "\n\nTOOL {}: {}\nDescription: {}\nCategory: {}\nTags: {}\n{}",
+            index + 1,
+            self.name,
+            self.description.as_deref().unwrap_or("No description"),
+            self.category.as_deref().unwrap_or("No category"),
+            self.tags.join(", "),
+            input_summary
+        )
+    }
+
+    fn item_type() -> &'static str {
+        "tool"
+    }
+
+    fn item_type_plural() -> &'static str {
+        "tools"
+    }
+}
+
+impl BatchScannableItem for MCPPrompt {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn format_for_analysis(&self, index: usize) -> String {
+        let arguments = self
+            .arguments
+            .as_ref()
+            .map(|args| serde_json::to_string_pretty(args).ok().unwrap_or_default())
+            .unwrap_or_else(|| "No arguments".to_string());
+
+        format!(
+            "\n\nPROMPT {}: {}\nDescription: {}\nArguments: {}",
+            index + 1,
+            self.name,
+            self.description.as_deref().unwrap_or("No description"),
+            arguments
+        )
+    }
+
+    fn item_type() -> &'static str {
+        "prompt"
+    }
+
+    fn item_type_plural() -> &'static str {
+        "prompts"
+    }
+}
+
+impl BatchScannableItem for MCPResource {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn format_for_analysis(&self, index: usize) -> String {
+        format!(
+            "\n\nRESOURCE {}: {}\nURI: {}\nDescription: {}",
+            index + 1,
+            self.name,
+            self.uri,
+            self.description.as_deref().unwrap_or("No description")
+        )
+    }
+
+    fn item_type() -> &'static str {
+        "resource"
+    }
+
+    fn item_type_plural() -> &'static str {
+        "resources"
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum SecurityIssueType {
@@ -187,6 +299,100 @@ impl SecurityScanner {
         self.model_endpoint.is_some() && self.api_key.is_some()
     }
 
+    /// Get batch size from config with default fallback
+    fn get_batch_size(&self) -> usize {
+        self.config
+            .as_ref()
+            .map(|c| c.scanner.llm_batch_size as usize)
+            .unwrap_or(DEFAULT_LLM_BATCH_SIZE)
+    }
+
+    /// Generic batch scanner for any type that implements BatchScannableItem
+    async fn scan_batch<T: BatchScannableItem>(
+        &self,
+        items: &[T],
+        prompt_creator: impl Fn(&str) -> String,
+        show_details: bool,
+    ) -> Result<Vec<SecurityIssue>> {
+        if items.is_empty() {
+            tracing::debug!(
+                "No {} to scan, returning empty result",
+                T::item_type_plural()
+            );
+            return Ok(Vec::new());
+        }
+
+        if !self.is_llm_configured() {
+            tracing::debug!("{}", messages::OPENAI_NOT_CONFIGURED);
+            return Ok(Vec::new());
+        }
+
+        let batch_size = self.get_batch_size();
+
+        tracing::debug!(
+            "Starting batch scan of {} {} in batches of {}",
+            items.len(),
+            T::item_type_plural(),
+            batch_size
+        );
+
+        let mut all_issues = Vec::new();
+
+        // Process items in batches
+        for (batch_index, chunk) in items.chunks(batch_size).enumerate() {
+            tracing::debug!(
+                "Processing {} batch {} with {} {}",
+                T::item_type(),
+                batch_index + 1,
+                chunk.len(),
+                T::item_type_plural()
+            );
+
+            // Format items for analysis
+            let items_info = chunk
+                .iter()
+                .enumerate()
+                .map(|(i, item)| item.format_for_analysis(i))
+                .collect::<String>();
+
+            let prompt_text = prompt_creator(&items_info);
+
+            tracing::debug!(
+                "Sending batch LLM request for {} batch {} ({} {})",
+                T::item_type(),
+                batch_index + 1,
+                chunk.len(),
+                T::item_type_plural()
+            );
+
+            let response = self.query_llm(&prompt_text, show_details).await?;
+
+            tracing::debug!(
+                "Received batch LLM response for {} batch {}: {}",
+                T::item_type(),
+                batch_index + 1,
+                if response.len() > 100 {
+                    &response[..100]
+                } else {
+                    &response
+                }
+            );
+
+            // Parse the LLM response and extract security issues
+            let (issues, _) = self.parse_batch_llm_response(&response).await?;
+            all_issues.extend(issues);
+        }
+
+        tracing::debug!(
+            "Completed batch scan of {} {}, found {} total issues",
+            items.len(),
+            T::item_type_plural(),
+            all_issues.len()
+        );
+
+        Ok(all_issues)
+    }
+
     /// Batch scan multiple tools for security vulnerabilities
     pub async fn scan_tools_batch(
         &self,
@@ -197,25 +403,24 @@ impl SecurityScanner {
         std::collections::HashMap<String, String>,
     )> {
         if tools.is_empty() {
-            tracing::debug!("No tools to scan, returning empty result");
+            tracing::debug!(
+                "No {} to scan, returning empty result",
+                MCPTool::item_type_plural()
+            );
             return Ok((Vec::new(), std::collections::HashMap::new()));
         }
 
         if !self.is_llm_configured() {
-            tracing::debug!("OpenAI API not configured, returning empty result");
+            tracing::debug!("{}", messages::OPENAI_NOT_CONFIGURED);
             return Ok((Vec::new(), std::collections::HashMap::new()));
         }
 
-        // Get batch size from config, default to 10 if not configured
-        let batch_size = self
-            .config
-            .as_ref()
-            .map(|c| c.scanner.llm_batch_size)
-            .unwrap_or(10);
+        let batch_size = self.get_batch_size();
 
         tracing::debug!(
-            "Starting batch scan of {} tools in batches of {}",
+            "Starting batch scan of {} {} in batches of {}",
             tools.len(),
+            MCPTool::item_type_plural(),
             batch_size
         );
 
@@ -223,26 +428,43 @@ impl SecurityScanner {
         let mut all_analysis_details = std::collections::HashMap::new();
 
         // Process tools in batches
-        for (batch_index, chunk) in tools.chunks(batch_size as usize).enumerate() {
+        for (batch_index, chunk) in tools.chunks(batch_size).enumerate() {
             tracing::debug!(
-                "Processing batch {} with {} tools",
+                "Processing {} batch {} with {} {}",
+                MCPTool::item_type(),
                 batch_index + 1,
-                chunk.len()
+                chunk.len(),
+                MCPTool::item_type_plural()
             );
 
-            let tools_info = self.format_tools_info(chunk);
+            // Format tools for analysis
+            let tools_info = chunk
+                .iter()
+                .enumerate()
+                .map(|(i, tool)| tool.format_for_analysis(i))
+                .collect::<String>();
+
             let prompt = self.create_tools_analysis_prompt(&tools_info);
 
             tracing::debug!(
-                "Sending batch LLM request for batch {} ({} tools)",
+                "Sending batch LLM request for {} batch {} ({} {})",
+                MCPTool::item_type(),
                 batch_index + 1,
-                chunk.len()
+                chunk.len(),
+                MCPTool::item_type_plural()
             );
+
             let response = self.query_llm(&prompt, show_details).await?;
+
             tracing::debug!(
-                "Received batch LLM response for batch {}: {}",
+                "Received batch LLM response for {} batch {}: {}",
+                MCPTool::item_type(),
                 batch_index + 1,
-                response
+                if response.len() > 100 {
+                    &response[..100]
+                } else {
+                    &response
+                }
             );
 
             let (issues, analysis_details) = self.parse_batch_llm_response(&response).await?;
@@ -251,9 +473,12 @@ impl SecurityScanner {
         }
 
         tracing::debug!(
-            "Completed batch scan with {} total issues",
+            "Completed batch scan of {} {}, found {} total issues",
+            tools.len(),
+            MCPTool::item_type_plural(),
             all_issues.len()
         );
+
         Ok((all_issues, all_analysis_details))
     }
 
@@ -263,63 +488,12 @@ impl SecurityScanner {
         prompts: &[MCPPrompt],
         show_details: bool,
     ) -> Result<Vec<SecurityIssue>> {
-        if prompts.is_empty() {
-            tracing::debug!("No prompts to scan, returning empty result");
-            return Ok(Vec::new());
-        }
-
-        if !self.is_llm_configured() {
-            tracing::debug!("OpenAI API not configured, returning empty result");
-            return Ok(Vec::new());
-        }
-
-        // Get batch size from config, default to 10 if not configured
-        let batch_size = self
-            .config
-            .as_ref()
-            .map(|c| c.scanner.llm_batch_size)
-            .unwrap_or(10);
-
-        tracing::debug!(
-            "Starting batch scan of {} prompts in batches of {}",
-            prompts.len(),
-            batch_size
-        );
-
-        let mut all_issues = Vec::new();
-
-        // Process prompts in batches
-        for (batch_index, chunk) in prompts.chunks(batch_size as usize).enumerate() {
-            tracing::debug!(
-                "Processing prompt batch {} with {} prompts",
-                batch_index + 1,
-                chunk.len()
-            );
-
-            let prompts_info = self.format_prompts_info(chunk);
-            let prompt_text = self.create_prompts_analysis_prompt(&prompts_info);
-
-            tracing::debug!(
-                "Sending batch LLM request for prompt batch {} ({} prompts)",
-                batch_index + 1,
-                chunk.len()
-            );
-            let response = self.query_llm(&prompt_text, show_details).await?;
-            tracing::debug!(
-                "Received batch LLM response for prompt batch {}: {}",
-                batch_index + 1,
-                response
-            );
-
-            let (issues, _) = self.parse_batch_llm_response(&response).await?;
-            all_issues.extend(issues);
-        }
-
-        tracing::debug!(
-            "Completed prompt batch scan with {} total issues",
-            all_issues.len()
-        );
-        Ok(all_issues)
+        self.scan_batch(
+            prompts,
+            |info| self.create_prompts_analysis_prompt(info),
+            show_details,
+        )
+        .await
     }
 
     /// Batch scan resources for security vulnerabilities
@@ -328,132 +502,12 @@ impl SecurityScanner {
         resources: &[MCPResource],
         show_details: bool,
     ) -> Result<Vec<SecurityIssue>> {
-        if resources.is_empty() {
-            tracing::debug!("No resources to scan, returning empty result");
-            return Ok(Vec::new());
-        }
-
-        if !self.is_llm_configured() {
-            tracing::debug!("OpenAI API not configured, returning empty result");
-            return Ok(Vec::new());
-        }
-
-        // Get batch size from config, default to 10 if not configured
-        let batch_size = self
-            .config
-            .as_ref()
-            .map(|c| c.scanner.llm_batch_size)
-            .unwrap_or(10);
-
-        tracing::debug!(
-            "Starting batch scan of {} resources in batches of {}",
-            resources.len(),
-            batch_size
-        );
-
-        let mut all_issues = Vec::new();
-
-        // Process resources in batches
-        for (batch_index, chunk) in resources.chunks(batch_size as usize).enumerate() {
-            tracing::debug!(
-                "Processing resource batch {} with {} resources",
-                batch_index + 1,
-                chunk.len()
-            );
-
-            let resources_info = self.format_resources_info(chunk);
-            let prompt_text = self.create_resources_analysis_prompt(&resources_info);
-
-            tracing::debug!(
-                "Sending batch LLM request for resource batch {} ({} resources)",
-                batch_index + 1,
-                chunk.len()
-            );
-            let response = self.query_llm(&prompt_text, show_details).await?;
-            tracing::debug!(
-                "Received batch LLM response for resource batch {}: {}",
-                batch_index + 1,
-                response
-            );
-
-            let (issues, _) = self.parse_batch_llm_response(&response).await?;
-            all_issues.extend(issues);
-        }
-
-        tracing::debug!(
-            "Completed resource batch scan with {} total issues",
-            all_issues.len()
-        );
-        Ok(all_issues)
-    }
-
-    /// Format tools information for LLM analysis
-    fn format_tools_info(&self, tools: &[MCPTool]) -> String {
-        let mut tools_info = String::new();
-        for (i, tool) in tools.iter().enumerate() {
-            // Create a concise summary of the input schema
-            let input_summary = if let Some(schema) = &tool.input_schema {
-                if let Some(properties) = schema.get("properties") {
-                    if let Some(props_obj) = properties.as_object() {
-                        let param_names: Vec<&str> = props_obj.keys().map(|k| k.as_str()).collect();
-                        format!("Parameters: {}", param_names.join(", "))
-                    } else {
-                        "Parameters: complex schema".to_string()
-                    }
-                } else {
-                    "Parameters: no properties".to_string()
-                }
-            } else {
-                "Parameters: no schema".to_string()
-            };
-
-            tools_info.push_str(&format!(
-                "\n\nTOOL {}: {}\nDescription: {}\nCategory: {}\nTags: {}\n{}",
-                i + 1,
-                tool.name,
-                tool.description.as_deref().unwrap_or("No description"),
-                tool.category.as_deref().unwrap_or("No category"),
-                tool.tags.join(", "),
-                input_summary
-            ));
-        }
-        tools_info
-    }
-
-    /// Format prompts information for LLM analysis
-    fn format_prompts_info(&self, prompts: &[MCPPrompt]) -> String {
-        let mut prompts_info = String::new();
-        for (i, prompt) in prompts.iter().enumerate() {
-            let arguments = prompt
-                .arguments
-                .as_ref()
-                .map(|args| serde_json::to_string_pretty(args).ok().unwrap_or_default())
-                .unwrap_or_else(|| "No arguments".to_string());
-
-            prompts_info.push_str(&format!(
-                "\n\nPROMPT {}: {}\nDescription: {}\nArguments: {}",
-                i + 1,
-                prompt.name,
-                prompt.description.as_deref().unwrap_or("No description"),
-                arguments
-            ));
-        }
-        prompts_info
-    }
-
-    /// Format resources information for LLM analysis
-    fn format_resources_info(&self, resources: &[MCPResource]) -> String {
-        let mut resources_info = String::new();
-        for (i, resource) in resources.iter().enumerate() {
-            resources_info.push_str(&format!(
-                "\n\nRESOURCE {}: {}\nURI: {}\nDescription: {}",
-                i + 1,
-                resource.name,
-                resource.uri,
-                resource.description.as_deref().unwrap_or("No description")
-            ));
-        }
-        resources_info
+        self.scan_batch(
+            resources,
+            |info| self.create_resources_analysis_prompt(info),
+            show_details,
+        )
+        .await
     }
 
     /// Create tools analysis prompt
