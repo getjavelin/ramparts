@@ -94,13 +94,6 @@ pub mod config_utils {
     }
 }
 
-/// Trait for processing capability results
-pub trait CapabilityResultProcessor {
-    fn process_tool_scan(&mut self, data: serde_json::Value) -> Result<()>;
-    fn process_resource_scan(&mut self, data: serde_json::Value) -> Result<()>;
-    fn process_prompt_scan(&mut self, data: serde_json::Value) -> Result<()>;
-}
-
 /// Scan options configuration
 #[derive(Debug, Clone)]
 pub struct ScanOptions {

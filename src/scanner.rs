@@ -53,7 +53,11 @@ impl STDIOTransport {
         }
 
         let cmd = parts[0].to_string();
-        let args = parts[1..].iter().map(|s| s.to_string()).collect();
+        let args = if parts.len() > 1 {
+            parts[1..].iter().map(|s| s.to_string()).collect()
+        } else {
+            Vec::new()
+        };
 
         Ok(Self {
             command: cmd,
@@ -205,422 +209,126 @@ impl JsonRpcRequest {
     }
 }
 
-// Optimized capability configuration
-#[derive(Debug, Clone, Default)]
-pub struct CapabilityConfig {
-    pub timeout_ms: Option<u64>,
-}
-
-// Enum for different scan capabilities with optimized structure
-#[derive(Debug, Clone)]
-pub enum ScanCapability {
-    Tool(CapabilityConfig),
-    Resource(CapabilityConfig),
-    Prompt(CapabilityConfig),
-    ServerInfo(CapabilityConfig),
-}
-
-impl ScanCapability {
-    // Use const for capability names to avoid string allocations
-    const TOOL_SCAN_NAME: &'static str = "tool_scan";
-    const RESOURCE_SCAN_NAME: &'static str = "resource_scan";
-    const PROMPT_SCAN_NAME: &'static str = "prompt_scan";
-    const SERVER_INFO_SCAN_NAME: &'static str = "server_info_scan";
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            ScanCapability::Tool(_) => Self::TOOL_SCAN_NAME,
-            ScanCapability::Resource(_) => Self::RESOURCE_SCAN_NAME,
-            ScanCapability::Prompt(_) => Self::PROMPT_SCAN_NAME,
-            ScanCapability::ServerInfo(_) => Self::SERVER_INFO_SCAN_NAME,
-        }
+// 1. Migrate protocol fetch logic to simple async methods on MCPScanner
+impl MCPScanner {
+    /// Fetches the list of tools from the MCP server.
+    pub async fn fetch_tools(&self, url: &str, options: &ScanOptions, transport_type: &TransportType, session: &MCPSession) -> Result<Vec<MCPTool>> {
+        let request = JsonRpcRequest::new("tools/list", 2).to_json();
+        let (response, _) = self.send_jsonrpc_request_with_headers_and_session(url, request, options, transport_type, session.session_id.clone()).await?;
+        let tool_response = ToolResponse::from_json_response(&response)?;
+        Ok(tool_response.tools)
     }
-
-    // Optimized execution with generic request handling
-    pub async fn execute(
-        &self,
-        scanner: &MCPScanner,
-        url: &str,
-        options: &ScanOptions,
-        session: &MCPSession,
-        transport_type: &TransportType,
-    ) -> Result<CapabilityResult> {
-        let timer = Timer::start();
-        let capability_name = self.name();
-
-        // Build request based on capability type
-        let request = self.build_request();
-
-        // Execute with capability-specific timeout
-        let (response, _) = if let Some(timeout_ms) = self.get_config().timeout_ms {
-            let timeout_duration = Duration::from_millis(timeout_ms);
-            match tokio::time::timeout(
-                timeout_duration,
-                scanner.send_jsonrpc_request_with_headers_and_session(
-                    url,
-                    request,
-                    options,
-                    transport_type,
-                    session.session_id.clone(),
-                ),
-            )
-            .await
-            {
-                Ok(result) => result?,
-                Err(_) => {
-                    return Err(anyhow!(
-                        "Capability {} timed out after {}ms",
-                        capability_name,
-                        timeout_ms
-                    ))
-                }
-            }
-        } else {
-            scanner
-                .send_jsonrpc_request_with_headers_and_session(
-                    url,
-                    request,
-                    options,
-                    transport_type,
-                    session.session_id.clone(),
-                )
-                .await?
-        };
-
-        // Use tracing for debug logging
-        debug!(
-            "{} response: {}",
-            capability_name,
-            serde_json::to_string_pretty(&response).unwrap_or_default()
-        );
-
-        // Parse response based on capability type
-        let (data, count) = self.parse_response(&response)?;
-
-        let execution_time = timer.elapsed_ms();
-        info!(
-            "{} capability completed in {}ms, found {} items",
-            capability_name, execution_time, count
-        );
-
-        let result = CapabilityResult::success(capability_name.to_string(), data, execution_time);
-
-        // Log execution time for monitoring
-        if result.is_slow_execution() {
-            warn!(
-                "{} capability took {}ms (slow execution)",
-                capability_name,
-                result.execution_time_ms()
-            );
-        }
-
-        Ok(result)
+    /// Fetches the list of resources from the MCP server.
+    pub async fn fetch_resources(&self, url: &str, options: &ScanOptions, transport_type: &TransportType, session: &MCPSession) -> Result<Vec<MCPResource>> {
+        let request = JsonRpcRequest::new("resources/list", 3).to_json();
+        let (response, _) = self.send_jsonrpc_request_with_headers_and_session(url, request, options, transport_type, session.session_id.clone()).await?;
+        let resources = parse_jsonrpc_array_response::<MCPResource>(&response, "resources")?;
+        Ok(resources)
     }
-
-    // Generic request builder to reduce redundancy
-    fn build_request(&self) -> serde_json::Value {
-        match self {
-            ScanCapability::Tool(_) => {
-                let request = JsonRpcRequest::new("tools/list", 2).to_json();
-                debug!(
-                    "tool_scan request: {}",
-                    serde_json::to_string_pretty(&request).unwrap_or_default()
-                );
-                request
-            }
-            ScanCapability::Resource(_) => {
-                let request = JsonRpcRequest::new("resources/list", 3).to_json();
-                debug!(
-                    "resource_scan request: {}",
-                    serde_json::to_string_pretty(&request).unwrap_or_default()
-                );
-                request
-            }
-            ScanCapability::Prompt(_) => {
-                let request = JsonRpcRequest::new("prompts/list", 4).to_json();
-                debug!(
-                    "prompt_scan request: {}",
-                    serde_json::to_string_pretty(&request).unwrap_or_default()
-                );
-                request
-            }
-            ScanCapability::ServerInfo(_) => JsonRpcRequest::new("server/info", 5).to_json(),
-        }
-    }
-
-    // Generic response parser to reduce redundancy
-    fn parse_response(&self, response: &serde_json::Value) -> Result<(serde_json::Value, usize)> {
-        match self {
-            ScanCapability::Tool(_) => {
-                let tool_response = ToolResponse::from_json_response(response)?;
-                let count = tool_response.total_count;
-                info!("Tool scan found {} tools", count);
-                Ok((serde_json::to_value(tool_response)?, count))
-            }
-            ScanCapability::Resource(_) => {
-                let resources = parse_jsonrpc_array_response::<MCPResource>(response, "resources")?;
-                let count = resources.len();
-                info!("Resource scan found {} resources", count);
-                for (i, resource) in resources.iter().enumerate() {
-                    info!("Resource {}: {} ({})", i + 1, resource.name, resource.uri);
-                }
-                Ok((serde_json::to_value(resources)?, count))
-            }
-            ScanCapability::Prompt(_) => {
-                let prompt_response = PromptResponse::from_json_response(response)?;
-                let count = prompt_response.total_count;
-                info!("Prompt scan found {} prompts", count);
-                for (i, prompt) in prompt_response.prompts.iter().enumerate() {
-                    info!(
-                        "Prompt {}: {} ({})",
-                        i + 1,
-                        prompt.name,
-                        prompt.description.as_deref().unwrap_or("No description")
-                    );
-                }
-                Ok((serde_json::to_value(prompt_response)?, count))
-            }
-            ScanCapability::ServerInfo(_) => {
-                // Just return the server info as-is
-                let server_info = response["result"]["serverInfo"].clone();
-                info!(
-                    "Server info scan found server: {}",
-                    server_info["name"].as_str().unwrap_or("Unknown")
-                );
-                Ok((server_info, 1))
-            }
-        }
-    }
-
-    // Get capability-specific configuration
-    fn get_config(&self) -> &CapabilityConfig {
-        match self {
-            ScanCapability::Tool(config) => config,
-            ScanCapability::Resource(config) => config,
-            ScanCapability::Prompt(config) => config,
-            ScanCapability::ServerInfo(config) => config,
-        }
-    }
-
-    // Factory methods for creating capabilities with default config
-    pub fn tool_scan() -> Self {
-        Self::Tool(CapabilityConfig::default())
-    }
-
-    pub fn resource_scan() -> Self {
-        Self::Resource(CapabilityConfig::default())
-    }
-
-    pub fn prompt_scan() -> Self {
-        Self::Prompt(CapabilityConfig::default())
-    }
-
-    pub fn server_info_scan() -> Self {
-        Self::ServerInfo(CapabilityConfig::default())
+    /// Fetches the list of prompts from the MCP server.
+    pub async fn fetch_prompts(&self, url: &str, options: &ScanOptions, transport_type: &TransportType, session: &MCPSession) -> Result<Vec<MCPPrompt>> {
+        let request = JsonRpcRequest::new("prompts/list", 4).to_json();
+        let (response, _) = self.send_jsonrpc_request_with_headers_and_session(url, request, options, transport_type, session.session_id.clone()).await?;
+        let prompt_response = PromptResponse::from_json_response(&response)?;
+        Ok(prompt_response.prompts)
     }
 }
 
-// Optimized result structure with better memory layout
-#[derive(Debug, Clone)]
-pub struct CapabilityResult {
-    pub capability_name: String,
-    pub success: bool,
-    pub data: Option<serde_json::Value>,
-    pub error: Option<String>,
-    pub execution_time_ms: u64,
+// 2. In perform_scan, use these new methods to populate ScanData
+// 3. Remove all old capability system code: CapabilityConfig, ScanCapability enum and impl, CapabilityResult, old CapabilityChain and impl, and all references to them.
+// 4. Only the new middleware system remains.
+
+// =====================
+// CAPABILITY TRAIT & CHAIN (Composable Middleware)
+// =====================
+
+/// Represents the phase in which a scan capability is executed.
+#[derive(Clone, Copy, Debug)]
+pub enum ScanPhase {
+    /// Pre-scan phase: runs before the main security scan.
+    PreScan,
 }
 
-impl CapabilityResult {
-    pub fn success(
-        capability_name: String,
-        data: serde_json::Value,
-        execution_time_ms: u64,
-    ) -> Self {
-        Self {
-            capability_name,
-            success: true,
-            data: Some(data),
-            error: None,
-            execution_time_ms,
-        }
-    }
-
-    pub fn failure(capability_name: String, error: String, execution_time_ms: u64) -> Self {
-        Self {
-            capability_name,
-            success: false,
-            data: None,
-            error: Some(error),
-            execution_time_ms,
-        }
-    }
-
-    /// Get the execution time in milliseconds
-    pub fn execution_time_ms(&self) -> u64 {
-        self.execution_time_ms
-    }
-
-    /// Check if the capability execution was slow (over 1 second)
-    pub fn is_slow_execution(&self) -> bool {
-        self.execution_time_ms > 1000
-    }
+/// Trait for a composable scan capability (middleware hook).
+///
+/// Implement this trait to add custom security, analysis, or filtering logic
+/// to the scan pipeline. Capabilities can be registered for the pre-scan phase.
+pub trait ScanCapability: Send + Sync {
+    /// Returns the name of the capability.
+    fn name(&self) -> &'static str;
+    /// Returns the phase in which this capability should run.
+    fn phase(&self) -> ScanPhase;
+    /// Runs the capability, modifying scan data or reporting issues as needed.
+    fn run(&self, _scan_data: &mut ScanData) -> anyhow::Result<()>;
+    /// Clones the capability as a boxed trait object.
+    fn box_clone(&self) -> Box<dyn ScanCapability>;
 }
 
-// Optimized capability chain with parallel execution support
+/// Chain of scan capabilities (middleware hooks) for pre-scan processing.
+///
+/// Capabilities are executed in the order they are added.
+#[derive(Default)]
 pub struct CapabilityChain {
-    capabilities: Vec<ScanCapability>,
-    parallel_execution: bool,
+    pre_scan: Vec<Box<dyn ScanCapability>>,
 }
 
 impl CapabilityChain {
+    /// Creates a new, empty capability chain.
     pub fn new() -> Self {
         Self {
-            capabilities: Vec::new(),
-            parallel_execution: false,
+            pre_scan: Vec::new(),
         }
     }
-
-    pub fn add_capability(mut self, capability: ScanCapability) -> Self {
-        self.capabilities.push(capability);
-        self
-    }
-
-    pub fn with_default_capabilities() -> Self {
-        Self::new()
-            .add_capability(ScanCapability::server_info_scan())
-            .add_capability(ScanCapability::tool_scan())
-            .add_capability(ScanCapability::resource_scan())
-            .add_capability(ScanCapability::prompt_scan())
-    }
-
-    // Optimized execution with parallel support
-    pub async fn execute(
-        &self,
-        scanner: &MCPScanner,
-        url: &str,
-        options: &ScanOptions,
-        session: &MCPSession,
-        transport_type: &TransportType,
-    ) -> Vec<CapabilityResult> {
-        if self.parallel_execution {
-            self.execute_parallel(scanner, url, options, session, transport_type)
-                .await
-        } else {
-            self.execute_sequential(scanner, url, options, session, transport_type)
-                .await
+    /// Adds a capability to the chain for its specified phase.
+    pub fn add(&mut self, cap: Box<dyn ScanCapability>) {
+        match cap.phase() {
+            ScanPhase::PreScan => self.pre_scan.push(cap),
         }
     }
-
-    // Sequential execution (original behavior)
-    async fn execute_sequential(
-        &self,
-        scanner: &MCPScanner,
-        url: &str,
-        options: &ScanOptions,
-        session: &MCPSession,
-        transport_type: &TransportType,
-    ) -> Vec<CapabilityResult> {
-        let mut results = Vec::with_capacity(self.capabilities.len());
-
-        for capability in &self.capabilities {
-            info!(
-                "Executing capability: [\x1b[1m{}\x1b[0m]",
-                capability.name()
-            );
-            match capability
-                .execute(scanner, url, options, session, transport_type)
-                .await
-            {
-                Ok(result) => {
-                    let result_clone = result.clone();
-                    results.push(result);
-                    if !result_clone.success {
-                        warn!(
-                            "Capability [\x1b[1m{}\x1b[0m] failed: {:?}",
-                            capability.name(),
-                            result_clone.error
-                        );
-                    }
-                }
-                Err(e) => {
-                    let failure_result = CapabilityResult::failure(
-                        capability.name().to_string(),
-                        e.to_string(),
-                        0, // Execution time not available in error case
-                    );
-                    results.push(failure_result);
-                    warn!(
-                        "Capability [\x1b[1m{}\x1b[0m] failed with error: {}",
-                        capability.name(),
-                        e
-                    );
-                }
+    /// Runs all pre-scan capabilities on the provided scan data.
+    pub fn run_pre_scan(&self, scan_data: &mut ScanData) {
+        for cap in &self.pre_scan {
+            if let Err(e) = cap.run(scan_data) {
+                tracing::warn!("Pre-scan capability '{}' failed: {}", cap.name(), e);
             }
         }
-
-        results
     }
+}
 
-    // Parallel execution for better performance
-    async fn execute_parallel(
-        &self,
-        scanner: &MCPScanner,
-        url: &str,
-        options: &ScanOptions,
-        session: &MCPSession,
-        transport_type: &TransportType,
-    ) -> Vec<CapabilityResult> {
-        use futures_util::future::join_all;
+// Implement Clone for CapabilityChain (requires dyn-clone for trait objects)
+impl Clone for CapabilityChain {
+    fn clone(&self) -> Self {
+        Self {
+            pre_scan: self.pre_scan.iter().map(|c| c.box_clone()).collect(),
+        }
+    }
+}
 
-        let futures: Vec<_> = self
-            .capabilities
-            .iter()
-            .map(|capability| {
-                let scanner = scanner.clone();
-                let url = url.to_string();
-                let options = options.clone();
-                let session = session.clone();
-                let capability = capability.clone();
-                let transport_type = transport_type.clone();
+// =====================
+// YARA CAPABILITY SKETCH (No actual YARA logic yet)
+// =====================
 
-                async move {
-                    info!(
-                        "Executing capability: [\x1b[1m{}\x1b[0m]",
-                        capability.name()
-                    );
-                    match capability
-                        .execute(&scanner, &url, &options, &session, &transport_type)
-                        .await
-                    {
-                        Ok(result) => {
-                            if !result.success {
-                                warn!(
-                                    "Capability [\x1b[1m{}\x1b[0m] failed: {:?}",
-                                    capability.name(),
-                                    result.error
-                                );
-                            }
-                            result
-                        }
-                        Err(e) => {
-                            let failure_result = CapabilityResult::failure(
-                                capability.name().to_string(),
-                                e.to_string(),
-                                0,
-                            );
-                            warn!(
-                                "Capability [\x1b[1m{}\x1b[0m] failed with error: {}",
-                                capability.name(),
-                                e
-                            );
-                            failure_result
-                        }
-                    }
-                }
-            })
-            .collect();
+/// Example YARA-backed scan capability (placeholder, no YARA logic yet).
+#[derive(Clone)]
+pub struct YaraScanCapability {
+    /// Path to the YARA rules file.
+    pub rules_path: String,
+    /// Phase in which this capability should run.
+    pub phase: ScanPhase,
+    // pub rules: yara::Rules, // (if using the yara crate)
+}
 
-        join_all(futures).await
+impl ScanCapability for YaraScanCapability {
+    fn name(&self) -> &'static str { "YARA" }
+    fn phase(&self) -> ScanPhase { self.phase }
+    fn run(&self, _scan_data: &mut ScanData) -> anyhow::Result<()> {
+        // Here you would load and apply YARA rules to scan_data fields
+        // For now, just log what would happen
+        tracing::info!("[YARA] Would scan with rules from {} (phase: {:?})", self.rules_path, self.phase);
+        Ok(())
+    }
+    fn box_clone(&self) -> Box<dyn ScanCapability> {
+        Box::new(self.clone())
     }
 }
 
@@ -628,26 +336,34 @@ impl CapabilityChain {
 pub struct MCPScanner {
     client: Client,
     http_timeout: u64,
-    capability_chain: CapabilityChain,
+    // capability_chain: CapabilityChain, // (old, for core MCP capabilities)
+    middleware_chain: CapabilityChain, // New: pre/post scan hooks
 }
 
 // MCPScanner implementation
 impl MCPScanner {
-    // Create a new MCPScanner with a timeout
+    /// Creates a new MCPScanner with the specified HTTP timeout.
     pub fn new_with_timeout(http_timeout: u64) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(http_timeout))
             .user_agent("ramparts/0.2.0")
             .build()
             .unwrap_or_default();
+        // Set up middleware chain with a sample YARA pre-scan capability (placeholder)
+        let mut middleware_chain = CapabilityChain::new();
+        middleware_chain.add(Box::new(YaraScanCapability {
+            rules_path: "rules/pre_scan.yar".to_string(),
+            phase: ScanPhase::PreScan,
+        }));
+        // Add more capabilities as needed
         Self {
             client,
             http_timeout,
-            capability_chain: CapabilityChain::with_default_capabilities(),
+            middleware_chain,
         }
     }
 
-    // Scan a single MCP server
+    /// Scan a single MCP server
     pub async fn scan_single(&self, url: &str, options: ScanOptions) -> Result<ScanResult> {
         let mut result = ScanResult::new(url.to_string());
 
@@ -672,9 +388,12 @@ impl MCPScanner {
         .await;
 
         match scan_result {
-            Ok(scan_data) => {
+            Ok(mut scan_data) => {
+                // === PRE-SCAN HOOKS ===
+                self.middleware_chain.run_pre_scan(&mut scan_data);
+
                 result.status = ScanStatus::Success;
-                result.server_info = scan_data.server_info;
+                result.server_info = scan_data.server_info.clone();
                 result.tools = scan_data.tools.clone();
                 result.resources = scan_data.resources.clone();
                 result.prompts = scan_data.prompts.clone();
@@ -737,6 +456,8 @@ impl MCPScanner {
                     "Scan completed successfully in [\x1b[1m{}\x1b[0m]ms",
                     result.response_time_ms
                 );
+
+                // === POST-SCAN HOOKS ===
             }
             Err(e) => {
                 result.status = ScanStatus::Failed(e.to_string());
@@ -751,7 +472,7 @@ impl MCPScanner {
         Ok(result)
     }
 
-    // Scan MCP servers from IDE configuration files
+    /// Scan MCP servers from IDE configuration files
     pub async fn scan_from_config(&self, options: ScanOptions) -> Result<Vec<ScanResult>> {
         let config_manager = MCPConfigManager::new();
 
@@ -867,7 +588,7 @@ impl MCPScanner {
         Ok(results)
     }
 
-    // Perform the scan
+    /// Perform the scan
     async fn perform_scan(
         &self,
         url: &str,
@@ -886,52 +607,15 @@ impl MCPScanner {
             scan_data.server_info = Some(server_info.clone());
         }
 
-        // Execute capability chain
-        let capability_results = self
-            .capability_chain
-            .execute(self, url, options, &session, transport_type)
-            .await;
-
-        // Process capability results using trait
-        let mut processor = ScanDataProcessor {
-            scan_data: &mut scan_data,
-        };
-        for result in capability_results {
-            if result.success {
-                match result.capability_name.as_str() {
-                    "tool_scan" => {
-                        let _ = processor.process_tool_scan(result.data.unwrap());
-                    }
-                    "resource_scan" => {
-                        let _ = processor.process_resource_scan(result.data.unwrap());
-                    }
-                    "prompt_scan" => {
-                        let _ = processor.process_prompt_scan(result.data.unwrap());
-                    }
-                    _ => {
-                        info!(
-                            "Unknown capability result: [\x1b[1m{}\x1b[0m]",
-                            result.capability_name
-                        );
-                    }
-                }
-            } else {
-                warn!(
-                    "Capability [\x1b[1m{}\x1b[0m] failed: {:?}",
-                    result.capability_name, result.error
-                );
-            }
-        }
-
-        // Send shutdown notification
-        let _ = self
-            .shutdown_session(url, &session, options, transport_type)
-            .await;
+        // Fetch tools, resources, and prompts using the new methods
+        scan_data.tools = self.fetch_tools(url, options, transport_type, &session).await.unwrap_or_default();
+        scan_data.resources = self.fetch_resources(url, options, transport_type, &session).await.unwrap_or_default();
+        scan_data.prompts = self.fetch_prompts(url, options, transport_type, &session).await.unwrap_or_default();
 
         Ok(scan_data)
     }
 
-    // Initialize an MCP session
+    /// Initialize an MCP session
     async fn initialize_mcp_session(
         &self,
         url: &str,
@@ -1073,35 +757,7 @@ impl MCPScanner {
         ))
     }
 
-    // Send a shutdown notification to the MCP server
-    async fn shutdown_session(
-        &self,
-        url: &str,
-        session: &MCPSession,
-        options: &ScanOptions,
-        transport_type: &TransportType,
-    ) -> Result<()> {
-        let request = json!({
-            "jsonrpc": "2.0",
-            "id": 4,
-            "method": "notifications/shutdown",
-            "params": {}
-        });
-
-        // We don't care about the response for shutdown
-        let _ = self
-            .send_jsonrpc_request_with_headers_and_session(
-                url,
-                request,
-                options,
-                transport_type,
-                session.session_id.clone(),
-            )
-            .await;
-        Ok(())
-    }
-
-    // Send a JSON-RPC request with session ID support
+    /// Send a JSON-RPC request with session ID support
     async fn send_jsonrpc_request_with_headers_and_session(
         &self,
         url: &str,
@@ -1240,7 +896,7 @@ impl MCPScanner {
         }
     }
 
-    // Handle an SSE response
+    /// Handle an SSE response
     async fn handle_sse_response(&self, response: reqwest::Response) -> Result<Value> {
         use futures_util::StreamExt;
 
@@ -1289,7 +945,7 @@ impl MCPScanner {
         }
     }
 
-    // Extract capabilities from the response
+    /// Extract capabilities from the response
     fn extract_capabilities(&self, response: &Value) -> Vec<String> {
         let mut capabilities = Vec::new();
 
@@ -1302,7 +958,7 @@ impl MCPScanner {
         capabilities
     }
 
-    // Normalize a URL
+    /// Normalize a URL
     fn normalize_url(&self, url: &str) -> Result<String> {
         let transport_type = TransportType::from_url(url);
 
@@ -1345,7 +1001,7 @@ impl MCPScanner {
         }
     }
 
-    // Check if a command is executable (basic check)
+    /// Check if a command is executable (basic check)
     fn is_executable(&self, command: &str) -> bool {
         // Check if it's in PATH
         if let Ok(path) = std::env::var("PATH") {
@@ -1372,42 +1028,13 @@ impl Clone for MCPScanner {
         Self {
             client: self.client.clone(),
             http_timeout: self.http_timeout,
-            capability_chain: CapabilityChain::with_default_capabilities(),
+            middleware_chain: self.middleware_chain.clone(),
         }
-    }
-}
-
-// Scan data processor implementing the trait
-struct ScanDataProcessor<'a> {
-    scan_data: &'a mut ScanData,
-}
-
-impl CapabilityResultProcessor for ScanDataProcessor<'_> {
-    fn process_tool_scan(&mut self, data: serde_json::Value) -> Result<()> {
-        if let Ok(tool_response) = serde_json::from_value::<ToolResponse>(data) {
-            self.scan_data.tools = tool_response.tools;
-        }
-        Ok(())
-    }
-
-    fn process_resource_scan(&mut self, data: serde_json::Value) -> Result<()> {
-        if let Ok(resources) = serde_json::from_value::<Vec<MCPResource>>(data) {
-            self.scan_data.resources = resources;
-        }
-        Ok(())
-    }
-
-    fn process_prompt_scan(&mut self, data: serde_json::Value) -> Result<()> {
-        if let Ok(prompt_response) = serde_json::from_value::<PromptResponse>(data) {
-            self.scan_data.prompts = prompt_response.prompts;
-        }
-        Ok(())
     }
 }
 
 // Scan data
-#[derive(Debug)]
-struct ScanData {
+pub(crate) struct ScanData {
     server_info: Option<MCPServerInfo>,
     tools: Vec<MCPTool>,
     resources: Vec<MCPResource>,

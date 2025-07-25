@@ -57,14 +57,6 @@ pub struct MCPServerOptions {
     pub detailed: Option<bool>,
 }
 
-fn is_verbose_or_debug() -> bool {
-    // Check for MCP_DEBUG or RUST_LOG=debug/info
-    std::env::var("MCP_DEBUG").ok().as_deref() == Some("1")
-        || std::env::var("RUST_LOG")
-            .map(|v| v.contains("debug") || v.contains("info"))
-            .unwrap_or(false)
-}
-
 /// IDE configuration file manager for MCP scanner
 pub struct MCPConfigManager {
     config_paths: Vec<PathBuf>,
@@ -116,9 +108,6 @@ impl MCPConfigManager {
                     "Loaded MCP configuration from IDE config: {}",
                     path.display()
                 );
-                if !is_verbose_or_debug() {
-                    println!("Loaded MCP server config from: {}", path.display());
-                }
             } else {
                 debug!(
                     "No MCP configuration found at IDE config: {}",
