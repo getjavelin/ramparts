@@ -212,23 +212,65 @@ impl JsonRpcRequest {
 // 1. Migrate protocol fetch logic to simple async methods on MCPScanner
 impl MCPScanner {
     /// Fetches the list of tools from the MCP server.
-    pub async fn fetch_tools(&self, url: &str, options: &ScanOptions, transport_type: &TransportType, session: &MCPSession) -> Result<Vec<MCPTool>> {
+    pub async fn fetch_tools(
+        &self,
+        url: &str,
+        options: &ScanOptions,
+        transport_type: &TransportType,
+        session: &MCPSession,
+    ) -> Result<Vec<MCPTool>> {
         let request = JsonRpcRequest::new("tools/list", 2).to_json();
-        let (response, _) = self.send_jsonrpc_request_with_headers_and_session(url, request, options, transport_type, session.session_id.clone()).await?;
+        let (response, _) = self
+            .send_jsonrpc_request_with_headers_and_session(
+                url,
+                request,
+                options,
+                transport_type,
+                session.session_id.clone(),
+            )
+            .await?;
         let tool_response = ToolResponse::from_json_response(&response)?;
         Ok(tool_response.tools)
     }
     /// Fetches the list of resources from the MCP server.
-    pub async fn fetch_resources(&self, url: &str, options: &ScanOptions, transport_type: &TransportType, session: &MCPSession) -> Result<Vec<MCPResource>> {
+    pub async fn fetch_resources(
+        &self,
+        url: &str,
+        options: &ScanOptions,
+        transport_type: &TransportType,
+        session: &MCPSession,
+    ) -> Result<Vec<MCPResource>> {
         let request = JsonRpcRequest::new("resources/list", 3).to_json();
-        let (response, _) = self.send_jsonrpc_request_with_headers_and_session(url, request, options, transport_type, session.session_id.clone()).await?;
+        let (response, _) = self
+            .send_jsonrpc_request_with_headers_and_session(
+                url,
+                request,
+                options,
+                transport_type,
+                session.session_id.clone(),
+            )
+            .await?;
         let resources = parse_jsonrpc_array_response::<MCPResource>(&response, "resources")?;
         Ok(resources)
     }
     /// Fetches the list of prompts from the MCP server.
-    pub async fn fetch_prompts(&self, url: &str, options: &ScanOptions, transport_type: &TransportType, session: &MCPSession) -> Result<Vec<MCPPrompt>> {
+    pub async fn fetch_prompts(
+        &self,
+        url: &str,
+        options: &ScanOptions,
+        transport_type: &TransportType,
+        session: &MCPSession,
+    ) -> Result<Vec<MCPPrompt>> {
         let request = JsonRpcRequest::new("prompts/list", 4).to_json();
-        let (response, _) = self.send_jsonrpc_request_with_headers_and_session(url, request, options, transport_type, session.session_id.clone()).await?;
+        let (response, _) = self
+            .send_jsonrpc_request_with_headers_and_session(
+                url,
+                request,
+                options,
+                transport_type,
+                session.session_id.clone(),
+            )
+            .await?;
         let prompt_response = PromptResponse::from_json_response(&response)?;
         Ok(prompt_response.prompts)
     }
@@ -319,12 +361,20 @@ pub struct YaraScanCapability {
 }
 
 impl ScanCapability for YaraScanCapability {
-    fn name(&self) -> &'static str { "YARA" }
-    fn phase(&self) -> ScanPhase { self.phase }
+    fn name(&self) -> &'static str {
+        "YARA"
+    }
+    fn phase(&self) -> ScanPhase {
+        self.phase
+    }
     fn run(&self, _scan_data: &mut ScanData) -> anyhow::Result<()> {
         // Here you would load and apply YARA rules to scan_data fields
         // For now, just log what would happen
-        tracing::info!("[YARA] Would scan with rules from {} (phase: {:?})", self.rules_path, self.phase);
+        tracing::info!(
+            "[YARA] Would scan with rules from {} (phase: {:?})",
+            self.rules_path,
+            self.phase
+        );
         Ok(())
     }
     fn box_clone(&self) -> Box<dyn ScanCapability> {
@@ -608,9 +658,18 @@ impl MCPScanner {
         }
 
         // Fetch tools, resources, and prompts using the new methods
-        scan_data.tools = self.fetch_tools(url, options, transport_type, &session).await.unwrap_or_default();
-        scan_data.resources = self.fetch_resources(url, options, transport_type, &session).await.unwrap_or_default();
-        scan_data.prompts = self.fetch_prompts(url, options, transport_type, &session).await.unwrap_or_default();
+        scan_data.tools = self
+            .fetch_tools(url, options, transport_type, &session)
+            .await
+            .unwrap_or_default();
+        scan_data.resources = self
+            .fetch_resources(url, options, transport_type, &session)
+            .await
+            .unwrap_or_default();
+        scan_data.prompts = self
+            .fetch_prompts(url, options, transport_type, &session)
+            .await
+            .unwrap_or_default();
 
         Ok(scan_data)
     }
