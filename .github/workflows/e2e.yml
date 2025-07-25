@@ -49,5 +49,40 @@ jobs:
           # Test init-config command
           ./target/release/ramparts init-config --force
           
-          # Test server startup (timeout after 5 seconds)
-          timeout 5s ./target/release/ramparts server --port 3000 || true
+          # Test server startup and shutdown with proper cleanup
+          echo "Testing server startup and shutdown..."
+          # Start server in background and capture PID
+          ./target/release/ramparts server --port 3000 & SERVER_PID=$!
+          echo "Server started with PID: $SERVER_PID"
+          
+          # Wait for server to start (max 10 seconds)
+          sleep 2
+          
+          # Test if server is responding
+          if curl -s http://localhost:3000/health > /dev/null 2>&1; then
+            echo "✅ Server is responding on port 3000"
+          else
+            echo "❌ Server not responding on port 3000"
+            exit 1
+          fi
+          
+          # Kill server gracefully
+          kill $SERVER_PID 2>/dev/null || true
+          
+          # Wait for graceful shutdown (max 5 seconds)
+          for i in 1 2 3 4 5; do
+            if ! kill -0 $SERVER_PID 2>/dev/null; then
+              echo "✅ Server shutdown gracefully"
+              break
+            fi
+            sleep 1
+          done
+          
+          # Force kill if still running
+          if kill -0 $SERVER_PID 2>/dev/null; then
+            echo "⚠️  Force killing server process"
+            kill -9 $SERVER_PID 2>/dev/null || true
+          fi
+          
+          # Clean up any remaining processes
+          pkill -f "ramparts server" 2>/dev/null || true

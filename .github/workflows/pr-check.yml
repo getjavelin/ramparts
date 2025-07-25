@@ -32,6 +32,33 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install YARA (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yara libyara-dev
+
+      - name: Install YARA (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install yara
+          # Set environment variables for yara-sys
+          echo "YARA_LIBRARY_PATH=/opt/homebrew/lib" >> $GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-I/opt/homebrew/include" >> $GITHUB_ENV
+          # Also set for Intel Macs
+          if [ -d "/usr/local/lib" ]; then
+            echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
+            echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
+          fi
+        shell: bash
+
+      - name: Install YARA (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # Windows doesn't have a standard YARA package manager
+          # We'll build without YARA features for Windows
+          echo "YARA not available on Windows, will build without YARA features"
+
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
@@ -44,13 +71,25 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Check code without building
-        run: cargo check --all-features
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cargo check --no-default-features
+          else
+            cargo check --all-features
+          fi
+        shell: bash
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
       - name: Run Clippy linter
-        run: cargo clippy --all-features -- -D warnings
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cargo clippy --no-default-features -- -D warnings
+          else
+            cargo clippy --all-features -- -D warnings
+          fi
+        shell: bash
 
   javelin-sast-check:
     permissions:
@@ -65,6 +104,33 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install YARA (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yara libyara-dev
+
+      - name: Install YARA (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install yara
+          # Set environment variables for yara-sys
+          echo "YARA_LIBRARY_PATH=/opt/homebrew/lib" >> $GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-I/opt/homebrew/include" >> $GITHUB_ENV
+          # Also set for Intel Macs
+          if [ -d "/usr/local/lib" ]; then
+            echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
+            echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
+          fi
+        shell: bash
+
+      - name: Install YARA (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # Windows doesn't have a standard YARA package manager
+          # We'll build without YARA features for Windows
+          echo "YARA not available on Windows, will build without YARA features"
+
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
@@ -77,12 +143,23 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run tests
-        run: cargo test --all-features
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cargo test --no-default-features
+          else
+            cargo test --all-features
+          fi
+        shell: bash
 
       - name: Run tests with coverage
         run: |
           cargo install cargo-tarpaulin
-          cargo tarpaulin --all-features --out Html --output-dir coverage
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cargo tarpaulin --no-default-features --out Html --output-dir coverage
+          else
+            cargo tarpaulin --all-features --out Html --output-dir coverage
+          fi
+        shell: bash
         continue-on-error: true
 
       - name: Upload coverage to Codecov
@@ -106,6 +183,33 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install YARA (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yara libyara-dev
+
+      - name: Install YARA (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install yara
+          # Set environment variables for yara-sys
+          echo "YARA_LIBRARY_PATH=/opt/homebrew/lib" >> $GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-I/opt/homebrew/include" >> $GITHUB_ENV
+          # Also set for Intel Macs
+          if [ -d "/usr/local/lib" ]; then
+            echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
+            echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
+          fi
+        shell: bash
+
+      - name: Install YARA (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # Windows doesn't have a standard YARA package manager
+          # We'll build without YARA features for Windows
+          echo "YARA not available on Windows, will build without YARA features"
 
       - name: Cache dependencies
         uses: actions/cache@v3
@@ -140,6 +244,33 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install YARA (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yara libyara-dev
+
+      - name: Install YARA (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install yara
+          # Set environment variables for yara-sys
+          echo "YARA_LIBRARY_PATH=/opt/homebrew/lib" >> $GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-I/opt/homebrew/include" >> $GITHUB_ENV
+          # Also set for Intel Macs
+          if [ -d "/usr/local/lib" ]; then
+            echo "YARA_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
+            echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/local/include" >> $GITHUB_ENV
+          fi
+        shell: bash
+
+      - name: Install YARA (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # Windows doesn't have a standard YARA package manager
+          # We'll build without YARA features for Windows
+          echo "YARA not available on Windows, will build without YARA features"
+
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
@@ -152,10 +283,22 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Build release
-        run: cargo build --release
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cargo build --release --no-default-features
+          else
+            cargo build --release
+          fi
+        shell: bash
 
       - name: Build debug
-        run: cargo build
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cargo build --no-default-features
+          else
+            cargo build
+          fi
+        shell: bash
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

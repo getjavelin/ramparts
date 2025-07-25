@@ -185,3 +185,216 @@ impl MCPScannerCore {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_scan_request_creation() {
+        let request = ScanRequest {
+            url: "http://example.com".to_string(),
+            timeout: Some(60),
+            http_timeout: Some(30),
+            detailed: Some(true),
+            format: Some("json".to_string()),
+            auth_headers: Some(HashMap::from([(
+                "Authorization".to_string(),
+                "Bearer token".to_string(),
+            )])),
+        };
+
+        assert_eq!(request.url, "http://example.com");
+        assert_eq!(request.timeout, Some(60));
+        assert_eq!(request.http_timeout, Some(30));
+        assert_eq!(request.detailed, Some(true));
+        assert_eq!(request.format, Some("json".to_string()));
+        assert!(request.auth_headers.is_some());
+    }
+
+    #[test]
+    fn test_scan_request_default() {
+        let request = ScanRequest::default();
+        assert_eq!(request.url, "");
+        assert_eq!(request.timeout, None);
+        assert_eq!(request.http_timeout, None);
+        assert_eq!(request.detailed, None);
+        assert_eq!(request.format, None);
+        assert_eq!(request.auth_headers, None);
+    }
+
+    #[test]
+    fn test_scan_response_creation() {
+        let result = ScanResult::new("http://example.com".to_string());
+        let response = ScanResponse {
+            success: true,
+            result: Some(result),
+            error: None,
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+
+        assert!(response.success);
+        assert!(response.result.is_some());
+        assert!(response.error.is_none());
+        assert_eq!(response.timestamp, "2024-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn test_scan_response_error() {
+        let response = ScanResponse {
+            success: false,
+            result: None,
+            error: Some("Test error".to_string()),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+
+        assert!(!response.success);
+        assert!(response.result.is_none());
+        assert_eq!(response.error, Some("Test error".to_string()));
+    }
+
+    #[test]
+    fn test_batch_scan_request() {
+        let urls = vec![
+            "http://example1.com".to_string(),
+            "http://example2.com".to_string(),
+        ];
+        let options = ScanRequest {
+            url: "".to_string(),
+            timeout: Some(60),
+            http_timeout: Some(30),
+            detailed: Some(false),
+            format: Some("text".to_string()),
+            auth_headers: None,
+        };
+
+        let request = BatchScanRequest {
+            urls: urls.clone(),
+            options: Some(options),
+        };
+
+        assert_eq!(request.urls.len(), 2);
+        assert_eq!(request.urls[0], "http://example1.com");
+        assert_eq!(request.urls[1], "http://example2.com");
+        assert!(request.options.is_some());
+    }
+
+    #[test]
+    fn test_batch_scan_response() {
+        let results = vec![
+            ScanResponse {
+                success: true,
+                result: Some(ScanResult::new("http://example1.com".to_string())),
+                error: None,
+                timestamp: "2024-01-01T00:00:00Z".to_string(),
+            },
+            ScanResponse {
+                success: false,
+                result: None,
+                error: Some("Failed".to_string()),
+                timestamp: "2024-01-01T00:00:01Z".to_string(),
+            },
+        ];
+
+        let response = BatchScanResponse {
+            success: true,
+            results: results.clone(),
+            total: 2,
+            successful: 1,
+            failed: 1,
+            timestamp: "2024-01-01T00:00:02Z".to_string(),
+        };
+
+        assert!(response.success);
+        assert_eq!(response.results.len(), 2);
+        assert_eq!(response.total, 2);
+        assert_eq!(response.successful, 1);
+        assert_eq!(response.failed, 1);
+    }
+
+    #[test]
+    fn test_validation_response() {
+        let response = ValidationResponse {
+            success: true,
+            valid: true,
+            error: None,
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+
+        assert!(response.success);
+        assert!(response.valid);
+        assert!(response.error.is_none());
+        assert_eq!(response.timestamp, "2024-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn test_validation_response_invalid() {
+        let response = ValidationResponse {
+            success: false,
+            valid: false,
+            error: Some("Invalid configuration".to_string()),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+
+        assert!(!response.success);
+        assert!(!response.valid);
+        assert_eq!(response.error, Some("Invalid configuration".to_string()));
+    }
+
+    #[test]
+    fn test_mcp_scanner_core_creation() {
+        let core = MCPScannerCore::new();
+        assert!(core.is_ok());
+    }
+
+    #[test]
+    fn test_parse_scan_options() {
+        let core = MCPScannerCore::new().unwrap();
+        let request = ScanRequest {
+            url: "http://example.com".to_string(),
+            timeout: Some(120),
+            http_timeout: Some(60),
+            detailed: Some(true),
+            format: Some("json".to_string()),
+            auth_headers: Some(HashMap::from([(
+                "Authorization".to_string(),
+                "Bearer token".to_string(),
+            )])),
+        };
+
+        let options = core.parse_scan_options(&request);
+        assert!(options.is_ok());
+
+        let options = options.unwrap();
+        assert_eq!(options.timeout, 120);
+        assert_eq!(options.http_timeout, 60);
+        assert_eq!(options.detailed, true);
+        assert_eq!(options.format, "json");
+        assert!(options.auth_headers.is_some());
+    }
+
+    #[test]
+    fn test_parse_scan_options_with_defaults() {
+        let core = MCPScannerCore::new().unwrap();
+        let request = ScanRequest {
+            url: "http://example.com".to_string(),
+            timeout: None,
+            http_timeout: None,
+            detailed: None,
+            format: None,
+            auth_headers: None,
+        };
+
+        let options = core.parse_scan_options(&request);
+        assert!(options.is_ok());
+
+        let options = options.unwrap();
+        // These will use default values from config
+        assert!(options.timeout > 0);
+        assert!(options.http_timeout > 0);
+        assert_eq!(options.detailed, false); // Default is false
+        assert_eq!(options.format, "table"); // Default is table
+        assert!(options.auth_headers.is_none());
+    }
+}
