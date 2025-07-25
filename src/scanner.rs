@@ -446,7 +446,6 @@ pub struct DynamicYaraScanner {
 #[derive(Debug, Clone)]
 pub struct RuleMetadata {
     pub name: String,
-    pub severity: String,
     pub tags: Vec<String>,
 }
 
@@ -585,8 +584,11 @@ impl DynamicYaraScanner {
 
                                 debug!("Loaded YARA rule: {} (phase: {})", path.display(), phase);
 
-                                // Load metadata if available
-                                let metadata = self.load_rule_metadata(&path);
+                                // Create metadata for the rule
+                                let metadata = RuleMetadata {
+                                    name: rule_name.clone(),
+                                    tags: vec!["yara".to_string(), "security".to_string()],
+                                };
                                 let metadata_key = format!("{phase}:{rule_name}");
                                 self.rule_metadata.insert(metadata_key, metadata);
 
@@ -606,24 +608,6 @@ impl DynamicYaraScanner {
         }
 
         Ok(rules)
-    }
-
-    /// Loads metadata for a rule file if available
-    fn load_rule_metadata(&self, rule_path: &Path) -> RuleMetadata {
-        let rule_name = rule_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-
-        // For future enhancement, we could extract metadata from the compiled rules
-        // by scanning them with a test string and examining the match metadata
-        // For now, use a generic metadata structure based on the file name
-        RuleMetadata {
-            name: rule_name,
-            severity: "MEDIUM".to_string(),
-            tags: vec!["yara".to_string(), "security".to_string()],
-        }
     }
 
     /// Scans text with pre-scan rules and returns enhanced match information
@@ -681,7 +665,7 @@ impl DynamicYaraScanner {
                                     date: None,
                                     version: None,
                                     description: Some(stored_meta.name.clone()),
-                                    severity: Some(stored_meta.severity.clone()),
+                                    severity: Some("MEDIUM".to_string()),
                                     category: Some(stored_meta.tags.join(",")),
                                     confidence: None,
                                     tags: stored_meta.tags.clone(),
@@ -765,7 +749,7 @@ impl DynamicYaraScanner {
                                     date: None,
                                     version: None,
                                     description: Some(stored_meta.name.clone()),
-                                    severity: Some(stored_meta.severity.clone()),
+                                    severity: Some("MEDIUM".to_string()),
                                     category: Some(stored_meta.tags.join(",")),
                                     confidence: None,
                                     tags: stored_meta.tags.clone(),

@@ -116,6 +116,24 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install YARA (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yara
+
+      - name: Install YARA (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install yara
+
+      - name: Install YARA (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # Windows doesn't have a standard YARA package manager
+          # We'll build without YARA features for Windows
+          echo "YARA not available on Windows, will build without YARA features"
+
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
@@ -129,7 +147,11 @@ jobs:
 
       - name: Build release binaries
         run: |
-          cargo build --release
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cargo build --release --no-default-features
+          else
+            cargo build --release
+          fi
 
       - name: Create release assets
         run: |
@@ -174,6 +196,24 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install YARA (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yara
+
+      - name: Install YARA (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install yara
+
+      - name: Install YARA (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # Windows doesn't have a standard YARA package manager
+          # We'll build without YARA features for Windows
+          echo "YARA not available on Windows, will build without YARA features"
 
       - name: Cache dependencies
         uses: actions/cache@v4

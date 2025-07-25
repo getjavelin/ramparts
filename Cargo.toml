@@ -25,7 +25,7 @@ sign-tag = false
 
 [features]
 default = ["yara-scanning"]
-yara-scanning = ["yara"]
+yara-scanning = ["yara", "glob"]
 
 [dependencies]
 # CLI argument parsing
@@ -72,7 +72,7 @@ config = "0.14"
 dirs = "5.0"
 
 # File pattern matching for dynamic YARA rules
-glob = "0.3"
+glob = { version = "0.3", optional = true }
 
 # Color output
 colored = "2.0"
