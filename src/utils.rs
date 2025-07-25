@@ -443,10 +443,14 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
         println!("{}", "=".repeat(80));
 
         // Separate summary results from individual match results
-        let summary_results: Vec<_> = result.yara_results.iter()
+        let summary_results: Vec<_> = result
+            .yara_results
+            .iter()
             .filter(|r| r.target_type == "summary")
             .collect();
-        let match_results: Vec<_> = result.yara_results.iter()
+        let match_results: Vec<_> = result
+            .yara_results
+            .iter()
             .filter(|r| r.target_type != "summary")
             .collect();
 
@@ -457,21 +461,26 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
                 Some("warning") => "⚠️",
                 _ => "🔍",
             };
-            
+
             let status_text = match summary.status.as_deref() {
                 Some("passed") => "PASSED".green(),
                 Some("warning") => "WARNING".yellow(),
                 _ => "UNKNOWN".white(),
             };
 
-            println!("{} {} - {}", status_icon, summary.target_name.to_uppercase(), status_text);
+            println!(
+                "{} {} - {}",
+                status_icon,
+                summary.target_name.to_uppercase(),
+                status_text
+            );
             println!("  Context: {}", summary.context);
-            
+
             if let Some(total_items) = summary.total_items_scanned {
-                println!("  Items scanned: {}", total_items);
+                println!("  Items scanned: {total_items}");
             }
             if let Some(total_matches) = summary.total_matches {
-                println!("  Security matches: {}", total_matches);
+                println!("  Security matches: {total_matches}");
             }
             if let Some(rules_executed) = &summary.rules_executed {
                 if !rules_executed.is_empty() && rules_executed[0] != "none" {
@@ -483,7 +492,10 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
 
         // Show individual match results if any
         if !match_results.is_empty() {
-            println!("🔍 {} Individual Security Matches:", "Detailed Results".bold());
+            println!(
+                "🔍 {} Individual Security Matches:",
+                "Detailed Results".bold()
+            );
             println!();
 
             for yara_result in &match_results {
@@ -628,24 +640,36 @@ fn print_text_result(result: &ScanResult) {
     // YARA scan results
     if !result.yara_results.is_empty() {
         // Separate summary and match results
-        let summary_results: Vec<_> = result.yara_results.iter()
+        let summary_results: Vec<_> = result
+            .yara_results
+            .iter()
             .filter(|r| r.target_type == "summary")
             .collect();
-        let match_results: Vec<_> = result.yara_results.iter()
+        let match_results: Vec<_> = result
+            .yara_results
+            .iter()
             .filter(|r| r.target_type != "summary")
             .collect();
 
-        println!("YARA Scan Results: {} total results", result.yara_results.len());
-        
+        println!(
+            "YARA Scan Results: {} total results",
+            result.yara_results.len()
+        );
+
         // Show summary results
         for summary in &summary_results {
             let status = summary.status.as_deref().unwrap_or("unknown");
-            println!("  {} - {}: {}", summary.target_name.to_uppercase(), status.to_uppercase(), summary.context);
+            println!(
+                "  {} - {}: {}",
+                summary.target_name.to_uppercase(),
+                status.to_uppercase(),
+                summary.context
+            );
             if let Some(total_matches) = summary.total_matches {
-                println!("    Security matches found: {}", total_matches);
+                println!("    Security matches found: {total_matches}");
             }
         }
-        
+
         // Show individual matches
         for yara_result in &match_results {
             let severity = yara_result
@@ -658,7 +682,11 @@ fn print_text_result(result: &ScanResult) {
 
             println!(
                 "    {} ({}): {} - {} [{}]",
-                yara_result.target_name, yara_result.target_type, yara_result.rule_name, severity, status.to_uppercase()
+                yara_result.target_name,
+                yara_result.target_type,
+                yara_result.rule_name,
+                severity,
+                status.to_uppercase()
             );
         }
     }

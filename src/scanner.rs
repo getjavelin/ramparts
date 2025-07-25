@@ -815,8 +815,6 @@ impl DynamicYaraScanner {
         }
     }
 
-
-
     /// Validates that all loaded rules are valid
     #[cfg(all(test, feature = "yara-scanning"))]
     pub fn validate_rules(&self) -> Result<Vec<String>> {
@@ -858,8 +856,6 @@ pub struct RuleStats {
     pub pre_scan_tags: HashMap<String, usize>,
     pub post_scan_tags: HashMap<String, usize>,
 }
-
-
 
 impl Clone for DynamicYaraScanner {
     fn clone(&self) -> Self {
@@ -906,14 +902,12 @@ impl DynamicYaraCapability {
             // Use enhanced scanning methods that return metadata
             #[cfg(feature = "yara-scanning")]
             let enhanced_matches = match phase {
-                ScanPhase::PreScan => {
-                    self.scanner
-                        .scan_with_pre_rules_enhanced(&item_text, &context)?
-                }
-                ScanPhase::PostScan => {
-                    self.scanner
-                        .scan_with_post_rules_enhanced(&item_text, &context)?
-                }
+                ScanPhase::PreScan => self
+                    .scanner
+                    .scan_with_pre_rules_enhanced(&item_text, &context)?,
+                ScanPhase::PostScan => self
+                    .scanner
+                    .scan_with_post_rules_enhanced(&item_text, &context)?,
             };
 
             #[cfg(not(feature = "yara-scanning"))]
@@ -1008,22 +1002,18 @@ impl ScanCapability for DynamicYaraCapability {
                 );
 
                 // Scan all item types using the generic scanner
-                let tool_results = self.scan_items_with_yara(
-                    &scan_data.tools,
-                    ScanPhase::PreScan,
-                )?;
-                let prompt_results = self.scan_items_with_yara(
-                    &scan_data.prompts,
-                    ScanPhase::PreScan,
-                )?;
-                let resource_results = self.scan_items_with_yara(
-                    &scan_data.resources,
-                    ScanPhase::PreScan,
-                )?;
+                let tool_results =
+                    self.scan_items_with_yara(&scan_data.tools, ScanPhase::PreScan)?;
+                let prompt_results =
+                    self.scan_items_with_yara(&scan_data.prompts, ScanPhase::PreScan)?;
+                let resource_results =
+                    self.scan_items_with_yara(&scan_data.resources, ScanPhase::PreScan)?;
 
                 // Count total matches found
-                let total_matches = tool_results.len() + prompt_results.len() + resource_results.len();
-                let total_items = scan_data.tools.len() + scan_data.prompts.len() + scan_data.resources.len();
+                let total_matches =
+                    tool_results.len() + prompt_results.len() + resource_results.len();
+                let total_items =
+                    scan_data.tools.len() + scan_data.prompts.len() + scan_data.resources.len();
 
                 // Add all results to scan data
                 scan_data.yara_results.extend(tool_results);
@@ -1036,15 +1026,38 @@ impl ScanCapability for DynamicYaraCapability {
                     target_name: "pre-scan".to_string(),
                     rule_name: "YARA_PRE_SCAN_SUMMARY".to_string(),
                     matched_text: None,
-                    context: format!("Pre-scan completed: {} rules executed on {} items", stats.pre_scan_count, total_items),
+                    context: format!(
+                        "Pre-scan completed: {} rules executed on {} items",
+                        stats.pre_scan_count, total_items
+                    ),
                     rule_metadata: None,
                     phase: Some("pre-scan".to_string()),
-                    rules_executed: if stats.pre_scan_count > 0 { Some(vec!["command_injection".to_string(), "path_traversal".to_string(), "secrets_leakage".to_string()]) } else { None },
-                    rules_passed: if total_matches == 0 { Some(vec!["all".to_string()]) } else { None },
-                    rules_failed: if total_matches > 0 { Some(vec!["security_check".to_string()]) } else { None },
+                    rules_executed: if stats.pre_scan_count > 0 {
+                        Some(vec![
+                            "command_injection".to_string(),
+                            "path_traversal".to_string(),
+                            "secrets_leakage".to_string(),
+                        ])
+                    } else {
+                        None
+                    },
+                    rules_passed: if total_matches == 0 {
+                        Some(vec!["all".to_string()])
+                    } else {
+                        None
+                    },
+                    rules_failed: if total_matches > 0 {
+                        Some(vec!["security_check".to_string()])
+                    } else {
+                        None
+                    },
                     total_items_scanned: Some(total_items),
                     total_matches: Some(total_matches),
-                    status: Some(if total_matches == 0 { "passed".to_string() } else { "warning".to_string() }),
+                    status: Some(if total_matches == 0 {
+                        "passed".to_string()
+                    } else {
+                        "warning".to_string()
+                    }),
                 };
                 scan_data.yara_results.push(summary_result);
             }
@@ -1056,22 +1069,18 @@ impl ScanCapability for DynamicYaraCapability {
                 );
 
                 // Scan all item types using the generic scanner
-                let tool_results = self.scan_items_with_yara(
-                    &scan_data.tools,
-                    ScanPhase::PostScan,
-                )?;
-                let prompt_results = self.scan_items_with_yara(
-                    &scan_data.prompts,
-                    ScanPhase::PostScan,
-                )?;
-                let resource_results = self.scan_items_with_yara(
-                    &scan_data.resources,
-                    ScanPhase::PostScan,
-                )?;
+                let tool_results =
+                    self.scan_items_with_yara(&scan_data.tools, ScanPhase::PostScan)?;
+                let prompt_results =
+                    self.scan_items_with_yara(&scan_data.prompts, ScanPhase::PostScan)?;
+                let resource_results =
+                    self.scan_items_with_yara(&scan_data.resources, ScanPhase::PostScan)?;
 
                 // Count total matches found
-                let total_matches = tool_results.len() + prompt_results.len() + resource_results.len();
-                let total_items = scan_data.tools.len() + scan_data.prompts.len() + scan_data.resources.len();
+                let total_matches =
+                    tool_results.len() + prompt_results.len() + resource_results.len();
+                let total_items =
+                    scan_data.tools.len() + scan_data.prompts.len() + scan_data.resources.len();
 
                 // Add all results to scan data
                 scan_data.yara_results.extend(tool_results);
@@ -1084,15 +1093,34 @@ impl ScanCapability for DynamicYaraCapability {
                     target_name: "post-scan".to_string(),
                     rule_name: "YARA_POST_SCAN_SUMMARY".to_string(),
                     matched_text: None,
-                    context: format!("Post-scan completed: {} rules executed on {} items", stats.post_scan_count, total_items),
+                    context: format!(
+                        "Post-scan completed: {} rules executed on {} items",
+                        stats.post_scan_count, total_items
+                    ),
                     rule_metadata: None,
                     phase: Some("post-scan".to_string()),
-                    rules_executed: if stats.post_scan_count > 0 { Some(vec!["post_scan_rules".to_string()]) } else { Some(vec!["none".to_string()]) },
-                    rules_passed: if total_matches == 0 { Some(vec!["all".to_string()]) } else { None },
-                    rules_failed: if total_matches > 0 { Some(vec!["security_check".to_string()]) } else { None },
+                    rules_executed: if stats.post_scan_count > 0 {
+                        Some(vec!["post_scan_rules".to_string()])
+                    } else {
+                        Some(vec!["none".to_string()])
+                    },
+                    rules_passed: if total_matches == 0 {
+                        Some(vec!["all".to_string()])
+                    } else {
+                        None
+                    },
+                    rules_failed: if total_matches > 0 {
+                        Some(vec!["security_check".to_string()])
+                    } else {
+                        None
+                    },
                     total_items_scanned: Some(total_items),
                     total_matches: Some(total_matches),
-                    status: Some(if total_matches == 0 { "passed".to_string() } else { "warning".to_string() }),
+                    status: Some(if total_matches == 0 {
+                        "passed".to_string()
+                    } else {
+                        "warning".to_string()
+                    }),
                 };
                 scan_data.yara_results.push(summary_result);
             }
