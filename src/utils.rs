@@ -884,7 +884,7 @@ mod tests {
         let elapsed = timer.elapsed_ms();
 
         assert!(elapsed >= 10);
-        println!("Timer elapsed: {}ms", elapsed);
+        println!("Timer elapsed: {elapsed}ms");
     }
 
     #[test]
@@ -944,9 +944,7 @@ mod tests {
         });
 
         #[derive(Debug, Clone, serde::Deserialize)]
-        struct TestTool {
-            name: String,
-        }
+        struct TestTool {}
 
         let result = parse_jsonrpc_array_response::<TestTool>(&response, "tools");
         assert!(result.is_err());
@@ -965,9 +963,7 @@ mod tests {
         });
 
         #[derive(Debug, Clone, serde::Deserialize)]
-        struct TestTool {
-            name: String,
-        }
+        struct TestTool {}
 
         let result = parse_jsonrpc_array_response::<TestTool>(&response, "tools");
         assert!(result.is_err());

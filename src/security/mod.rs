@@ -299,6 +299,19 @@ impl SecurityScanner {
         self.model_endpoint.is_some() && self.api_key.is_some()
     }
 
+    /// Get LLM configuration with validation
+    fn get_llm_config(&self) -> Result<(&str, &str)> {
+        let endpoint = self
+            .model_endpoint
+            .as_ref()
+            .ok_or_else(|| anyhow!("LLM endpoint not configured"))?;
+        let api_key = self
+            .api_key
+            .as_ref()
+            .ok_or_else(|| anyhow!("LLM API key not configured"))?;
+        Ok((endpoint, api_key))
+    }
+
     /// Get batch size from config with default fallback
     fn get_batch_size(&self) -> usize {
         self.config
@@ -643,6 +656,11 @@ If no genuine security issues found, return empty array []."
 
     /// Query the LLM with the given prompt
     async fn query_llm(&self, prompt: &str, show_details: bool) -> Result<String> {
+        // Early validation of LLM configuration
+        if !self.is_llm_configured() {
+            return Err(anyhow!("LLM not configured: missing endpoint or API key"));
+        }
+
         let client = Client::new();
 
         // Get configuration values, with defaults if not configured
@@ -694,12 +712,12 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
             "Scanning for security vulnerabilities...(this may take a while)".into(),
         );
 
+        // Get validated LLM configuration
+        let (endpoint, api_key) = self.get_llm_config()?;
+
         let response = client
-            .post(self.model_endpoint.as_ref().unwrap())
-            .header(
-                "Authorization",
-                format!("Bearer {}", self.api_key.as_ref().unwrap()),
-            )
+            .post(endpoint)
+            .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .timeout(std::time::Duration::from_secs(timeout))
             .json(&request_body)
@@ -916,5 +934,123 @@ impl std::fmt::Display for SecuritySeverity {
             SecuritySeverity::High => write!(f, "HIGH"),
             SecuritySeverity::Critical => write!(f, "CRITICAL"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_security_scanner_default_configuration() {
+        let scanner = SecurityScanner::default();
+        // Default scanner should have an endpoint but may not have API key
+        assert!(scanner.model_endpoint.is_some());
+        assert_eq!(scanner.model_name, "gpt-4o");
+    }
+
+    #[test]
+    fn test_security_scanner_is_llm_configured() {
+        // Scanner without API key
+        let scanner_no_key = SecurityScanner {
+            model_endpoint: Some("https://api.openai.com/v1/chat/completions".to_string()),
+            api_key: None,
+            model_name: "gpt-4o".to_string(),
+            config: None,
+        };
+        assert!(!scanner_no_key.is_llm_configured());
+
+        // Scanner without endpoint
+        let scanner_no_endpoint = SecurityScanner {
+            model_endpoint: None,
+            api_key: Some("test-key".to_string()),
+            model_name: "gpt-4o".to_string(),
+            config: None,
+        };
+        assert!(!scanner_no_endpoint.is_llm_configured());
+
+        // Fully configured scanner
+        let scanner_configured = SecurityScanner {
+            model_endpoint: Some("https://api.openai.com/v1/chat/completions".to_string()),
+            api_key: Some("test-key".to_string()),
+            model_name: "gpt-4o".to_string(),
+            config: None,
+        };
+        assert!(scanner_configured.is_llm_configured());
+    }
+
+    #[test]
+    fn test_get_llm_config_validation() {
+        // Scanner without API key should return error
+        let scanner_no_key = SecurityScanner {
+            model_endpoint: Some("https://api.openai.com/v1/chat/completions".to_string()),
+            api_key: None,
+            model_name: "gpt-4o".to_string(),
+            config: None,
+        };
+        let result = scanner_no_key.get_llm_config();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("API key not configured"));
+
+        // Scanner without endpoint should return error
+        let scanner_no_endpoint = SecurityScanner {
+            model_endpoint: None,
+            api_key: Some("test-key".to_string()),
+            model_name: "gpt-4o".to_string(),
+            config: None,
+        };
+        let result = scanner_no_endpoint.get_llm_config();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("endpoint not configured"));
+
+        // Fully configured scanner should return values
+        let scanner_configured = SecurityScanner {
+            model_endpoint: Some("https://api.openai.com/v1/chat/completions".to_string()),
+            api_key: Some("test-key".to_string()),
+            model_name: "gpt-4o".to_string(),
+            config: None,
+        };
+        let result = scanner_configured.get_llm_config();
+        assert!(result.is_ok());
+        let (endpoint, api_key) = result.unwrap();
+        assert_eq!(endpoint, "https://api.openai.com/v1/chat/completions");
+        assert_eq!(api_key, "test-key");
+    }
+
+    #[test]
+    fn test_security_scanner_batch_scan_empty_items() {
+        let scanner = SecurityScanner {
+            model_endpoint: Some("https://api.openai.com/v1/chat/completions".to_string()),
+            api_key: None, // Explicitly no API key
+            model_name: "gpt-4o".to_string(),
+            config: None,
+        };
+        let _empty_tools: Vec<crate::types::MCPTool> = vec![];
+
+        // Scanner without API key should not be configured
+        assert!(!scanner.is_llm_configured());
+    }
+
+    #[tokio::test]
+    async fn test_query_llm_unconfigured() {
+        let scanner = SecurityScanner {
+            model_endpoint: None,
+            api_key: None,
+            model_name: "gpt-4o".to_string(),
+            config: None,
+        };
+
+        let result = scanner.query_llm("test prompt", false).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("LLM not configured"));
     }
 }

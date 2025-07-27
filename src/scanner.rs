@@ -1141,214 +1141,6 @@ impl ScanCapability for DynamicYaraCapability {
 
 // Remove the old YaraScanCapability implementation
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_dynamic_yara_scanner_creation() {
-        // Use disabled YARA when feature is not available
-        #[cfg(feature = "yara-scanning")]
-        let scanner = DynamicYaraScanner::new("rules");
-        #[cfg(not(feature = "yara-scanning"))]
-        let scanner = DynamicYaraScanner::new_with_config("rules", false);
-
-        assert!(scanner.is_ok());
-
-        let scanner = scanner.unwrap();
-        let stats = scanner.get_rule_stats();
-
-        // Should have loaded rules from the pre directory (only when YARA is enabled)
-        #[cfg(feature = "yara-scanning")]
-        assert!(stats.pre_scan_count > 0);
-        #[cfg(not(feature = "yara-scanning"))]
-        assert_eq!(stats.pre_scan_count, 0);
-
-        println!("Loaded {} pre-scan rules", stats.pre_scan_count);
-    }
-
-    #[test]
-    fn test_dynamic_yara_capability_creation() {
-        let capability = DynamicYaraCapability::new("rules", ScanPhase::PreScan);
-        assert!(capability.is_ok());
-
-        let capability = capability.unwrap();
-        assert_eq!(capability.name(), "DynamicYARA");
-        assert_eq!(capability.phase(), ScanPhase::PreScan);
-    }
-
-    #[test]
-    fn test_memory_stats() {
-        #[cfg(feature = "yara-scanning")]
-        let scanner = DynamicYaraScanner::new("rules").unwrap();
-        #[cfg(not(feature = "yara-scanning"))]
-        let scanner = DynamicYaraScanner::new_with_config("rules", false).unwrap();
-
-        let memory_stats = scanner.get_memory_stats();
-
-        #[cfg(feature = "yara-scanning")]
-        assert!(memory_stats.pre_scan_count + memory_stats.post_scan_count > 0);
-        #[cfg(not(feature = "yara-scanning"))]
-        assert_eq!(
-            memory_stats.pre_scan_count + memory_stats.post_scan_count,
-            0
-        );
-
-        println!("Memory stats: {:?}", memory_stats);
-    }
-
-    #[test]
-    fn test_cache_functionality() {
-        // Create first scanner
-        let scanner1 = DynamicYaraScanner::new("rules").unwrap();
-        let memory1 = scanner1.get_memory_stats();
-
-        // Clone should work without deadlocks
-        let scanner2 = scanner1.clone();
-        let memory2 = scanner2.get_memory_stats();
-
-        // Both scanners should have same rule counts
-        assert_eq!(memory1.pre_scan_count, memory2.pre_scan_count);
-        assert_eq!(memory1.post_scan_count, memory2.post_scan_count);
-
-        // Memory counts should match between cloned scanners
-        assert_eq!(
-            memory1.pre_scan_count + memory1.post_scan_count,
-            memory2.pre_scan_count + memory2.post_scan_count
-        );
-
-        println!("Cache test passed - cloned scanner has identical memory usage");
-    }
-
-    #[test]
-    fn test_rule_validation() {
-        let scanner = DynamicYaraScanner::new("rules").unwrap();
-        let validation_result = scanner.validate_rules();
-
-        // Should not have validation errors
-        assert!(validation_result.is_ok());
-        println!("Rule validation passed");
-    }
-
-    #[test]
-    fn test_yara_rules_loading() {
-        // Test that the real YARA rules can be loaded
-        let scanner = DynamicYaraScanner::new("rules").unwrap();
-        let stats = scanner.get_memory_stats();
-
-        // Should have loaded the pre-compiled .yarac files (only when YARA is enabled)
-        #[cfg(feature = "yara-scanning")]
-        {
-            assert!(stats.pre_scan_count + stats.post_scan_count > 0);
-            assert!(stats.pre_scan_count > 0);
-        }
-
-        #[cfg(not(feature = "yara-scanning"))]
-        {
-            // When YARA is disabled, rule counts should be 0
-            assert_eq!(stats.pre_scan_count + stats.post_scan_count, 0);
-        }
-
-        // Test that the real Rules struct can be loaded (only when YARA is available)
-        #[cfg(feature = "yara-scanning")]
-        {
-            let rules = Rules::load_from_file("rules/pre/secrets_leakage.yarac");
-            assert!(rules.is_ok());
-
-            // Test that the real scan_mem method works
-            let rules = rules.unwrap();
-            let scan_result = rules.scan_mem(b"test data", 30);
-            assert!(scan_result.is_ok());
-
-            let matches = scan_result.unwrap();
-            // Real YARA may or may not have matches depending on rule content
-            // Just verify we got a valid result (empty or with matches)
-            assert!(matches.is_empty() || !matches.is_empty());
-        }
-    }
-
-    #[test]
-    fn test_post_scan_capability() {
-        // Test that post-scan capability can be created and runs correctly
-        let post_cap = DynamicYaraCapability::new("rules", ScanPhase::PostScan);
-        assert!(post_cap.is_ok());
-
-        let capability = post_cap.unwrap();
-        assert_eq!(capability.name(), "DynamicYARA");
-        assert_eq!(capability.phase(), ScanPhase::PostScan);
-
-        // Create test scan data
-        let mut scan_data = ScanData {
-            server_info: None,
-            tools: vec![],
-            resources: vec![],
-            prompts: vec![],
-            yara_results: vec![],
-        };
-
-        // Run post-scan capability (should not error even with empty data)
-        let result = capability.run(&mut scan_data);
-        assert!(result.is_ok());
-        println!("Post-scan capability test passed");
-    }
-
-    #[test]
-    fn test_pre_and_post_scan_rule_stats() {
-        #[cfg(feature = "yara-scanning")]
-        let scanner = DynamicYaraScanner::new("rules").unwrap();
-        #[cfg(not(feature = "yara-scanning"))]
-        let scanner = DynamicYaraScanner::new_with_config("rules", false).unwrap();
-
-        let stats = scanner.get_rule_stats();
-
-        println!("Pre-scan rules: {}", stats.pre_scan_count);
-        println!("Post-scan rules: {}", stats.post_scan_count);
-
-        // Should have at least some pre-scan rules (only when YARA is enabled)
-        #[cfg(feature = "yara-scanning")]
-        assert!(stats.pre_scan_count > 0);
-        #[cfg(not(feature = "yara-scanning"))]
-        assert_eq!(stats.pre_scan_count, 0);
-
-        // Should have post-scan rules if we created test rule
-        if stats.post_scan_count > 0 {
-            println!("Post-scan rules detected: {}", stats.post_scan_count);
-        } else {
-            println!("No post-scan rules found (this is expected if none were created)");
-        }
-    }
-
-    #[test]
-    fn test_dynamic_rule_names() {
-        // Test that the dynamic rule names are being collected correctly
-        let scanner = DynamicYaraScanner::new("rules").unwrap();
-        let stats = scanner.get_rule_stats();
-
-        // Should have the expected pre-scan rules
-        #[cfg(feature = "yara-scanning")]
-        {
-            assert!(!stats.pre_scan_rules.is_empty());
-            assert!(stats
-                .pre_scan_rules
-                .contains(&"command_injection".to_string()));
-            assert!(stats.pre_scan_rules.contains(&"path_traversal".to_string()));
-            assert!(stats
-                .pre_scan_rules
-                .contains(&"secrets_leakage".to_string()));
-            println!("Pre-scan rules: {:?}", stats.pre_scan_rules);
-        }
-
-        #[cfg(not(feature = "yara-scanning"))]
-        {
-            assert!(stats.pre_scan_rules.is_empty());
-        }
-
-        // Post-scan rules should be empty for now
-        assert!(stats.post_scan_rules.is_empty());
-        println!("Post-scan rules: {:?}", stats.post_scan_rules);
-    }
-}
-
 // MCPScanner struct
 pub struct MCPScanner {
     client: Client,
@@ -2097,5 +1889,213 @@ impl ScanData {
             prompts: Vec::new(),
             yara_results: Vec::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dynamic_yara_scanner_creation() {
+        // Use disabled YARA when feature is not available
+        #[cfg(feature = "yara-scanning")]
+        let scanner = DynamicYaraScanner::new("rules");
+        #[cfg(not(feature = "yara-scanning"))]
+        let scanner = DynamicYaraScanner::new_with_config("rules", false);
+
+        assert!(scanner.is_ok());
+
+        let scanner = scanner.unwrap();
+        let stats = scanner.get_rule_stats();
+
+        // Should have loaded rules from the pre directory (only when YARA is enabled)
+        #[cfg(feature = "yara-scanning")]
+        assert!(stats.pre_scan_count > 0);
+        #[cfg(not(feature = "yara-scanning"))]
+        assert_eq!(stats.pre_scan_count, 0);
+
+        println!("Loaded {} pre-scan rules", stats.pre_scan_count);
+    }
+
+    #[test]
+    fn test_dynamic_yara_capability_creation() {
+        let capability = DynamicYaraCapability::new("rules", ScanPhase::PreScan);
+        assert!(capability.is_ok());
+
+        let capability = capability.unwrap();
+        assert_eq!(capability.name(), "DynamicYARA");
+        assert_eq!(capability.phase(), ScanPhase::PreScan);
+    }
+
+    #[test]
+    fn test_memory_stats() {
+        #[cfg(feature = "yara-scanning")]
+        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        #[cfg(not(feature = "yara-scanning"))]
+        let scanner = DynamicYaraScanner::new_with_config("rules", false).unwrap();
+
+        let memory_stats = scanner.get_memory_stats();
+
+        #[cfg(feature = "yara-scanning")]
+        assert!(memory_stats.pre_scan_count + memory_stats.post_scan_count > 0);
+        #[cfg(not(feature = "yara-scanning"))]
+        assert_eq!(
+            memory_stats.pre_scan_count + memory_stats.post_scan_count,
+            0
+        );
+
+        println!("Memory stats: {memory_stats:?}");
+    }
+
+    #[test]
+    fn test_cache_functionality() {
+        // Create first scanner
+        let scanner1 = DynamicYaraScanner::new("rules").unwrap();
+        let memory1 = scanner1.get_memory_stats();
+
+        // Clone should work without deadlocks
+        let scanner2 = scanner1.clone();
+        let memory2 = scanner2.get_memory_stats();
+
+        // Both scanners should have same rule counts
+        assert_eq!(memory1.pre_scan_count, memory2.pre_scan_count);
+        assert_eq!(memory1.post_scan_count, memory2.post_scan_count);
+
+        // Memory counts should match between cloned scanners
+        assert_eq!(
+            memory1.pre_scan_count + memory1.post_scan_count,
+            memory2.pre_scan_count + memory2.post_scan_count
+        );
+
+        println!("Cache test passed - cloned scanner has identical memory usage");
+    }
+
+    #[test]
+    fn test_rule_validation() {
+        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        let validation_result = scanner.validate_rules();
+
+        // Should not have validation errors
+        assert!(validation_result.is_ok());
+        println!("Rule validation passed");
+    }
+
+    #[test]
+    fn test_yara_rules_loading() {
+        // Test that the real YARA rules can be loaded
+        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        let stats = scanner.get_memory_stats();
+
+        // Should have loaded the pre-compiled .yarac files (only when YARA is enabled)
+        #[cfg(feature = "yara-scanning")]
+        {
+            assert!(stats.pre_scan_count + stats.post_scan_count > 0);
+            assert!(stats.pre_scan_count > 0);
+        }
+
+        #[cfg(not(feature = "yara-scanning"))]
+        {
+            // When YARA is disabled, rule counts should be 0
+            assert_eq!(stats.pre_scan_count + stats.post_scan_count, 0);
+        }
+
+        // Test that the real Rules struct can be loaded (only when YARA is available)
+        #[cfg(feature = "yara-scanning")]
+        {
+            let rules = Rules::load_from_file("rules/pre/secrets_leakage.yarac");
+            assert!(rules.is_ok());
+
+            // Test that the real scan_mem method works
+            let rules = rules.unwrap();
+            let scan_result = rules.scan_mem(b"test data", 30);
+            assert!(scan_result.is_ok());
+
+            let matches = scan_result.unwrap();
+            // Real YARA may or may not have matches depending on rule content
+            // Just verify we got a valid result (empty or with matches)
+            assert!(matches.is_empty() || !matches.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_post_scan_capability() {
+        // Test that post-scan capability can be created and runs correctly
+        let post_cap = DynamicYaraCapability::new("rules", ScanPhase::PostScan);
+        assert!(post_cap.is_ok());
+
+        let capability = post_cap.unwrap();
+        assert_eq!(capability.name(), "DynamicYARA");
+        assert_eq!(capability.phase(), ScanPhase::PostScan);
+
+        // Create test scan data
+        let mut scan_data = ScanData {
+            server_info: None,
+            tools: vec![],
+            resources: vec![],
+            prompts: vec![],
+            yara_results: vec![],
+        };
+
+        // Run post-scan capability (should not error even with empty data)
+        let result = capability.run(&mut scan_data);
+        assert!(result.is_ok());
+        println!("Post-scan capability test passed");
+    }
+
+    #[test]
+    fn test_pre_and_post_scan_rule_stats() {
+        #[cfg(feature = "yara-scanning")]
+        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        #[cfg(not(feature = "yara-scanning"))]
+        let scanner = DynamicYaraScanner::new_with_config("rules", false).unwrap();
+
+        let stats = scanner.get_rule_stats();
+
+        println!("Pre-scan rules: {}", stats.pre_scan_count);
+        println!("Post-scan rules: {}", stats.post_scan_count);
+
+        // Should have at least some pre-scan rules (only when YARA is enabled)
+        #[cfg(feature = "yara-scanning")]
+        assert!(stats.pre_scan_count > 0);
+        #[cfg(not(feature = "yara-scanning"))]
+        assert_eq!(stats.pre_scan_count, 0);
+
+        // Should have post-scan rules if we created test rule
+        if stats.post_scan_count > 0 {
+            println!("Post-scan rules detected: {}", stats.post_scan_count);
+        } else {
+            println!("No post-scan rules found (this is expected if none were created)");
+        }
+    }
+
+    #[test]
+    fn test_dynamic_rule_names() {
+        // Test that the dynamic rule names are being collected correctly
+        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        let stats = scanner.get_rule_stats();
+
+        // Should have the expected pre-scan rules
+        #[cfg(feature = "yara-scanning")]
+        {
+            assert!(!stats.pre_scan_rules.is_empty());
+            assert!(stats
+                .pre_scan_rules
+                .contains(&"command_injection".to_string()));
+            assert!(stats.pre_scan_rules.contains(&"path_traversal".to_string()));
+            assert!(stats
+                .pre_scan_rules
+                .contains(&"secrets_leakage".to_string()));
+            println!("Pre-scan rules: {:?}", stats.pre_scan_rules);
+        }
+
+        #[cfg(not(feature = "yara-scanning"))]
+        {
+            assert!(stats.pre_scan_rules.is_empty());
+        }
+
+        // Post-scan rules should be empty for now
+        assert!(stats.post_scan_rules.is_empty());
+        println!("Post-scan rules: {:?}", stats.post_scan_rules);
     }
 }

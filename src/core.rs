@@ -369,7 +369,7 @@ mod tests {
         let options = options.unwrap();
         assert_eq!(options.timeout, 120);
         assert_eq!(options.http_timeout, 60);
-        assert_eq!(options.detailed, true);
+        assert!(options.detailed);
         assert_eq!(options.format, "json");
         assert!(options.auth_headers.is_some());
     }
@@ -393,7 +393,7 @@ mod tests {
         // These will use default values from config
         assert!(options.timeout > 0);
         assert!(options.http_timeout > 0);
-        assert_eq!(options.detailed, false); // Default is false
+        assert!(!options.detailed); // Default is false
         assert_eq!(options.format, "table"); // Default is table
         assert!(options.auth_headers.is_none());
     }

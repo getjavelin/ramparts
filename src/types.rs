@@ -451,7 +451,7 @@ mod tests {
 
         assert_eq!(config.timeout, 120);
         assert_eq!(config.http_timeout, 60);
-        assert_eq!(config.detailed, true);
+        assert!(config.detailed);
         assert_eq!(config.format, "json");
         assert!(config.auth_headers.is_some());
     }
@@ -461,7 +461,7 @@ mod tests {
         let config = ScanConfigBuilder::new().build();
         assert_eq!(config.timeout, 60);
         assert_eq!(config.http_timeout, 30);
-        assert_eq!(config.detailed, false);
+        assert!(!config.detailed);
         assert_eq!(config.format, "text");
         assert!(config.auth_headers.is_none());
     }
