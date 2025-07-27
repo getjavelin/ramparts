@@ -23,6 +23,10 @@ tag-name = "v{version}"
 sign-commit = false
 sign-tag = false
 
+[features]
+default = ["yara-scanning"]
+yara-scanning = ["yara", "glob"]
+
 [dependencies]
 # CLI argument parsing
 clap = { version = "4.4", features = ["derive"] }
@@ -67,6 +71,9 @@ config = "0.14"
 # Directory handling
 dirs = "5.0"
 
+# File pattern matching for dynamic YARA rules
+glob = { version = "0.3", optional = true }
+
 # Color output
 colored = "2.0"
 spinners = "4.1.1"
@@ -77,6 +84,7 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 
 # JSON-RPC handling for microservice
 jsonrpc-core = "18.0"
+yara = { version = "0.21", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"

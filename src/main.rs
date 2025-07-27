@@ -3,6 +3,7 @@ use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 mod config;
+mod constants;
 mod core;
 mod scanner;
 mod security;
