@@ -1,10 +1,12 @@
 # Rust build artifacts
 /target/
+/dist/
 **/*.rs.bk
 *.pdb
 
 # Cargo
 Cargo.lock
+.cargo
 
 # IDE files
 .vscode/

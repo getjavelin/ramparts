@@ -312,6 +312,8 @@ pub struct ScannerSettings {
     pub retry_delay_ms: u64,
     /// Maximum number of tools to process in a single LLM batch
     pub llm_batch_size: u32,
+    /// Enable/disable YARA rule scanning
+    pub enable_yara: bool,
 }
 
 /// Security Configuration
@@ -380,6 +382,7 @@ impl Default for ScannerConfig {
                 max_retries: 3,
                 retry_delay_ms: 1000,
                 llm_batch_size: 10,
+                enable_yara: true,
             },
             security: SecurityConfig {
                 enabled: true,

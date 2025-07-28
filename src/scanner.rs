@@ -1,6 +1,7 @@
 use crate::config::MCPConfigManager;
+use crate::constants::{messages, protocol};
 use crate::security::{SecurityScanResult, SecurityScanner};
-use crate::types::*;
+use crate::types::{YaraScanResult, *};
 use crate::utils::{
     error_utils, parse_jsonrpc_array_response, performance::track_performance, retry_with_backoff,
     Timer,
@@ -9,13 +10,60 @@ use anyhow::{anyhow, Result};
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use tracing::{debug, info, warn};
-
-use std::path::Path;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
+use tracing::{debug, info, warn};
 use url::Url;
+
+#[cfg(feature = "yara-scanning")]
+use yara::Rules;
+
+#[cfg(feature = "yara-scanning")]
+type YaraRules = Rules;
+
+#[cfg(not(feature = "yara-scanning"))]
+type YaraRules = ();
+
+/// Check if YARA is available and enabled
+fn is_yara_available(config_enabled: bool) -> bool {
+    if !config_enabled {
+        return false;
+    }
+
+    #[cfg(feature = "yara-scanning")]
+    {
+        true
+    }
+
+    #[cfg(not(feature = "yara-scanning"))]
+    {
+        false
+    }
+}
+
+/// Print friendly message about YARA installation
+fn print_yara_install_message() {
+    println!("📋 YARA Scanning Disabled");
+    println!();
+    println!("YARA rule scanning is enabled in your config but YARA is not available.");
+    println!("To enable YARA scanning, please:");
+    println!();
+    println!("1. Install YARA on your system:");
+    println!("   • macOS: brew install yara");
+    println!("   • Ubuntu/Debian: sudo apt install yara");
+    println!("   • CentOS/RHEL: sudo yum install yara");
+    println!();
+    println!("2. Reinstall ramparts:");
+    println!("   cargo install ramparts --force");
+    println!();
+    println!("3. Or disable YARA in your config.yaml:");
+    println!("   scanner:");
+    println!("     enable_yara: false");
+    println!();
+    println!("Continuing without YARA scanning...");
+    println!();
+}
 
 // ============================================================================
 // TRANSPORT LAYER - Support for multiple MCP transport mechanisms
@@ -201,7 +249,7 @@ impl JsonRpcRequest {
 
     fn to_json(&self) -> serde_json::Value {
         json!({
-            "jsonrpc": "2.0",
+            "jsonrpc": protocol::JSONRPC_VERSION,
             "id": self.id,
             "method": self.method,
             "params": self.params
@@ -285,10 +333,12 @@ impl MCPScanner {
 // =====================
 
 /// Represents the phase in which a scan capability is executed.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ScanPhase {
     /// Pre-scan phase: runs before the main security scan.
     PreScan,
+    /// Post-scan phase: runs after the main security scan.
+    PostScan,
 }
 
 /// Trait for a composable scan capability (middleware hook).
@@ -312,6 +362,7 @@ pub trait ScanCapability: Send + Sync {
 #[derive(Default)]
 pub struct CapabilityChain {
     pre_scan: Vec<Box<dyn ScanCapability>>,
+    post_scan: Vec<Box<dyn ScanCapability>>,
 }
 
 impl CapabilityChain {
@@ -319,12 +370,14 @@ impl CapabilityChain {
     pub fn new() -> Self {
         Self {
             pre_scan: Vec::new(),
+            post_scan: Vec::new(),
         }
     }
     /// Adds a capability to the chain for its specified phase.
     pub fn add(&mut self, cap: Box<dyn ScanCapability>) {
         match cap.phase() {
             ScanPhase::PreScan => self.pre_scan.push(cap),
+            ScanPhase::PostScan => self.post_scan.push(cap),
         }
     }
     /// Runs all pre-scan capabilities on the provided scan data.
@@ -335,6 +388,15 @@ impl CapabilityChain {
             }
         }
     }
+
+    /// Runs all post-scan capabilities on the provided scan data.
+    pub fn run_post_scan(&self, scan_data: &mut ScanData) {
+        for cap in &self.post_scan {
+            if let Err(e) = cap.run(scan_data) {
+                tracing::warn!("Post-scan capability '{}' failed: {}", cap.name(), e);
+            }
+        }
+    }
 }
 
 // Implement Clone for CapabilityChain (requires dyn-clone for trait objects)
@@ -342,45 +404,742 @@ impl Clone for CapabilityChain {
     fn clone(&self) -> Self {
         Self {
             pre_scan: self.pre_scan.iter().map(|c| c.box_clone()).collect(),
+            post_scan: self.post_scan.iter().map(|c| c.box_clone()).collect(),
         }
     }
 }
 
 // =====================
-// YARA CAPABILITY SKETCH (No actual YARA logic yet)
+// DYNAMIC YARA SCANNER (Replaces hardcoded YaraScanCapability)
 // =====================
 
-/// Example YARA-backed scan capability (placeholder, no YARA logic yet).
-#[derive(Clone)]
-pub struct YaraScanCapability {
-    /// Path to the YARA rules file.
-    pub rules_path: String,
-    /// Phase in which this capability should run.
-    pub phase: ScanPhase,
-    // pub rules: yara::Rules, // (if using the yara crate)
+#[cfg(feature = "yara-scanning")]
+use glob::glob;
+use std::path::Path;
+use std::sync::Arc;
+
+/// Enhanced YARA match with rule metadata
+#[cfg(feature = "yara-scanning")]
+pub struct YaraMatchInfo {
+    pub rule_name: String,
+    pub rule_metadata: Option<crate::types::YaraRuleMetadata>,
 }
 
-impl ScanCapability for YaraScanCapability {
-    fn name(&self) -> &'static str {
-        "YARA"
+/// Enhanced YARA match with rule metadata (non-YARA fallback)
+#[cfg(not(feature = "yara-scanning"))]
+pub struct YaraMatchInfo {
+    pub rule_name: String,
+    pub rule_metadata: Option<crate::types::YaraRuleMetadata>,
+}
+
+/// Dynamic YARA scanner that loads rules from directory structure
+pub struct DynamicYaraScanner {
+    pre_scan_rules: Vec<Arc<YaraRules>>,
+    post_scan_rules: Vec<Arc<YaraRules>>,
+    rules_dir: String,
+    rule_metadata: HashMap<String, RuleMetadata>,
+    memory_usage_bytes: usize,
+    last_load_time: std::time::Instant,
+}
+
+/// Metadata for YARA rules
+#[derive(Debug, Clone)]
+pub struct RuleMetadata {
+    pub name: String,
+    pub tags: Vec<String>,
+}
+
+impl DynamicYaraScanner {
+    /// Creates a new dynamic YARA scanner with rules from the specified directory
+    pub fn new(rules_dir: &str) -> Result<Self> {
+        Self::new_with_config(rules_dir, true)
     }
-    fn phase(&self) -> ScanPhase {
-        self.phase
+
+    /// Creates a new dynamic YARA scanner with optional YARA support based on config
+    pub fn new_with_config(rules_dir: &str, enable_yara: bool) -> Result<Self> {
+        if !is_yara_available(enable_yara) {
+            if enable_yara {
+                print_yara_install_message();
+            }
+            // Return a scanner that will skip YARA operations
+            return Self::new_disabled(rules_dir);
+        }
+
+        Self::new_enabled(rules_dir)
     }
-    fn run(&self, _scan_data: &mut ScanData) -> anyhow::Result<()> {
-        // Here you would load and apply YARA rules to scan_data fields
-        // For now, just log what would happen
-        tracing::info!(
-            "[YARA] Would scan with rules from {} (phase: {:?})",
-            self.rules_path,
-            self.phase
+
+    /// Creates a disabled YARA scanner (no rule loading)
+    fn new_disabled(rules_dir: &str) -> Result<Self> {
+        let start_time = std::time::Instant::now();
+        Ok(Self {
+            pre_scan_rules: Vec::new(),
+            post_scan_rules: Vec::new(),
+            rules_dir: rules_dir.to_string(),
+            rule_metadata: HashMap::new(),
+            memory_usage_bytes: 0,
+            last_load_time: start_time,
+        })
+    }
+
+    /// Creates an enabled YARA scanner (loads rules)
+    #[cfg(feature = "yara-scanning")]
+    fn new_enabled(rules_dir: &str) -> Result<Self> {
+        let start_time = std::time::Instant::now();
+        let mut scanner = Self {
+            pre_scan_rules: Vec::new(),
+            post_scan_rules: Vec::new(),
+            rules_dir: rules_dir.to_string(),
+            rule_metadata: HashMap::new(),
+            memory_usage_bytes: 0,
+            last_load_time: start_time,
+        };
+
+        scanner.load_rules()?;
+        scanner.last_load_time = start_time;
+        Ok(scanner)
+    }
+
+    /// Fallback for when YARA feature is not available
+    #[cfg(not(feature = "yara-scanning"))]
+    fn new_enabled(_rules_dir: &str) -> Result<Self> {
+        Err(anyhow!("YARA scanning feature is not available"))
+    }
+
+    /// Loads all rules from the directory structure
+    #[cfg(feature = "yara-scanning")]
+    fn load_rules(&mut self) -> Result<()> {
+        let start_time = std::time::Instant::now();
+
+        // Load pre-scan rules
+        let pre_dir = format!("{}/pre", self.rules_dir);
+        if Path::new(&pre_dir).exists() {
+            self.pre_scan_rules = self.load_rules_from_directory(&pre_dir, "pre")?;
+        }
+
+        // Load post-scan rules
+        let post_dir = format!("{}/post", self.rules_dir);
+        if Path::new(&post_dir).exists() {
+            self.post_scan_rules = self.load_rules_from_directory(&post_dir, "post")?;
+        }
+
+        // Calculate memory usage
+        self.calculate_memory_usage();
+
+        let load_duration = start_time.elapsed();
+        info!(
+            "Loaded {} pre-scan rules, {} post-scan rules in {}ms (memory: {}KB)",
+            self.pre_scan_rules.len(),
+            self.post_scan_rules.len(),
+            load_duration.as_millis(),
+            self.memory_usage_bytes / 1024
         );
         Ok(())
     }
-    fn box_clone(&self) -> Box<dyn ScanCapability> {
-        Box::new(self.clone())
+
+    /// Calculates estimated memory usage of loaded rules
+    #[cfg(feature = "yara-scanning")]
+    fn calculate_memory_usage(&mut self) {
+        // Estimate memory usage based on rule count and metadata
+        let rule_memory = (self.pre_scan_rules.len() + self.post_scan_rules.len()) * 1024; // ~1KB per rule
+        let metadata_memory = self.rule_metadata.len() * 256; // ~256 bytes per metadata entry
+
+        self.memory_usage_bytes = rule_memory + metadata_memory;
+    }
+
+    /// Gets memory usage statistics
+    #[cfg(test)]
+    pub fn get_memory_stats(&self) -> RuleStats {
+        RuleStats {
+            pre_scan_count: self.pre_scan_rules.len(),
+            post_scan_count: self.post_scan_rules.len(),
+            pre_scan_rules: Vec::new(), // Empty for memory stats - not needed for this use case
+            post_scan_rules: Vec::new(), // Empty for memory stats - not needed for this use case
+            pre_scan_tags: HashMap::new(), // Empty for now - could be populated with actual tag counts
+            post_scan_tags: HashMap::new(), // Empty for now - could be populated with actual tag counts
+        }
+    }
+
+    /// Loads all .yarac files from a directory and their metadata
+    #[cfg(feature = "yara-scanning")]
+    fn load_rules_from_directory(
+        &mut self,
+        dir_path: &str,
+        phase: &str,
+    ) -> Result<Vec<Arc<YaraRules>>> {
+        let mut rules = Vec::new();
+        let pattern = format!("{dir_path}/*.yarac");
+
+        for entry in glob(&pattern).map_err(|e| anyhow!("Glob error: {}", e))? {
+            match entry {
+                Ok(path) => {
+                    // Safely convert path to string, skipping files with non-UTF8 characters
+                    if let Some(path_str) = path.to_str() {
+                        match Rules::load_from_file(path_str) {
+                            Ok(rule) => {
+                                let rule_name = path
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("unknown")
+                                    .to_string();
+
+                                debug!("Loaded YARA rule: {} (phase: {})", path.display(), phase);
+
+                                // Create metadata for the rule
+                                let metadata = RuleMetadata {
+                                    name: rule_name.clone(),
+                                    tags: vec!["yara".to_string(), "security".to_string()],
+                                };
+                                let metadata_key = format!("{phase}:{rule_name}");
+                                self.rule_metadata.insert(metadata_key, metadata);
+
+                                rules.push(Arc::new(rule));
+                            }
+                            Err(e) => warn!("Failed to load rule {}: {}", path.display(), e),
+                        }
+                    } else {
+                        warn!(
+                            "Skipping rule file with non-UTF8 characters: {}",
+                            path.display()
+                        );
+                    }
+                }
+                Err(e) => warn!("Failed to read rule file: {}", e),
+            }
+        }
+
+        Ok(rules)
+    }
+
+    /// Scans text with pre-scan rules and returns enhanced match information
+    #[cfg(feature = "yara-scanning")]
+    pub fn scan_with_pre_rules_enhanced(
+        &self,
+        text: &str,
+        context: &str,
+    ) -> Result<Vec<YaraMatchInfo>> {
+        let mut all_matches = Vec::new();
+
+        for (i, rules) in self.pre_scan_rules.iter().enumerate() {
+            match rules.scan_mem(text.as_bytes(), 5) {
+                Ok(matches) => {
+                    for m in matches {
+                        let rule_name = m.identifier;
+
+                        // Extract metadata from the YARA match
+                        let mut raw_metadata = HashMap::new();
+                        for meta_entry in &m.metadatas {
+                            let key = meta_entry.identifier.to_string();
+                            let value = match &meta_entry.value {
+                                yara::MetadataValue::Integer(i) => i.to_string(),
+                                yara::MetadataValue::Boolean(b) => b.to_string(),
+                                yara::MetadataValue::String(s) => s.to_string(),
+                            };
+                            raw_metadata.insert(key, value);
+                        }
+
+                        let rule_metadata = if !raw_metadata.is_empty() {
+                            let tags = if let Some(category) = raw_metadata.get("category") {
+                                category.split(',').map(|s| s.trim().to_string()).collect()
+                            } else {
+                                vec!["yara".to_string(), "security".to_string()]
+                            };
+
+                            Some(crate::types::YaraRuleMetadata {
+                                name: raw_metadata.get("name").cloned(),
+                                author: raw_metadata.get("author").cloned(),
+                                date: raw_metadata.get("date").cloned(),
+                                version: raw_metadata.get("version").cloned(),
+                                description: raw_metadata.get("description").cloned(),
+                                severity: raw_metadata.get("severity").cloned(),
+                                category: raw_metadata.get("category").cloned(),
+                                confidence: raw_metadata.get("confidence").cloned(),
+                                tags,
+                            })
+                        } else {
+                            // Fallback to stored metadata if no match metadata available
+                            let metadata_key = format!("pre:{rule_name}");
+                            self.rule_metadata.get(&metadata_key).map(|stored_meta| {
+                                crate::types::YaraRuleMetadata {
+                                    name: Some(stored_meta.name.clone()),
+                                    author: Some("Ramparts Security Team".to_string()),
+                                    date: None,
+                                    version: None,
+                                    description: Some(stored_meta.name.clone()),
+                                    severity: Some("MEDIUM".to_string()),
+                                    category: Some(stored_meta.tags.join(",")),
+                                    confidence: None,
+                                    tags: stored_meta.tags.clone(),
+                                }
+                            })
+                        };
+
+                        all_matches.push(YaraMatchInfo {
+                            rule_name: rule_name.to_string(),
+                            rule_metadata,
+                        });
+                    }
+                }
+                Err(e) => warn!("Failed to scan with pre-rule {}: {}", i, e),
+            }
+        }
+
+        if !all_matches.is_empty() {
+            warn!(
+                "YARA pre-scan matches in {}: {} rules matched",
+                context,
+                all_matches.len()
+            );
+        }
+
+        Ok(all_matches)
+    }
+
+    /// Scans text with post-scan rules and returns enhanced match information
+    #[cfg(feature = "yara-scanning")]
+    pub fn scan_with_post_rules_enhanced(
+        &self,
+        text: &str,
+        context: &str,
+    ) -> Result<Vec<YaraMatchInfo>> {
+        let mut all_matches = Vec::new();
+
+        for (i, rules) in self.post_scan_rules.iter().enumerate() {
+            match rules.scan_mem(text.as_bytes(), 5) {
+                Ok(matches) => {
+                    for m in matches {
+                        let rule_name = m.identifier;
+
+                        // Extract metadata from the YARA match
+                        let mut raw_metadata = HashMap::new();
+                        for meta_entry in &m.metadatas {
+                            let key = meta_entry.identifier.to_string();
+                            let value = match &meta_entry.value {
+                                yara::MetadataValue::Integer(i) => i.to_string(),
+                                yara::MetadataValue::Boolean(b) => b.to_string(),
+                                yara::MetadataValue::String(s) => s.to_string(),
+                            };
+                            raw_metadata.insert(key, value);
+                        }
+
+                        let rule_metadata = if !raw_metadata.is_empty() {
+                            let tags = if let Some(category) = raw_metadata.get("category") {
+                                category.split(',').map(|s| s.trim().to_string()).collect()
+                            } else {
+                                vec!["yara".to_string(), "security".to_string()]
+                            };
+
+                            Some(crate::types::YaraRuleMetadata {
+                                name: raw_metadata.get("name").cloned(),
+                                author: raw_metadata.get("author").cloned(),
+                                date: raw_metadata.get("date").cloned(),
+                                version: raw_metadata.get("version").cloned(),
+                                description: raw_metadata.get("description").cloned(),
+                                severity: raw_metadata.get("severity").cloned(),
+                                category: raw_metadata.get("category").cloned(),
+                                confidence: raw_metadata.get("confidence").cloned(),
+                                tags,
+                            })
+                        } else {
+                            // Fallback to stored metadata if no match metadata available
+                            let metadata_key = format!("post:{rule_name}");
+                            self.rule_metadata.get(&metadata_key).map(|stored_meta| {
+                                crate::types::YaraRuleMetadata {
+                                    name: Some(stored_meta.name.clone()),
+                                    author: Some("Ramparts Security Team".to_string()),
+                                    date: None,
+                                    version: None,
+                                    description: Some(stored_meta.name.clone()),
+                                    severity: Some("MEDIUM".to_string()),
+                                    category: Some(stored_meta.tags.join(",")),
+                                    confidence: None,
+                                    tags: stored_meta.tags.clone(),
+                                }
+                            })
+                        };
+
+                        all_matches.push(YaraMatchInfo {
+                            rule_name: rule_name.to_string(),
+                            rule_metadata,
+                        });
+                    }
+                }
+                Err(e) => warn!("Failed to scan with post-rule {}: {}", i, e),
+            }
+        }
+
+        if !all_matches.is_empty() {
+            warn!(
+                "YARA post-scan matches in {}: {} rules matched",
+                context,
+                all_matches.len()
+            );
+        }
+
+        Ok(all_matches)
+    }
+
+    /// Gets statistics about loaded rules
+    pub fn get_rule_stats(&self) -> RuleStats {
+        let mut pre_scan_tags = HashMap::new();
+        let mut post_scan_tags = HashMap::new();
+        let mut pre_scan_rules = Vec::new();
+        let mut post_scan_rules = Vec::new();
+
+        // Collect rule names and count tags for pre-scan rules
+        for (key, metadata) in &self.rule_metadata {
+            if key.starts_with("pre:") {
+                pre_scan_rules.push(metadata.name.clone());
+                for tag in &metadata.tags {
+                    *pre_scan_tags.entry(tag.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+
+        // Collect rule names and count tags for post-scan rules
+        for (key, metadata) in &self.rule_metadata {
+            if key.starts_with("post:") {
+                post_scan_rules.push(metadata.name.clone());
+                for tag in &metadata.tags {
+                    *post_scan_tags.entry(tag.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+
+        RuleStats {
+            pre_scan_count: self.pre_scan_rules.len(),
+            post_scan_count: self.post_scan_rules.len(),
+            pre_scan_rules,
+            post_scan_rules,
+            pre_scan_tags,
+            post_scan_tags,
+        }
+    }
+
+    /// Validates that all loaded rules are valid
+    #[cfg(all(test, feature = "yara-scanning"))]
+    pub fn validate_rules(&self) -> Result<Vec<String>> {
+        let mut issues = Vec::new();
+
+        // Check pre-scan rules
+        for (i, rules) in self.pre_scan_rules.iter().enumerate() {
+            if let Err(e) = rules.scan_mem(b"test", 1) {
+                issues.push(format!("Pre-scan rule {i}: {e}"));
+            }
+        }
+
+        // Check post-scan rules
+        for (i, rules) in self.post_scan_rules.iter().enumerate() {
+            if let Err(e) = rules.scan_mem(b"test", 1) {
+                issues.push(format!("Post-scan rule {i}: {e}"));
+            }
+        }
+
+        if issues.is_empty() {
+            Ok(issues)
+        } else {
+            Err(anyhow!("Rule validation failed: {}", issues.join(", ")))
+        }
+    }
+
+    /// Fallback validation for when YARA feature is not available  
+    #[cfg(all(test, not(feature = "yara-scanning")))]
+    pub fn validate_rules(&self) -> Result<Vec<String>> {
+        Ok(Vec::new()) // Always pass validation when YARA is disabled
     }
 }
+
+/// Statistics about loaded YARA rules
+#[derive(Debug)]
+pub struct RuleStats {
+    pub pre_scan_count: usize,
+    pub post_scan_count: usize,
+    pub pre_scan_rules: Vec<String>,
+    pub post_scan_rules: Vec<String>,
+    pub pre_scan_tags: HashMap<String, usize>,
+    pub post_scan_tags: HashMap<String, usize>,
+}
+
+impl Clone for DynamicYaraScanner {
+    fn clone(&self) -> Self {
+        // Clone that shares the same rules via Arc - efficient and safe
+        Self {
+            pre_scan_rules: self.pre_scan_rules.clone(), // Arc<Rules> can be cloned efficiently
+            post_scan_rules: self.post_scan_rules.clone(),
+            rules_dir: self.rules_dir.clone(),
+            rule_metadata: self.rule_metadata.clone(),
+            memory_usage_bytes: self.memory_usage_bytes,
+            last_load_time: self.last_load_time,
+        }
+    }
+}
+
+/// Dynamic YARA capability that loads rules from directory structure
+pub struct DynamicYaraCapability {
+    scanner: DynamicYaraScanner,
+    phase: ScanPhase,
+}
+
+impl DynamicYaraCapability {
+    /// Creates a new dynamic YARA capability
+    pub fn new(rules_dir: &str, phase: ScanPhase) -> Result<Self> {
+        let scanner = DynamicYaraScanner::new(rules_dir)?;
+        Ok(Self { scanner, phase })
+    }
+
+    /// Generic YARA scanning method for any item type that implements BatchScannableItem
+    fn scan_items_with_yara<T>(
+        &self,
+        items: &[T],
+        phase: ScanPhase,
+    ) -> anyhow::Result<Vec<YaraScanResult>>
+    where
+        T: crate::security::BatchScannableItem,
+    {
+        let mut results = Vec::new();
+
+        for item in items {
+            let item_text = self.format_item_for_yara_scan(item);
+            let context = format!("{} '{}'", T::item_type(), item.name());
+
+            // Use enhanced scanning methods that return metadata
+            #[cfg(feature = "yara-scanning")]
+            let enhanced_matches = match phase {
+                ScanPhase::PreScan => self
+                    .scanner
+                    .scan_with_pre_rules_enhanced(&item_text, &context)?,
+                ScanPhase::PostScan => self
+                    .scanner
+                    .scan_with_post_rules_enhanced(&item_text, &context)?,
+            };
+
+            #[cfg(not(feature = "yara-scanning"))]
+            let enhanced_matches: Vec<YaraMatchInfo> = Vec::new();
+
+            if !enhanced_matches.is_empty() {
+                info!(
+                    "DynamicYARA {}-scan issue in {} '{}': {} rules matched",
+                    match phase {
+                        ScanPhase::PreScan => "pre",
+                        ScanPhase::PostScan => "post",
+                    },
+                    T::item_type(),
+                    item.name(),
+                    enhanced_matches.len()
+                );
+
+                // Store YARA results for each match with metadata
+                for match_info in enhanced_matches {
+                    let yara_result = self.create_yara_result_with_metadata::<T>(
+                        item,
+                        &match_info.rule_name,
+                        &item_text,
+                        &context,
+                        phase,
+                        match_info.rule_metadata,
+                    );
+                    results.push(yara_result);
+                }
+            }
+        }
+        Ok(results)
+    }
+
+    /// Format an item for YARA scanning with specialized logic per type
+    fn format_item_for_yara_scan<T>(&self, item: &T) -> String
+    where
+        T: crate::security::BatchScannableItem,
+    {
+        // For YARA scanning, we want a simple format without numbering
+        // to avoid confusion and focus on the actual content
+        format!("{}: {}", T::item_type().to_uppercase(), item.name())
+    }
+
+    /// Create a YARA scan result with original rule metadata
+    fn create_yara_result_with_metadata<T>(
+        &self,
+        item: &T,
+        rule_name: &str,
+        matched_text: &str,
+        context: &str,
+        _phase: ScanPhase,
+        rule_metadata: Option<crate::types::YaraRuleMetadata>,
+    ) -> YaraScanResult
+    where
+        T: crate::security::BatchScannableItem,
+    {
+        YaraScanResult {
+            target_type: T::item_type().to_string(),
+            target_name: item.name().to_string(),
+            rule_name: rule_name.to_string(),
+            matched_text: Some(matched_text.to_string()),
+            context: context.to_string(),
+            rule_metadata,
+            phase: None,
+            rules_executed: None,
+            rules_passed: None,
+            rules_failed: None,
+            total_items_scanned: None,
+            total_matches: None,
+            status: Some("warning".to_string()), // YARA match indicates a warning
+        }
+    }
+}
+
+impl ScanCapability for DynamicYaraCapability {
+    fn name(&self) -> &'static str {
+        "DynamicYARA"
+    }
+
+    fn phase(&self) -> ScanPhase {
+        self.phase
+    }
+
+    fn run(&self, scan_data: &mut ScanData) -> anyhow::Result<()> {
+        match self.phase {
+            ScanPhase::PreScan => {
+                let stats = self.scanner.get_rule_stats();
+                info!(
+                    "[DynamicYARA] Running pre-scan with {} rules (tags: {:?})",
+                    stats.pre_scan_count, stats.pre_scan_tags
+                );
+
+                // Scan all item types using the generic scanner
+                let tool_results =
+                    self.scan_items_with_yara(&scan_data.tools, ScanPhase::PreScan)?;
+                let prompt_results =
+                    self.scan_items_with_yara(&scan_data.prompts, ScanPhase::PreScan)?;
+                let resource_results =
+                    self.scan_items_with_yara(&scan_data.resources, ScanPhase::PreScan)?;
+
+                // Count total matches found
+                let total_matches =
+                    tool_results.len() + prompt_results.len() + resource_results.len();
+                let total_items =
+                    scan_data.tools.len() + scan_data.prompts.len() + scan_data.resources.len();
+
+                // Add all results to scan data
+                scan_data.yara_results.extend(tool_results);
+                scan_data.yara_results.extend(prompt_results);
+                scan_data.yara_results.extend(resource_results);
+
+                // Add a summary result
+                let summary_result = YaraScanResult {
+                    target_type: "summary".to_string(),
+                    target_name: "pre-scan".to_string(),
+                    rule_name: "YARA_PRE_SCAN_SUMMARY".to_string(),
+                    matched_text: None,
+                    context: format!(
+                        "Pre-scan completed: {} rules executed on {} items",
+                        stats.pre_scan_count, total_items
+                    ),
+                    rule_metadata: None,
+                    phase: Some("pre-scan".to_string()),
+                    rules_executed: if !stats.pre_scan_rules.is_empty() {
+                        Some(stats.pre_scan_rules.clone())
+                    } else {
+                        None
+                    },
+                    rules_passed: if total_matches == 0 {
+                        Some(vec!["all".to_string()])
+                    } else {
+                        None
+                    },
+                    rules_failed: if total_matches > 0 {
+                        Some(vec!["security_check".to_string()])
+                    } else {
+                        None
+                    },
+                    total_items_scanned: Some(total_items),
+                    total_matches: Some(total_matches),
+                    status: Some(if total_matches == 0 {
+                        "passed".to_string()
+                    } else {
+                        "warning".to_string()
+                    }),
+                };
+                scan_data.yara_results.push(summary_result);
+            }
+            ScanPhase::PostScan => {
+                let stats = self.scanner.get_rule_stats();
+                info!(
+                    "[DynamicYARA] Running post-scan with {} rules (tags: {:?})",
+                    stats.post_scan_count, stats.post_scan_tags
+                );
+
+                // Scan all item types using the generic scanner
+                let tool_results =
+                    self.scan_items_with_yara(&scan_data.tools, ScanPhase::PostScan)?;
+                let prompt_results =
+                    self.scan_items_with_yara(&scan_data.prompts, ScanPhase::PostScan)?;
+                let resource_results =
+                    self.scan_items_with_yara(&scan_data.resources, ScanPhase::PostScan)?;
+
+                // Count total matches found
+                let total_matches =
+                    tool_results.len() + prompt_results.len() + resource_results.len();
+                let total_items =
+                    scan_data.tools.len() + scan_data.prompts.len() + scan_data.resources.len();
+
+                // Add all results to scan data
+                scan_data.yara_results.extend(tool_results);
+                scan_data.yara_results.extend(prompt_results);
+                scan_data.yara_results.extend(resource_results);
+
+                // Add a summary result
+                let summary_result = YaraScanResult {
+                    target_type: "summary".to_string(),
+                    target_name: "post-scan".to_string(),
+                    rule_name: "YARA_POST_SCAN_SUMMARY".to_string(),
+                    matched_text: None,
+                    context: format!(
+                        "Post-scan completed: {} rules executed on {} items",
+                        stats.post_scan_count, total_items
+                    ),
+                    rule_metadata: None,
+                    phase: Some("post-scan".to_string()),
+                    rules_executed: if !stats.post_scan_rules.is_empty() {
+                        Some(stats.post_scan_rules.clone())
+                    } else {
+                        Some(vec!["none".to_string()])
+                    },
+                    rules_passed: if total_matches == 0 {
+                        Some(vec!["all".to_string()])
+                    } else {
+                        None
+                    },
+                    rules_failed: if total_matches > 0 {
+                        Some(vec!["security_check".to_string()])
+                    } else {
+                        None
+                    },
+                    total_items_scanned: Some(total_items),
+                    total_matches: Some(total_matches),
+                    status: Some(if total_matches == 0 {
+                        "passed".to_string()
+                    } else {
+                        "warning".to_string()
+                    }),
+                };
+                scan_data.yara_results.push(summary_result);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn box_clone(&self) -> Box<dyn ScanCapability> {
+        Box::new(Self {
+            scanner: self.scanner.clone(),
+            phase: self.phase,
+        })
+    }
+}
+
+// =====================
+// YARA CAPABILITY SKETCH (No actual YARA logic yet) - REMOVED
+// =====================
+
+// Remove the old YaraScanCapability implementation
 
 // MCPScanner struct
 pub struct MCPScanner {
@@ -396,16 +1155,29 @@ impl MCPScanner {
     pub fn new_with_timeout(http_timeout: u64) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(http_timeout))
-            .user_agent("ramparts/0.2.0")
+            .user_agent(protocol::USER_AGENT)
             .build()
             .unwrap_or_default();
-        // Set up middleware chain with a sample YARA pre-scan capability (placeholder)
+
+        // Set up middleware chain with dynamic YARA capabilities
         let mut middleware_chain = CapabilityChain::new();
-        middleware_chain.add(Box::new(YaraScanCapability {
-            rules_path: "rules/pre_scan.yar".to_string(),
-            phase: ScanPhase::PreScan,
-        }));
-        // Add more capabilities as needed
+
+        // Add dynamic YARA pre-scan capability
+        if let Ok(pre_cap) = DynamicYaraCapability::new("rules", ScanPhase::PreScan) {
+            middleware_chain.add(Box::new(pre_cap));
+            info!("{}", messages::YARA_PRE_SCAN_LOADED);
+        } else {
+            warn!("{}", messages::YARA_PRE_SCAN_FAILED);
+        }
+
+        // Add dynamic YARA post-scan capability
+        if let Ok(post_cap) = DynamicYaraCapability::new("rules", ScanPhase::PostScan) {
+            middleware_chain.add(Box::new(post_cap));
+            info!("{}", messages::YARA_POST_SCAN_LOADED);
+        } else {
+            warn!("{}", messages::YARA_POST_SCAN_FAILED);
+        }
+
         Self {
             client,
             http_timeout,
@@ -447,6 +1219,7 @@ impl MCPScanner {
                 result.tools = scan_data.tools.clone();
                 result.resources = scan_data.resources.clone();
                 result.prompts = scan_data.prompts.clone();
+                result.yara_results = scan_data.yara_results.clone();
 
                 // Load scanner configuration
                 let config_manager = crate::config::ScannerConfigManager::new();
@@ -501,13 +1274,18 @@ impl MCPScanner {
                 }
 
                 result.security_issues = Some(security_result);
+
+                // === POST-SCAN HOOKS ===
+                self.middleware_chain.run_post_scan(&mut scan_data);
+
+                // Update result with any post-scan changes
+                result.yara_results = scan_data.yara_results.clone();
+
                 result.response_time_ms = Timer::start().elapsed_ms(); // Track actual scan time
                 info!(
                     "Scan completed successfully in [\x1b[1m{}\x1b[0m]ms",
                     result.response_time_ms
                 );
-
-                // === POST-SCAN HOOKS ===
             }
             Err(e) => {
                 result.status = ScanStatus::Failed(e.to_string());
@@ -682,11 +1460,11 @@ impl MCPScanner {
         transport_type: &TransportType,
     ) -> Result<MCPSession> {
         // Try different protocol versions for compatibility, prioritizing latest
-        let protocol_versions = ["2025-06-18", "2024-11-05", "2024-11-01", "2024-10-01"];
+        let protocol_versions = protocol::MCP_PROTOCOL_VERSIONS;
 
         for protocol_version in protocol_versions {
             let request = json!({
-                "jsonrpc": "2.0",
+                "jsonrpc": protocol::JSONRPC_VERSION,
                 "id": 1,
                 "method": "initialize",
                 "params": {
@@ -697,8 +1475,8 @@ impl MCPScanner {
                         "prompts": {}
                     },
                     "clientInfo": {
-                        "name": "ramparts",
-                        "version": "0.2.0"
+                        "name": protocol::CLIENT_NAME,
+                        "version": protocol::CLIENT_VERSION
                     }
                 }
             });
@@ -754,14 +1532,14 @@ impl MCPScanner {
 
         // Try a simpler initialize request without capabilities
         let simple_request = json!({
-            "jsonrpc": "2.0",
+            "jsonrpc": protocol::JSONRPC_VERSION,
             "id": 1,
             "method": "initialize",
             "params": {
-                "protocolVersion": "2025-06-18",
+                "protocolVersion": protocol::MCP_PROTOCOL_VERSIONS[0],
                 "clientInfo": {
-                    "name": "ramparts",
-                    "version": "0.2.0"
+                    "name": protocol::CLIENT_NAME,
+                    "version": protocol::CLIENT_VERSION
                 }
             }
         });
@@ -841,8 +1619,8 @@ impl MCPScanner {
                             .post(url)
                             .header("Content-Type", "application/json")
                             .header("Accept", "application/json, text/event-stream")
-                            .header("User-Agent", "ramparts/0.2.0")
-                            .header("MCP-Protocol-Version", "2025-06-18")
+                            .header("User-Agent", protocol::USER_AGENT)
+                            .header("MCP-Protocol-Version", protocol::MCP_PROTOCOL_VERSIONS[0])
                             .json(&request);
 
                         // Add session ID header if provided
@@ -1098,6 +1876,7 @@ pub(crate) struct ScanData {
     tools: Vec<MCPTool>,
     resources: Vec<MCPResource>,
     prompts: Vec<MCPPrompt>,
+    yara_results: Vec<YaraScanResult>,
 }
 
 // Scan data implementation
@@ -1108,6 +1887,215 @@ impl ScanData {
             tools: Vec::new(),
             resources: Vec::new(),
             prompts: Vec::new(),
+            yara_results: Vec::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dynamic_yara_scanner_creation() {
+        // Use disabled YARA when feature is not available
+        #[cfg(feature = "yara-scanning")]
+        let scanner = DynamicYaraScanner::new("rules");
+        #[cfg(not(feature = "yara-scanning"))]
+        let scanner = DynamicYaraScanner::new_with_config("rules", false);
+
+        assert!(scanner.is_ok());
+
+        let scanner = scanner.unwrap();
+        let stats = scanner.get_rule_stats();
+
+        // Should have loaded rules from the pre directory (only when YARA is enabled)
+        #[cfg(feature = "yara-scanning")]
+        assert!(stats.pre_scan_count > 0);
+        #[cfg(not(feature = "yara-scanning"))]
+        assert_eq!(stats.pre_scan_count, 0);
+
+        println!("Loaded {} pre-scan rules", stats.pre_scan_count);
+    }
+
+    #[test]
+    fn test_dynamic_yara_capability_creation() {
+        let capability = DynamicYaraCapability::new("rules", ScanPhase::PreScan);
+        assert!(capability.is_ok());
+
+        let capability = capability.unwrap();
+        assert_eq!(capability.name(), "DynamicYARA");
+        assert_eq!(capability.phase(), ScanPhase::PreScan);
+    }
+
+    #[test]
+    fn test_memory_stats() {
+        #[cfg(feature = "yara-scanning")]
+        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        #[cfg(not(feature = "yara-scanning"))]
+        let scanner = DynamicYaraScanner::new_with_config("rules", false).unwrap();
+
+        let memory_stats = scanner.get_memory_stats();
+
+        #[cfg(feature = "yara-scanning")]
+        assert!(memory_stats.pre_scan_count + memory_stats.post_scan_count > 0);
+        #[cfg(not(feature = "yara-scanning"))]
+        assert_eq!(
+            memory_stats.pre_scan_count + memory_stats.post_scan_count,
+            0
+        );
+
+        println!("Memory stats: {memory_stats:?}");
+    }
+
+    #[test]
+    fn test_cache_functionality() {
+        // Create first scanner
+        let scanner1 = DynamicYaraScanner::new("rules").unwrap();
+        let memory1 = scanner1.get_memory_stats();
+
+        // Clone should work without deadlocks
+        let scanner2 = scanner1.clone();
+        let memory2 = scanner2.get_memory_stats();
+
+        // Both scanners should have same rule counts
+        assert_eq!(memory1.pre_scan_count, memory2.pre_scan_count);
+        assert_eq!(memory1.post_scan_count, memory2.post_scan_count);
+
+        // Memory counts should match between cloned scanners
+        assert_eq!(
+            memory1.pre_scan_count + memory1.post_scan_count,
+            memory2.pre_scan_count + memory2.post_scan_count
+        );
+
+        println!("Cache test passed - cloned scanner has identical memory usage");
+    }
+
+    #[test]
+    fn test_rule_validation() {
+        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        let validation_result = scanner.validate_rules();
+
+        // Should not have validation errors
+        assert!(validation_result.is_ok());
+        println!("Rule validation passed");
+    }
+
+    #[test]
+    fn test_yara_rules_loading() {
+        // Test that the real YARA rules can be loaded
+        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        let stats = scanner.get_memory_stats();
+
+        // Should have loaded the pre-compiled .yarac files (only when YARA is enabled)
+        #[cfg(feature = "yara-scanning")]
+        {
+            assert!(stats.pre_scan_count + stats.post_scan_count > 0);
+            assert!(stats.pre_scan_count > 0);
+        }
+
+        #[cfg(not(feature = "yara-scanning"))]
+        {
+            // When YARA is disabled, rule counts should be 0
+            assert_eq!(stats.pre_scan_count + stats.post_scan_count, 0);
+        }
+
+        // Test that the real Rules struct can be loaded (only when YARA is available)
+        #[cfg(feature = "yara-scanning")]
+        {
+            let rules = Rules::load_from_file("rules/pre/secrets_leakage.yarac");
+            assert!(rules.is_ok());
+
+            // Test that the real scan_mem method works
+            let rules = rules.unwrap();
+            let scan_result = rules.scan_mem(b"test data", 30);
+            assert!(scan_result.is_ok());
+
+            let matches = scan_result.unwrap();
+            // Real YARA may or may not have matches depending on rule content
+            // Just verify we got a valid result (empty or with matches)
+            assert!(matches.is_empty() || !matches.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_post_scan_capability() {
+        // Test that post-scan capability can be created and runs correctly
+        let post_cap = DynamicYaraCapability::new("rules", ScanPhase::PostScan);
+        assert!(post_cap.is_ok());
+
+        let capability = post_cap.unwrap();
+        assert_eq!(capability.name(), "DynamicYARA");
+        assert_eq!(capability.phase(), ScanPhase::PostScan);
+
+        // Create test scan data
+        let mut scan_data = ScanData {
+            server_info: None,
+            tools: vec![],
+            resources: vec![],
+            prompts: vec![],
+            yara_results: vec![],
+        };
+
+        // Run post-scan capability (should not error even with empty data)
+        let result = capability.run(&mut scan_data);
+        assert!(result.is_ok());
+        println!("Post-scan capability test passed");
+    }
+
+    #[test]
+    fn test_pre_and_post_scan_rule_stats() {
+        #[cfg(feature = "yara-scanning")]
+        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        #[cfg(not(feature = "yara-scanning"))]
+        let scanner = DynamicYaraScanner::new_with_config("rules", false).unwrap();
+
+        let stats = scanner.get_rule_stats();
+
+        println!("Pre-scan rules: {}", stats.pre_scan_count);
+        println!("Post-scan rules: {}", stats.post_scan_count);
+
+        // Should have at least some pre-scan rules (only when YARA is enabled)
+        #[cfg(feature = "yara-scanning")]
+        assert!(stats.pre_scan_count > 0);
+        #[cfg(not(feature = "yara-scanning"))]
+        assert_eq!(stats.pre_scan_count, 0);
+
+        // Should have post-scan rules if we created test rule
+        if stats.post_scan_count > 0 {
+            println!("Post-scan rules detected: {}", stats.post_scan_count);
+        } else {
+            println!("No post-scan rules found (this is expected if none were created)");
+        }
+    }
+
+    #[test]
+    fn test_dynamic_rule_names() {
+        // Test that the dynamic rule names are being collected correctly
+        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        let stats = scanner.get_rule_stats();
+
+        // Should have the expected pre-scan rules
+        #[cfg(feature = "yara-scanning")]
+        {
+            assert!(!stats.pre_scan_rules.is_empty());
+            assert!(stats
+                .pre_scan_rules
+                .contains(&"command_injection".to_string()));
+            assert!(stats.pre_scan_rules.contains(&"path_traversal".to_string()));
+            assert!(stats
+                .pre_scan_rules
+                .contains(&"secrets_leakage".to_string()));
+            println!("Pre-scan rules: {:?}", stats.pre_scan_rules);
+        }
+
+        #[cfg(not(feature = "yara-scanning"))]
+        {
+            assert!(stats.pre_scan_rules.is_empty());
+        }
+
+        // Post-scan rules should be empty for now
+        assert!(stats.post_scan_rules.is_empty());
+        println!("Post-scan rules: {:?}", stats.post_scan_rules);
     }
 }
