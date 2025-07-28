@@ -81,6 +81,10 @@ The Ramparts mcp scanner is implemented in Rust to prioritize performance, relia
 - **Development**: Testing MCP servers during development and testing phases
 - **Compliance**: Meeting security requirements for AI agent deployments
 
+## Caution:
+- **Adopt a layered approach** consider a layered approach to security. **ramparts** scanner is designed to work on the mcp server & tool _metadata_. It can catch **Tool Poisoning** or other static vulnerabilities in MCP server. You need to continually run the scans AND implement runtime MCP guardrails. For runtime attack detection of MCP tools, please contact support@getjavelin.com for Javelin's runtime MCP guardrails. 
+- **Evolving standards & threats** both the MCP standard as well as the AI/MCP threat landscape is evolving rapidly and there may be several threats or attack vectors that ramparts may fail to catch (until it catches up with the specific attack/threat)
+
 ## Prerequisites
 
 ### YARA Installation (Optional)
