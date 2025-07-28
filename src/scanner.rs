@@ -625,7 +625,7 @@ impl DynamicYaraScanner {
                 yara_x::MetaValue::Integer(i) => i.to_string(),
                 yara_x::MetaValue::Bool(b) => b.to_string(),
                 yara_x::MetaValue::String(s) => s.to_string(),
-                yara_x::MetaValue::Bytes(b) => format!("{:?}", b),
+                yara_x::MetaValue::Bytes(b) => format!("{b:?}"),
                 yara_x::MetaValue::Float(f) => f.to_string(),
             };
             raw_metadata.insert(key.to_string(), value_str);
@@ -652,7 +652,7 @@ impl DynamicYaraScanner {
         } else {
             // Fallback to stored metadata if no match metadata available
             let rule_name = rule.identifier();
-            let metadata_key = format!("{}:{}", phase, rule_name);
+            let metadata_key = format!("{phase}:{rule_name}");
             self.rule_metadata.get(&metadata_key).map(|stored_meta| {
                 crate::types::YaraRuleMetadata {
                     name: Some(stored_meta.name.clone()),
