@@ -1827,7 +1827,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn creates_threat_rules_with_and_without_yara_x() {
+    fn test_creates_threat_rules_with_and_without_yara_x() {
         // Use disabled YARA when feature is not available
         #[cfg(feature = "yara-x-scanning")]
         let scanner = ThreatRules::new("rules");
@@ -1852,7 +1852,7 @@ mod tests {
     }
 
     #[test]
-    fn creates_yara_capability_with_correct_phase() {
+    fn test_creates_yara_capability_with_correct_phase() {
         let scanner = YaraScanner::new("rules", ScanPhase::PreScan);
         assert!(
             scanner.is_ok(),
@@ -1865,7 +1865,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_memory_usage_statistics() {
+    fn test_reports_memory_usage_statistics() {
         #[cfg(feature = "yara-x-scanning")]
         let scanner = ThreatRules::new("rules")
             .expect("Should be able to create ThreatRules with rules directory");
@@ -1887,7 +1887,7 @@ mod tests {
     }
 
     #[test]
-    fn shares_rules_efficiently_via_arc_cloning() {
+    fn test_shares_rules_efficiently_via_arc_cloning() {
         // Create first scanner
         let scanner1 = ThreatRules::new("rules").unwrap();
         let memory1 = scanner1.memory_stats();
@@ -1910,7 +1910,7 @@ mod tests {
     }
 
     #[test]
-    fn validates_loaded_rules_successfully() {
+    fn test_validates_loaded_rules_successfully() {
         let scanner = ThreatRules::new("rules")
             .expect("Should be able to create ThreatRules with rules directory");
         let validation_result = scanner.validate();
@@ -1925,7 +1925,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "yara-x-scanning")]
-    fn compiles_and_scans_with_yara_x_rules() {
+    fn test_compiles_and_scans_with_yara_x_rules() {
         // Test actual YARA-X rule compilation from .yar files
         let test_rule = r#"
             rule TestRule {
@@ -1977,7 +1977,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "yara-x-scanning")]
-    fn extracts_metadata_from_yara_x_matches() {
+    fn test_extracts_metadata_from_yara_x_matches() {
         // Test metadata extraction from YARA-X rules
         let test_rule = r#"
             rule MetadataTest {
@@ -2024,7 +2024,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "yara-x-scanning")]
-    fn rejects_malformed_yara_rules() {
+    fn test_rejects_malformed_yara_rules() {
         // Test error handling for malformed rules
         let malformed_rule = r#"
             rule MalformedRule {
@@ -2044,7 +2044,7 @@ mod tests {
     }
 
     #[test]
-    fn loads_rules_from_filesystem() {
+    fn test_loads_rules_from_filesystem() {
         // Test that the real YARA rules can be loaded
         let scanner = ThreatRules::new("rules")
             .expect("Should be able to create ThreatRules with rules directory");
@@ -2091,7 +2091,7 @@ mod tests {
     }
 
     #[test]
-    fn runs_post_scan_capability_without_errors() {
+    fn test_runs_post_scan_capability_without_errors() {
         // Test that post-scan capability can be created and runs correctly
         let post_scanner = YaraScanner::new("rules", ScanPhase::PostScan);
         assert!(
@@ -2123,7 +2123,7 @@ mod tests {
     }
 
     #[test]
-    fn tracks_separate_pre_and_post_scan_statistics() {
+    fn test_tracks_separate_pre_and_post_scan_statistics() {
         #[cfg(feature = "yara-x-scanning")]
         let scanner = ThreatRules::new("rules")
             .expect("Should be able to create ThreatRules with rules directory");
@@ -2151,7 +2151,7 @@ mod tests {
     }
 
     #[test]
-    fn collects_rule_names_from_loaded_files() {
+    fn test_collects_rule_names_from_loaded_files() {
         // Test that the dynamic rule names are being collected correctly
         let scanner = ThreatRules::new("rules")
             .expect("Should be able to create ThreatRules with rules directory");
