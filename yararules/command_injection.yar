@@ -28,13 +28,13 @@ rule CommandInjection
         
     strings:
         // Shell command separators and operators (more specific patterns)
-        $shell_separators = /[;&|`$(){}]/
-        $command_chaining = /(&&|\|\||;|`|\$\(|\)|{|})/
-        $pipe_operators = /\|/
-        $background_exec = /&/
+        $shell_separators = /[;&|`$(){}]\s*[a-zA-Z]/
+        $command_chaining = /(&&|\|\||;|`|\$\()[^)]*\)/
+        $pipe_operators = /\|\s*[a-zA-Z]/
+        $background_exec = /&\s*[a-zA-Z]/
         
         // Dangerous system commands (file operations) - more specific
-        $file_dangerous = /(rm\s+-rf?|del\s+/i|format\s+|dd\s+if|mkfs|fdisk|wipefs)/
+        $file_dangerous = /(rm\s+-rf?|del\s+.*\/[si]|format\s+|dd\s+if|mkfs|fdisk|wipefs)/i
         $file_manipulation = /(chmod\s+777|chown\s+root|chgrp\s+root|touch\s+.*\.sh|echo\s+.*\>.*\.sh)/
         
         // Dangerous system commands (process control) - more specific
@@ -67,7 +67,7 @@ rule CommandInjection
         $data_exfil = /(cat\s+.*\.(passwd|shadow|config|env|key|pem|p12|pfx)|grep\s+.*password|find\s+.*-name\s+.*\.(key|pem|p12))/
         
         // Reverse shell patterns - more specific
-        $reverse_shell = /(bash\s+-i\s*>\s*&|nc\s+-e|telnet\s+.*\||/bin/bash\s+-i|/bin/sh\s+-i)/
+        $reverse_shell = /(bash\s+-i\s*>\s*&|nc\s+-e|telnet\s+.*|\/bin\/bash\s+-i|\/bin\/sh\s+-i)/
         
         // Web shell indicators - more specific
         $web_shell = /(php\s+-r|python\s+-c|perl\s+-e|ruby\s+-e|node\s+-e)/
@@ -75,12 +75,35 @@ rule CommandInjection
         // Suspicious command combinations - more specific
         $suspicious_combo = /(rm\s+.*&&|del\s+.*&&|format\s+.*&&|kill\s+.*&&|shutdown\s+.*&&)/
         
+        // Unsafe file operations patterns
+        $unsafe_file_ops = /(rm\s+-rf|rm\s+.*-r|dd\s+if=|format\s+[A-Za-z]:|del\s+.*\/s|rmdir\s+.*\/s)/
+        $dangerous_permissions = /(chmod\s+777|chown\s+root|sudo\s+rm)/
+        $wildcard_patterns = /(\*\.\*|\*\*\/\*)/
+        
         // Legitimate patterns to exclude (avoid false positives)
         $legitimate_patterns = /(create_file|update_file|read_file|write_file|push_files|git_|file_|add_comment|list_commits)/
         
     condition:
         // Primary detection: shell separators with dangerous commands
         ($shell_separators and ($file_dangerous or $process_dangerous or $network_dangerous)) or
+        
+        // File manipulation patterns
+        $file_manipulation or
+        
+        // Process control patterns
+        $process_control or
+        
+        // Network tools patterns
+        $network_tools or
+        
+        // Command chaining patterns
+        $command_chaining or
+        
+        // Pipe operators
+        $pipe_operators or
+        
+        // Background execution
+        $background_exec or
         
         // Code execution functions (but exclude legitimate patterns)
         ($exec_functions and not $legitimate_patterns) or
@@ -91,6 +114,7 @@ rule CommandInjection
         // Evasion techniques
         ($encoding_evasion and $shell_separators) or
         ($obfuscation and $shell_separators) or
+        $variable_substitution or
         
         // Command injection patterns
         $injection_patterns or
@@ -106,6 +130,11 @@ rule CommandInjection
         
         // Web shell
         $web_shell or
+        
+        // Unsafe file operations
+        $unsafe_file_ops or
+        $dangerous_permissions or
+        $wildcard_patterns or
         
         // Suspicious combinations
         $suspicious_combo
