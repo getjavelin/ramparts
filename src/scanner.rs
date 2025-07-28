@@ -319,10 +319,6 @@ impl MCPScanner {
     }
 }
 
-// 2. In perform_scan, use these new methods to populate ScanData
-// 3. Remove all old capability system code: CapabilityConfig, ScanCapability enum and impl, CapabilityResult, old CapabilityChain and impl, and all references to them.
-// 4. Only the new middleware system remains.
-
 // =====================
 // CAPABILITY TRAIT & CHAIN (Composable Middleware)
 // =====================
@@ -339,63 +335,63 @@ pub enum ScanPhase {
 /// Trait for a composable scan capability (middleware hook).
 ///
 /// Implement this trait to add custom security, analysis, or filtering logic
-/// to the scan pipeline. Capabilities can be registered for the pre-scan phase.
-pub trait ScanCapability: Send + Sync {
+/// to the scan pipeline. Scanners can be registered for the pre-scan phase.
+pub trait Scanner: Send + Sync {
     /// Returns the name of the capability.
     fn name(&self) -> &'static str;
     /// Returns the phase in which this capability should run.
     fn phase(&self) -> ScanPhase;
     /// Runs the capability, modifying scan data or reporting issues as needed.
     fn run(&self, _scan_data: &mut ScanData) -> anyhow::Result<()>;
-    /// Clones the capability as a boxed trait object.
-    fn box_clone(&self) -> Box<dyn ScanCapability>;
+    /// Clones the scanner as a boxed trait object.
+    fn box_clone(&self) -> Box<dyn Scanner>;
 }
 
-/// Chain of scan capabilities (middleware hooks) for pre-scan processing.
+/// Chain of scanners (middleware hooks) for pre-scan processing.
 ///
-/// Capabilities are executed in the order they are added.
+/// Scanners are executed in the order they are added.
 #[derive(Default)]
-pub struct CapabilityChain {
-    pre_scan: Vec<Box<dyn ScanCapability>>,
-    post_scan: Vec<Box<dyn ScanCapability>>,
+pub struct ScannerChain {
+    pre_scan: Vec<Box<dyn Scanner>>,
+    post_scan: Vec<Box<dyn Scanner>>,
 }
 
-impl CapabilityChain {
-    /// Creates a new, empty capability chain.
+impl ScannerChain {
+    /// Creates a new, empty scanner chain.
     pub fn new() -> Self {
         Self {
             pre_scan: Vec::new(),
             post_scan: Vec::new(),
         }
     }
-    /// Adds a capability to the chain for its specified phase.
-    pub fn add(&mut self, cap: Box<dyn ScanCapability>) {
-        match cap.phase() {
-            ScanPhase::PreScan => self.pre_scan.push(cap),
-            ScanPhase::PostScan => self.post_scan.push(cap),
+    /// Adds a scanner to the chain for its specified phase.
+    pub fn add(&mut self, scanner: Box<dyn Scanner>) {
+        match scanner.phase() {
+            ScanPhase::PreScan => self.pre_scan.push(scanner),
+            ScanPhase::PostScan => self.post_scan.push(scanner),
         }
     }
-    /// Runs all pre-scan capabilities on the provided scan data.
+    /// Runs all pre-scan scanners on the provided scan data.
     pub fn run_pre_scan(&self, scan_data: &mut ScanData) {
-        for cap in &self.pre_scan {
-            if let Err(e) = cap.run(scan_data) {
-                tracing::warn!("Pre-scan capability '{}' failed: {}", cap.name(), e);
+        for scanner in &self.pre_scan {
+            if let Err(e) = scanner.run(scan_data) {
+                tracing::warn!("Pre-scan scanner '{}' failed: {}", scanner.name(), e);
             }
         }
     }
 
-    /// Runs all post-scan capabilities on the provided scan data.
+    /// Runs all post-scan scanners on the provided scan data.
     pub fn run_post_scan(&self, scan_data: &mut ScanData) {
-        for cap in &self.post_scan {
-            if let Err(e) = cap.run(scan_data) {
-                tracing::warn!("Post-scan capability '{}' failed: {}", cap.name(), e);
+        for scanner in &self.post_scan {
+            if let Err(e) = scanner.run(scan_data) {
+                tracing::warn!("Post-scan scanner '{}' failed: {}", scanner.name(), e);
             }
         }
     }
 }
 
-// Implement Clone for CapabilityChain (requires dyn-clone for trait objects)
-impl Clone for CapabilityChain {
+// Implement Clone for ScannerChain (requires dyn-clone for trait objects)
+impl Clone for ScannerChain {
     fn clone(&self) -> Self {
         Self {
             pre_scan: self.pre_scan.iter().map(|c| c.box_clone()).collect(),
@@ -405,7 +401,7 @@ impl Clone for CapabilityChain {
 }
 
 // =====================
-// DYNAMIC YARA SCANNER (Replaces hardcoded YaraScanCapability)
+// THREAT RULES ENGINE (Replaces hardcoded YaraScanner)
 // =====================
 
 #[cfg(feature = "yara-x-scanning")]
@@ -427,8 +423,8 @@ pub struct YaraMatchInfo {
     pub rule_metadata: Option<crate::types::YaraRuleMetadata>,
 }
 
-/// Dynamic YARA scanner that loads rules from directory structure
-pub struct DynamicYaraScanner {
+/// Threat detection rules engine that loads YARA-X rules from directory structure
+pub struct ThreatRules {
     pre_scan_rules: Vec<Arc<YaraRules>>,
     post_scan_rules: Vec<Arc<YaraRules>>,
     rules_dir: String,
@@ -444,13 +440,13 @@ pub struct RuleMetadata {
     pub tags: Vec<String>,
 }
 
-impl DynamicYaraScanner {
-    /// Creates a new dynamic YARA scanner with rules from the specified directory
+impl ThreatRules {
+    /// Creates a new threat rules engine with rules from the specified directory
     pub fn new(rules_dir: &str) -> Result<Self> {
         Self::with_config(rules_dir, true)
     }
 
-    /// Creates a new dynamic YARA scanner with optional YARA support based on config
+    /// Creates a new threat rules engine with optional YARA support based on config
     pub fn with_config(rules_dir: &str, enable_yara: bool) -> Result<Self> {
         if !is_yara_available(enable_yara) {
             if enable_yara {
@@ -463,7 +459,7 @@ impl DynamicYaraScanner {
         Self::new_enabled(rules_dir)
     }
 
-    /// Creates a disabled YARA scanner (no rule loading)
+    /// Creates a disabled threat rules engine (no rule loading)
     fn new_disabled(rules_dir: &str) -> Result<Self> {
         let start_time = std::time::Instant::now();
         Ok(Self {
@@ -476,7 +472,7 @@ impl DynamicYaraScanner {
         })
     }
 
-    /// Creates an enabled YARA scanner (loads rules)
+    /// Creates an enabled threat rules engine (loads rules)
     #[cfg(feature = "yara-x-scanning")]
     fn new_enabled(rules_dir: &str) -> Result<Self> {
         let start_time = std::time::Instant::now();
@@ -804,7 +800,7 @@ pub struct RuleStats {
     pub post_scan_tags: HashMap<String, usize>,
 }
 
-impl Clone for DynamicYaraScanner {
+impl Clone for ThreatRules {
     fn clone(&self) -> Self {
         // Clone that shares the same rules via Arc - efficient and safe
         Self {
@@ -818,16 +814,16 @@ impl Clone for DynamicYaraScanner {
     }
 }
 
-/// Dynamic YARA capability that loads rules from directory structure
-pub struct DynamicYaraCapability {
-    scanner: DynamicYaraScanner,
+/// Threat detection capability that loads rules from directory structure
+pub struct YaraScanner {
+    scanner: ThreatRules,
     phase: ScanPhase,
 }
 
-impl DynamicYaraCapability {
+impl YaraScanner {
     /// Creates a new dynamic YARA capability
     pub fn new(rules_dir: &str, phase: ScanPhase) -> Result<Self> {
-        let scanner = DynamicYaraScanner::new(rules_dir)?;
+        let scanner = ThreatRules::new(rules_dir)?;
         Ok(Self { scanner, phase })
     }
 
@@ -858,7 +854,7 @@ impl DynamicYaraCapability {
 
             if !enhanced_matches.is_empty() {
                 info!(
-                    "DynamicYARA {}-scan issue in {} '{}': {} rules matched",
+                    "YARA {}-scan issue in {} '{}': {} rules matched",
                     match phase {
                         ScanPhase::PreScan => "pre",
                         ScanPhase::PostScan => "post",
@@ -926,9 +922,9 @@ impl DynamicYaraCapability {
     }
 }
 
-impl ScanCapability for DynamicYaraCapability {
+impl Scanner for YaraScanner {
     fn name(&self) -> &'static str {
-        "DynamicYARA"
+        "yara"
     }
 
     fn phase(&self) -> ScanPhase {
@@ -940,7 +936,7 @@ impl ScanCapability for DynamicYaraCapability {
             ScanPhase::PreScan => {
                 let stats = self.scanner.stats();
                 info!(
-                    "[DynamicYARA] Running pre-scan with {} rules (tags: {:?})",
+                    "[YARA] Running pre-scan with {} rules (tags: {:?})",
                     stats.pre_scan_count, stats.pre_scan_tags
                 );
 
@@ -1003,7 +999,7 @@ impl ScanCapability for DynamicYaraCapability {
             ScanPhase::PostScan => {
                 let stats = self.scanner.stats();
                 info!(
-                    "[DynamicYARA] Running post-scan with {} rules (tags: {:?})",
+                    "[YARA] Running post-scan with {} rules (tags: {:?})",
                     stats.post_scan_count, stats.post_scan_tags
                 );
 
@@ -1068,7 +1064,7 @@ impl ScanCapability for DynamicYaraCapability {
         Ok(())
     }
 
-    fn box_clone(&self) -> Box<dyn ScanCapability> {
+    fn box_clone(&self) -> Box<dyn Scanner> {
         Box::new(Self {
             scanner: self.scanner.clone(),
             phase: self.phase,
@@ -1076,18 +1072,11 @@ impl ScanCapability for DynamicYaraCapability {
     }
 }
 
-// =====================
-// YARA CAPABILITY SKETCH (No actual YARA logic yet) - REMOVED
-// =====================
-
-// Remove the old YaraScanCapability implementation
-
 // MCPScanner struct
 pub struct MCPScanner {
     client: Client,
     http_timeout: u64,
-    // capability_chain: CapabilityChain, // (old, for core MCP capabilities)
-    middleware_chain: CapabilityChain, // New: pre/post scan hooks
+    middleware_chain: ScannerChain, // New: pre/post scan hooks
 }
 
 // MCPScanner implementation
@@ -1101,10 +1090,10 @@ impl MCPScanner {
             .unwrap_or_default();
 
         // Set up middleware chain with dynamic YARA capabilities
-        let mut middleware_chain = CapabilityChain::new();
+        let mut middleware_chain = ScannerChain::new();
 
         // Add dynamic YARA pre-scan capability
-        if let Ok(pre_cap) = DynamicYaraCapability::new("rules", ScanPhase::PreScan) {
+        if let Ok(pre_cap) = YaraScanner::new("rules", ScanPhase::PreScan) {
             middleware_chain.add(Box::new(pre_cap));
             info!("{}", messages::YARA_PRE_SCAN_LOADED);
         } else {
@@ -1112,7 +1101,7 @@ impl MCPScanner {
         }
 
         // Add dynamic YARA post-scan capability
-        if let Ok(post_cap) = DynamicYaraCapability::new("rules", ScanPhase::PostScan) {
+        if let Ok(post_cap) = YaraScanner::new("rules", ScanPhase::PostScan) {
             middleware_chain.add(Box::new(post_cap));
             info!("{}", messages::YARA_POST_SCAN_LOADED);
         } else {
@@ -1838,16 +1827,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_dynamic_yara_scanner_creation() {
+    fn creates_threat_rules_with_and_without_yara_x() {
         // Use disabled YARA when feature is not available
         #[cfg(feature = "yara-x-scanning")]
-        let scanner = DynamicYaraScanner::new("rules");
+        let scanner = ThreatRules::new("rules");
         #[cfg(not(feature = "yara-x-scanning"))]
-        let scanner = DynamicYaraScanner::new_with_config("rules", false);
+        let scanner = ThreatRules::with_config("rules", false);
 
-        assert!(scanner.is_ok());
+        assert!(
+            scanner.is_ok(),
+            "ThreatRules creation should succeed even when YARA is disabled"
+        );
 
-        let scanner = scanner.unwrap();
+        let scanner = scanner.expect("Scanner creation should have succeeded");
         let stats = scanner.stats();
 
         // Should have loaded rules from the pre directory (only when YARA is enabled)
@@ -1860,21 +1852,26 @@ mod tests {
     }
 
     #[test]
-    fn test_dynamic_yara_capability_creation() {
-        let capability = DynamicYaraCapability::new("rules", ScanPhase::PreScan);
-        assert!(capability.is_ok());
+    fn creates_yara_capability_with_correct_phase() {
+        let scanner = YaraScanner::new("rules", ScanPhase::PreScan);
+        assert!(
+            scanner.is_ok(),
+            "YaraScanner creation should succeed with valid rules directory"
+        );
 
-        let capability = capability.unwrap();
-        assert_eq!(capability.name(), "DynamicYARA");
-        assert_eq!(capability.phase(), ScanPhase::PreScan);
+        let scanner_instance = scanner.expect("Scanner creation should have succeeded");
+        assert_eq!(scanner_instance.name(), "yara");
+        assert_eq!(scanner_instance.phase(), ScanPhase::PreScan);
     }
 
     #[test]
-    fn test_memory_stats() {
+    fn reports_memory_usage_statistics() {
         #[cfg(feature = "yara-x-scanning")]
-        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        let scanner = ThreatRules::new("rules")
+            .expect("Should be able to create ThreatRules with rules directory");
         #[cfg(not(feature = "yara-x-scanning"))]
-        let scanner = DynamicYaraScanner::new_with_config("rules", false).unwrap();
+        let scanner = ThreatRules::with_config("rules", false)
+            .expect("Should be able to create ThreatRules with YARA disabled");
 
         let memory_stats = scanner.memory_stats();
 
@@ -1890,9 +1887,9 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_functionality() {
+    fn shares_rules_efficiently_via_arc_cloning() {
         // Create first scanner
-        let scanner1 = DynamicYaraScanner::new("rules").unwrap();
+        let scanner1 = ThreatRules::new("rules").unwrap();
         let memory1 = scanner1.memory_stats();
 
         // Clone should work without deadlocks
@@ -1913,18 +1910,22 @@ mod tests {
     }
 
     #[test]
-    fn test_rule_validation() {
-        let scanner = DynamicYaraScanner::new("rules").unwrap();
+    fn validates_loaded_rules_successfully() {
+        let scanner = ThreatRules::new("rules")
+            .expect("Should be able to create ThreatRules with rules directory");
         let validation_result = scanner.validate();
 
         // Should not have validation errors
-        assert!(validation_result.is_ok());
+        assert!(
+            validation_result.is_ok(),
+            "YARA rule validation should pass for well-formed rules"
+        );
         println!("Rule validation passed");
     }
 
     #[test]
     #[cfg(feature = "yara-x-scanning")]
-    fn test_yara_x_rule_compilation_and_scanning() {
+    fn compiles_and_scans_with_yara_x_rules() {
         // Test actual YARA-X rule compilation from .yar files
         let test_rule = r#"
             rule TestRule {
@@ -1954,7 +1955,7 @@ mod tests {
         let result = scanner.scan(b"This contains MALICIOUS_PATTERN text");
         assert!(result.is_ok(), "Scanning should succeed");
 
-        let scan_results = result.unwrap();
+        let scan_results = result.expect("YARA-X scan should have succeeded");
         let matching_rules: Vec<_> = scan_results.matching_rules().collect();
         assert!(
             !matching_rules.is_empty(),
@@ -1966,7 +1967,7 @@ mod tests {
         let result2 = scanner2.scan(b"Clean text with no malicious content");
         assert!(result2.is_ok(), "Scanning clean text should succeed");
 
-        let scan_results2 = result2.unwrap();
+        let scan_results2 = result2.expect("YARA-X scan on clean text should have succeeded");
         let matching_rules2: Vec<_> = scan_results2.matching_rules().collect();
         assert!(
             matching_rules2.is_empty(),
@@ -1976,7 +1977,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "yara-x-scanning")]
-    fn test_yara_x_metadata_extraction() {
+    fn extracts_metadata_from_yara_x_matches() {
         // Test metadata extraction from YARA-X rules
         let test_rule = r#"
             rule MetadataTest {
@@ -1995,14 +1996,19 @@ mod tests {
         "#;
 
         let mut compiler = yara_x::Compiler::new();
-        assert!(compiler.add_source(test_rule).is_ok());
+        compiler
+            .add_source(test_rule)
+            .expect("Test rule should compile successfully with YARA-X");
 
         let rules = compiler.build();
         let mut scanner = yara_x::Scanner::new(&rules);
         let result = scanner.scan(b"test_pattern");
-        assert!(result.is_ok());
+        assert!(
+            result.is_ok(),
+            "YARA-X scanning should succeed on test pattern"
+        );
 
-        let scan_results = result.unwrap();
+        let scan_results = result.expect("YARA-X scan should have succeeded");
         let matching_rules: Vec<_> = scan_results.matching_rules().collect();
         assert!(!matching_rules.is_empty());
 
@@ -2018,7 +2024,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "yara-x-scanning")]
-    fn test_malformed_rule_handling() {
+    fn rejects_malformed_yara_rules() {
         // Test error handling for malformed rules
         let malformed_rule = r#"
             rule MalformedRule {
@@ -2038,9 +2044,10 @@ mod tests {
     }
 
     #[test]
-    fn test_yara_rules_loading() {
+    fn loads_rules_from_filesystem() {
         // Test that the real YARA rules can be loaded
-        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        let scanner = ThreatRules::new("rules")
+            .expect("Should be able to create ThreatRules with rules directory");
         let stats = scanner.memory_stats();
 
         // Should have loaded the .yar rule files (only when YARA-X is enabled)
@@ -2060,32 +2067,42 @@ mod tests {
         #[cfg(feature = "yara-x-scanning")]
         {
             // Load rules from .yar source file (YARA-X compiles on-the-fly)
-            if let Ok(rule_content) = std::fs::read_to_string("rules/pre/secrets_leakage.yar") {
-                let mut compiler = yara_x::Compiler::new();
-                if compiler.add_source(rule_content.as_str()).is_ok() {
-                    let rules = compiler.build();
+            let rule_content = std::fs::read_to_string("rules/pre/secrets_leakage.yar")
+                .expect("Should be able to read secrets_leakage.yar test rule file");
 
-                    // Test that the real scan method works
-                    let mut scanner = yara_x::Scanner::new(&rules);
-                    let scan_result = scanner.scan(b"test data");
-                    assert!(scan_result.is_ok());
+            let mut compiler = yara_x::Compiler::new();
+            compiler
+                .add_source(rule_content.as_str())
+                .expect("Should be able to compile secrets_leakage.yar rule");
 
-                    // Real YARA-X may or may not have matches depending on rule content
-                    // Just verify we got a valid result (empty or with matches)
-                }
-            }
+            let rules = compiler.build();
+
+            // Test that the real scan method works
+            let mut scanner = yara_x::Scanner::new(&rules);
+            let scan_result = scanner.scan(b"test data");
+            assert!(
+                scan_result.is_ok(),
+                "YARA-X scanning should succeed on test data"
+            );
+
+            // Real YARA-X may or may not have matches depending on rule content
+            // Just verify we got a valid result (empty or with matches)
         }
     }
 
     #[test]
-    fn test_post_scan_capability() {
+    fn runs_post_scan_capability_without_errors() {
         // Test that post-scan capability can be created and runs correctly
-        let post_cap = DynamicYaraCapability::new("rules", ScanPhase::PostScan);
-        assert!(post_cap.is_ok());
+        let post_scanner = YaraScanner::new("rules", ScanPhase::PostScan);
+        assert!(
+            post_scanner.is_ok(),
+            "YaraScanner creation should succeed for post-scan phase"
+        );
 
-        let capability = post_cap.unwrap();
-        assert_eq!(capability.name(), "DynamicYARA");
-        assert_eq!(capability.phase(), ScanPhase::PostScan);
+        let scanner_instance =
+            post_scanner.expect("Post-scan scanner creation should have succeeded");
+        assert_eq!(scanner_instance.name(), "yara");
+        assert_eq!(scanner_instance.phase(), ScanPhase::PostScan);
 
         // Create test scan data
         let mut scan_data = ScanData {
@@ -2096,18 +2113,23 @@ mod tests {
             yara_results: vec![],
         };
 
-        // Run post-scan capability (should not error even with empty data)
-        let result = capability.run(&mut scan_data);
-        assert!(result.is_ok());
-        println!("Post-scan capability test passed");
+        // Run post-scan scanner (should not error even with empty data)
+        let result = scanner_instance.run(&mut scan_data);
+        assert!(
+            result.is_ok(),
+            "Post-scan scanner should run successfully on scan data"
+        );
+        println!("Post-scan scanner test passed");
     }
 
     #[test]
-    fn test_pre_and_post_scan_rule_stats() {
+    fn tracks_separate_pre_and_post_scan_statistics() {
         #[cfg(feature = "yara-x-scanning")]
-        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        let scanner = ThreatRules::new("rules")
+            .expect("Should be able to create ThreatRules with rules directory");
         #[cfg(not(feature = "yara-x-scanning"))]
-        let scanner = DynamicYaraScanner::new_with_config("rules", false).unwrap();
+        let scanner = ThreatRules::with_config("rules", false)
+            .expect("Should be able to create ThreatRules with YARA disabled");
 
         let stats = scanner.stats();
 
@@ -2129,9 +2151,10 @@ mod tests {
     }
 
     #[test]
-    fn test_dynamic_rule_names() {
+    fn collects_rule_names_from_loaded_files() {
         // Test that the dynamic rule names are being collected correctly
-        let scanner = DynamicYaraScanner::new("rules").unwrap();
+        let scanner = ThreatRules::new("rules")
+            .expect("Should be able to create ThreatRules with rules directory");
         let stats = scanner.stats();
 
         // Should have the expected pre-scan rules
