@@ -24,8 +24,8 @@ sign-commit = false
 sign-tag = false
 
 [features]
-default = ["yara-scanning"]
-yara-scanning = ["yara", "glob"]
+default = ["yara-x-scanning"]
+yara-x-scanning = ["yara-x", "glob"]
 
 [dependencies]
 # CLI argument parsing
@@ -84,7 +84,7 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 
 # JSON-RPC handling for microservice
 jsonrpc-core = "18.0"
-yara = { version = "0.21", optional = true }
+yara-x = { version = "0.10", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"

@@ -58,7 +58,7 @@ impl MCPScannerCore {
         let scanner_config = config_manager.load_config().unwrap_or_default();
 
         Ok(Self {
-            scanner: MCPScanner::new_with_timeout(scanner_config.scanner.http_timeout),
+            scanner: MCPScanner::with_timeout(scanner_config.scanner.http_timeout),
             config_manager,
         })
     }

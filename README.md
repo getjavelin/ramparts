@@ -67,9 +67,9 @@ The Ramparts mcp scanner is implemented in Rust to prioritize performance, relia
 
 - **Comprehensive MCP Coverage**: Analyzes all MCP endpoints (server/info, tools/list, resources/list, prompts/list) and evaluates each tool, resource, and prompt
 - **Advanced Security Detection**: Detects path traversal, command injection, SQL injection, prompt injection, secret leakage, auth bypass, and more using both static checks and LLM-assisted analysis
-- **Optional YARA Integration**: Advanced pattern-based scanning with configurable YARA rules for enhanced security analysis
+- **Optional YARA-X Integration**: Advanced pattern-based scanning with configurable YARA rules using the modern YARA-X engine for enhanced security analysis
 - **High Performance**: Built in Rust for fast, efficient scanning of large MCP servers with minimal memory overhead
-- **Flexible Installation**: Install with or without YARA dependency based on your security requirements
+- **Flexible Installation**: Install with or without YARA-X dependency based on your security requirements
 - **Multiple Transport Support**: HTTP and STDIO transport mechanisms for various MCP server configurations
 - **Rich Output Formats**: Choose from tree-style text, JSON, or raw formats for easy integration with scripts and dashboards
 - **Configuration Management**: Load settings from IDE configuration files and custom YAML configs
@@ -87,35 +87,30 @@ The Ramparts mcp scanner is implemented in Rust to prioritize performance, relia
 
 ## Prerequisites
 
-### YARA Installation (Optional)
+### YARA-X Integration (Optional)
 
-Ramparts uses YARA rules for advanced pattern-based security scanning. YARA installation is **optional** but **recommended** for comprehensive security analysis.
+Ramparts uses YARA-X, a modern rewrite of YARA in Rust, for advanced pattern-based security scanning. YARA-X integration is **optional** but **recommended** for comprehensive security analysis.
 
-#### Quick Install
+#### Key Benefits of YARA-X
 
-**macOS**: `brew install yara`  
-**Ubuntu/Debian**: `sudo apt update && sudo apt install yara`  
-**CentOS/RHEL**: `sudo yum install yara`  
-**Fedora**: `sudo dnf install yara`  
-**Windows**: `vcpkg install yara` or download from [releases](https://github.com/VirusTotal/yara/releases)
+- **Pure Rust**: No system dependencies required - everything is handled at compile time
+- **Better Performance**: Optimized for complex security rules and mixed rule sets
+- **99% Compatible**: Works with existing YARA rules with minimal changes
+- **Memory Safe**: Built with Rust's safety guarantees
 
-#### From Source
+#### Installation
+
+**With YARA-X support (recommended)**
 ```bash
-git clone https://github.com/VirusTotal/yara.git
-cd yara && ./bootstrap.sh && ./configure && make && sudo make install
+cargo install ramparts
 ```
 
-#### Automated Setup
-```bash
-chmod +x scripts/setup_yara.sh && ./scripts/setup_yara.sh
-```
-
-#### Without YARA
+**Without YARA-X support (lighter installation)**
 ```bash
 cargo install ramparts --no-default-features
 ```
 
-Verify installation: `yara --version`
+No additional system dependencies are required - YARA-X is built into the binary!
 
 ## Quick Start
 
@@ -123,10 +118,10 @@ Verify installation: `yara --version`
 
 **From crates.io (Recommended)**
 ```bash
-# With YARA support (recommended - install YARA first)
+# With YARA-X support (recommended)
 cargo install ramparts
 
-# Without YARA support (lighter installation)
+# Without YARA-X support (lighter installation)
 cargo install ramparts --no-default-features
 ```
 
@@ -135,58 +130,41 @@ cargo install ramparts --no-default-features
 git clone https://github.com/getjavelin/ramparts.git
 cd ramparts
 
-# With YARA support
+# With YARA-X support
 cargo install --path .
 
-# Without YARA support
+# Without YARA-X support
 cargo install --path . --no-default-features
 ```
 
-> **Note**: If you have YARA installed but want to disable it temporarily, you can control this via configuration (see Configuration section below).
+> **Note**: You can disable YARA-X scanning temporarily via configuration (see Configuration section below).
 
-### Troubleshooting YARA Issues
+### Troubleshooting Build Issues
 
-If you encounter build errors related to YARA, try these solutions:
+YARA-X is a pure Rust implementation, so most traditional YARA build issues are eliminated. However, if you encounter any build problems:
 
-#### macOS Issues
+#### General Solutions
 
-**Error: `'yara.h' file not found`**
+**Build fails during compilation**
 ```bash
-# Set environment variables manually
-export YARA_LIBRARY_PATH="/opt/homebrew/lib"  # Apple Silicon
-export YARA_LIBRARY_PATH="/usr/local/lib"     # Intel Mac
-export BINDGEN_EXTRA_CLANG_ARGS="-I/opt/homebrew/include"  # Apple Silicon
-export BINDGEN_EXTRA_CLANG_ARGS="-I/usr/local/include"     # Intel Mac
-
-# Then rebuild
+# Clean and rebuild
 cargo clean && cargo build
 ```
 
-**Error: `dyld: Library not loaded`**
+**Feature compilation issues**
 ```bash
-# Reinstall YARA and rebuild
-brew uninstall yara && brew install yara
-cargo clean && cargo build
-```
-
-#### Linux Issues
-
-**Error: `yara.h: No such file or directory`**
-```bash
-# Install development headers
-sudo apt-get install libyara-dev  # Ubuntu/Debian
-sudo yum install yara-devel       # CentOS/RHEL
-
-# Then rebuild
-cargo clean && cargo build
-```
-
-#### General Issues
-
-If you continue to have problems, you can temporarily disable YARA:
-```bash
+# Install without YARA-X if needed
 cargo install ramparts --no-default-features
 ```
+
+**Dependency resolution problems**
+```bash
+# Update Rust toolchain
+rustup update stable
+cargo update
+```
+
+The main advantage of YARA-X is that it eliminates the complex system dependency management that was required with the original YARA C library!
 
 ### Basic Usage
 
@@ -426,18 +404,18 @@ performance:
   slow_threshold_ms: 5000
 ```
 
-### YARA Configuration
+### YARA-X Configuration
 
-Control YARA scanning via config file:
+Control YARA-X scanning via config file:
 ```yaml
 scanner:
-  enable_yara: true   # Enable/disable YARA scanning
+  enable_yara: true   # Enable/disable YARA-X scanning
 ```
 
-**Rules Directory**: `rules/pre/` (auto-loaded `.yarac` files)  
+**Rules Directory**: `rules/pre/` (auto-loaded `.yar` files)  
 **Built-in Rules**: secrets_leakage, command_injection, path_traversal, sql_injection
 
-**Custom Rules**: Create `.yar` files, compile with `yarac your_rule.yar your_rule.yarac`, place in `rules/pre/`
+**Custom Rules**: Create `.yar` files and place directly in `rules/pre/` - no compilation needed with YARA-X!
 
 ## Output Formats
 
@@ -504,83 +482,56 @@ chmod +x $(which ramparts)
 ramparts init-config
 ```
 
-### YARA-Related Issues
+### YARA-X Related Issues
 
-**YARA Not Found During Installation**
-```bash
-# Error: failed to find YARA installation
-# Solution: Install YARA first, then reinstall ramparts
-brew install yara  # macOS
-sudo apt install yara  # Ubuntu/Debian
-cargo install ramparts --force
-```
+YARA-X is much simpler to work with than the original YARA, but here are solutions for common issues:
 
-**YARA Rules Not Loading**
+**YARA-X Rules Not Loading**
 ```bash
 # Check if rules directory exists
 ls -la rules/
 ls -la rules/pre/
 
-# Check YARA rule compilation
-yarac --help
-yarac rules/src/your_rule.yar rules/pre/your_rule.yarac
+# List .yar files (no compilation needed)
+ls rules/pre/*.yar
 ```
 
-**YARA Compilation Errors**
+**Rule Syntax Errors**
 ```bash
-# Error: cannot compile .yar files
-# Solution: Check YARA syntax
-yara rules/src/your_rule.yar /dev/null
-
-# Common fixes:
-# 1. Check rule syntax
-# 2. Verify string escaping
-# 3. Ensure proper rule structure
+# YARA-X provides better error messages for rule syntax issues
+# Check rule syntax in your .yar files:
+# 1. Ensure proper rule structure
+# 2. Verify string escaping (especially { characters in regex)
+# 3. Check metadata format
 ```
 
-**Mixed YARA Versions**
+**Performance Issues with YARA-X**
 ```bash
-# Error: YARA version mismatch
-# Solution: Ensure consistent YARA version
-yara --version
-yarac --version
-
-# Reinstall YARA if versions differ
-brew reinstall yara  # macOS
-sudo apt remove yara && sudo apt install yara  # Ubuntu
-```
-
-**Performance Issues with YARA**
-```bash
-# If YARA scanning is slow, you can:
-# 1. Disable YARA temporarily
+# If YARA-X scanning is slow, you can:
+# 1. Disable YARA-X temporarily
 echo "scanner:
   enable_yara: false" > ramparts.yaml
 
-# 2. Or reduce rule complexity
-# 3. Or use --no-default-features installation
+# 2. Or use --no-default-features installation
 cargo install ramparts --no-default-features --force
 ```
 
-**YARA Rules Directory Permissions**
+**YARA-X Rules Directory Permissions**
 ```bash
 # Error: Permission denied accessing rules
 # Solution: Check directory permissions
 chmod -R 755 rules/
-chmod 644 rules/pre/*.yarac
+chmod 644 rules/pre/*.yar
 ```
 
 **Custom Rules Not Working**
 ```bash
 # Debug rule loading
-# 1. Check file extension (.yarac not .yar)
-ls rules/pre/*.yarac
+# 1. Check file extension (.yar files directly)
+ls rules/pre/*.yar
 
-# 2. Test rule compilation
-yarac your_rule.yar test.yarac
-
-# 3. Verify rule syntax
-yara your_rule.yar test_file.txt
+# 2. Verify rule syntax (YARA-X will show errors during compilation)
+# 3. Check for 99% compatibility issues with original YARA rules
 ```
 
 ## Contributing
