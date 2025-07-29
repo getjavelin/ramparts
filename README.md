@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://www.rust-lang.org/)
 [![Tests](https://img.shields.io/github/actions/workflow/status/getjavelin/ramparts/pr-check.yml?label=tests)](https://github.com/getjavelin/ramparts/actions)
-[![Clippy](https://img.shields.io/github/actions/workflow/status/getjavelin/rampart/pr-check.yml?label=lint)](https://github.com/getjavelin/ramparts/actions)
+[![Clippy](https://img.shields.io/github/actions/workflow/status/getjavelin/ramparts/pr-check.yml?label=lint)](https://github.com/getjavelin/ramparts/actions)
 [![Release](https://img.shields.io/github/release/getjavelin/ramparts)](https://github.com/getjavelin/ramparts/releases)
 
 </div>
@@ -34,7 +34,7 @@ MCP servers can expose powerful capabilities to AI agents, including:
 
 Without proper security analysis, these capabilities can become attack vectors for:
 - **Tool Poisoning** - bypassing AI safety measures
-- **MCP Rug Pulls** - unauthorized changes to MCP tool descriptions after initial user approval.
+- **MCP Rug Pulls** - unauthorized changes to MCP tool descriptions after initial user approval
 - **Data exfiltration** - leaking sensitive information
 - **Privilege escalation** - gaining unauthorized access
 - **Path traversal attacks** - accessing files outside intended directories
@@ -46,7 +46,7 @@ Without proper security analysis, these capabilities can become attack vectors f
 Ramparts provides **security scanning** of MCP servers by:
 
 1. **Discovering Capabilities**: Scans all MCP endpoints to identify available tools, resources, and prompts
-2. **Static Analysis**: Performs rule-based checks for common vulnerabilities
+2. **Static Analysis**: Performs yara-based checks for common vulnerabilities
 3. **LLM-Powered Analysis**: Uses AI models to detect sophisticated security issues
 4. **Risk Assessment**: Categorizes findings by severity and provides actionable recommendations
 
@@ -57,7 +57,6 @@ Ramparts is designed for developers using local, remote MCP servers or building 
 **If you're using MCP servers** - whether they're running locally on your machine or hosted remotely - Ramparts helps you understand what security risks they might pose. You can scan third-party MCP servers before connecting to them, or validate your own local MCP servers before deploying them to production.
 
 **If you're building MCP servers** - whether you're creating tools, resources, or prompts - Ramparts gives you confidence that your implementation doesn't expose vulnerabilities to AI agents. It's especially useful for developers who want to ensure their MCP tools are secure by design.
-
 
 ## Why Rust?
 
@@ -81,11 +80,12 @@ The Ramparts mcp scanner is implemented in Rust to prioritize performance, relia
 - **Development**: Testing MCP servers during development and testing phases
 - **Compliance**: Meeting security requirements for AI agent deployments
 
-## Caution:
-- **Adopt a layered approach** consider a layered approach to security. **ramparts** scanner is designed to work on the mcp server & tool _metadata_. It can catch **Tool Poisoning** or other static vulnerabilities in MCP server. You need to continually run the scans AND implement runtime MCP guardrails. For runtime attack detection of MCP tools, please contact support@getjavelin.com for Javelin's runtime MCP guardrails. 
+## Caution
+
+- **Adopt a layered approach** consider a layered approach to security. **ramparts** scanner is designed to work on the mcp server & tool _metadata_. It can catch **Tool Poisoning** or other static vulnerabilities in MCP server but you need to continually run the scans AND implement runtime MCP guardrails. For runtime attack detection of MCP tools, please contact support@getjavelin.com for Javelin's runtime MCP guardrails. 
 - **Evolving standards & threats** both the MCP standard as well as the AI/MCP threat landscape is evolving rapidly and there may be several threats or attack vectors that ramparts may fail to catch (until it catches up with the specific attack/threat)
 
-## Prerequisites
+## Installation
 
 ### YARA-X Integration (Optional)
 
@@ -95,26 +95,9 @@ Ramparts uses YARA-X, a modern rewrite of YARA in Rust, for advanced pattern-bas
 
 - **Pure Rust**: No system dependencies required - everything is handled at compile time
 - **Better Performance**: Optimized for complex security rules and mixed rule sets
-- **99% Compatible**: Works with existing YARA rules with minimal changes
 - **Memory Safe**: Built with Rust's safety guarantees
 
-#### Installation
-
-**With YARA-X support (recommended)**
-```bash
-cargo install ramparts
-```
-
-**Without YARA-X support (lighter installation)**
-```bash
-cargo install ramparts --no-default-features
-```
-
-No additional system dependencies are required - YARA-X is built into the binary!
-
-## Quick Start
-
-### Installation
+#### Installation Options
 
 **From crates.io (Recommended)**
 ```bash
@@ -139,32 +122,7 @@ cargo install --path . --no-default-features
 
 > **Note**: You can disable YARA-X scanning temporarily via configuration (see Configuration section below).
 
-### Troubleshooting Build Issues
-
-YARA-X is a pure Rust implementation, so most traditional YARA build issues are eliminated. However, if you encounter any build problems:
-
-#### General Solutions
-
-**Build fails during compilation**
-```bash
-# Clean and rebuild
-cargo clean && cargo build
-```
-
-**Feature compilation issues**
-```bash
-# Install without YARA-X if needed
-cargo install ramparts --no-default-features
-```
-
-**Dependency resolution problems**
-```bash
-# Update Rust toolchain
-rustup update stable
-cargo update
-```
-
-The main advantage of YARA-X is that it eliminates the complex system dependency management that was required with the original YARA C library!
+## Quick Start
 
 ### Basic Usage
 
@@ -291,14 +249,6 @@ https://server3.com/mcp/" > servers.txt
 ramparts scan --batch servers.txt
 ```
 
-### Scan from IDE Configuration
-
-Scan MCP servers configured in your IDE:
-
-```bash
-ramparts scan-config
-```
-
 ## CLI Reference
 
 ### Basic Commands
@@ -309,9 +259,6 @@ ramparts scan <url> [options]
 
 # Start Ramparts server mode
 ramparts server [options]
-
-# Scan from IDE configuration
-ramparts scan-config
 
 # Initialize configuration file
 ramparts init-config
@@ -355,7 +302,7 @@ Create a custom configuration file:
 ramparts init-config
 ```
 
-This creates a `ramparts.yaml` file:
+This creates a `ramparts.yaml` file with the following structure:
 
 ```yaml
 # Example ramparts.yaml
@@ -377,7 +324,6 @@ scanner:
   max_retries: 3
   retry_delay_ms: 1000
   llm_batch_size: 10
-  # YARA Configuration
   enable_yara: true  # Set to false to disable YARA scanning
 
 security:
@@ -414,8 +360,7 @@ scanner:
 
 **Rules Directory**: `rules/pre/` (auto-loaded `.yar` files)  
 **Built-in Rules**: secrets_leakage, command_injection, path_traversal, sql_injection
-
-**Custom Rules**: Create `.yar` files and place directly in `rules/pre/` - no compilation needed with YARA-X!
+**Custom Rules**: Create `.yar` files and place directly in `rules/pre/` or `rules/post/` - no compilation needed with YARA-X!
 
 ## Output Formats
 
@@ -483,8 +428,6 @@ ramparts init-config
 ```
 
 ### YARA-X Related Issues
-
-YARA-X is much simpler to work with than the original YARA, but here are solutions for common issues:
 
 **YARA-X Rules Not Loading**
 ```bash
