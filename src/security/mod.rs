@@ -1,5 +1,7 @@
 // Security scan types used by the rest of the codebase
 
+pub mod cross_origin_scanner;
+
 use crate::constants::{messages, DEFAULT_LLM_BATCH_SIZE};
 use crate::types::{MCPPrompt, MCPResource, MCPTool};
 use anyhow::{anyhow, Result};

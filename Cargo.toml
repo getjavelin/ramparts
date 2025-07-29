@@ -60,6 +60,9 @@ url = "2.4"
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
 
+[build-dependencies]
+chrono = "0.4"
+
 # Table formatting for output
 tabled = "0.20"
 
