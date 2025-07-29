@@ -8,6 +8,7 @@ license = "Apache-2.0"
 repository = "https://github.com/getjavelin/ramparts"
 keywords = ["mcp", "scanner", "cli", "ai", "llm", "security", "llmsecurity"]
 categories = ["command-line-utilities", "network-programming"]
+include = ["src/**/*", "LICENSE", "README.md", "build.rs"]
 
 # Cargo-release configuration for semantic versioning
 [package.metadata.release]
@@ -62,8 +63,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # Table formatting for output
 tabled = "0.20"
 
-# Progress indicators
-indicatif = "0.17"
+
 
 # Configuration
 config = "0.14"
@@ -84,7 +84,7 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 
 # JSON-RPC handling for microservice
 jsonrpc-core = "18.0"
-yara-x = { version = "0.10", optional = true }
+yara-x = { version = "1.4", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
