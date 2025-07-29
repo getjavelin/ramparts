@@ -35,13 +35,10 @@ fn main() {
         .unwrap_or(false);
 
     // Set build-time environment variables
-    println!("cargo:rustc-env=GIT_COMMIT_SHORT={}", git_commit);
-    println!("cargo:rustc-env=GIT_COMMIT_FULL={}", git_commit_full);
-    println!("cargo:rustc-env=GIT_BRANCH={}", git_branch);
-    println!(
-        "cargo:rustc-env=GIT_DIRTY={}",
-        if git_dirty { "dirty" } else { "clean" }
-    );
+    println!("cargo:rustc-env=GIT_COMMIT_SHORT={git_commit}");
+    println!("cargo:rustc-env=GIT_COMMIT_FULL={git_commit_full}");
+    println!("cargo:rustc-env=GIT_BRANCH={git_branch}");
+    println!("cargo:rustc-env=GIT_DIRTY={git_dirty}");
     println!(
         "cargo:rustc-env=BUILD_DATE={}",
         chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")

@@ -500,6 +500,7 @@ use std::sync::Arc;
 #[cfg(feature = "yara-x-scanning")]
 pub struct YaraMatchInfo {
     pub rule_name: String,
+    #[allow(dead_code)]
     pub rule_metadata: Option<crate::types::YaraRuleMetadata>,
 }
 
@@ -507,6 +508,7 @@ pub struct YaraMatchInfo {
 #[cfg(not(feature = "yara-x-scanning"))]
 pub struct YaraMatchInfo {
     pub rule_name: String,
+    #[allow(dead_code)]
     pub rule_metadata: Option<crate::types::YaraRuleMetadata>,
 }
 
