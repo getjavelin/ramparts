@@ -7,21 +7,29 @@ pub fn display_banner() {
     let name = env!("CARGO_PKG_NAME");
     let git_commit_short = env!("GIT_COMMIT_SHORT");
     let git_commit_full = env!("GIT_COMMIT_FULL");
-    
+
     // Get current date/time
-    let current_date = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
-    
+    let current_date = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%S UTC")
+        .to_string();
+
     // Create the banner
     println!();
     println!("{}", name.to_uppercase().bold().white());
     println!("{}", "MCP Security Scanner".italic().cyan());
     println!();
-    println!("{}", format!("Version: {}", version.bright_green()));
-    println!("{}", format!("Current Time: {}", current_date.bright_yellow()));
+    println!("Version: {}", version.bright_green());
+    println!("Current Time: {}", current_date.bright_yellow());
     println!();
-    println!("{}", format!("Git Commit: {} ({})", git_commit_short.bright_cyan(), git_commit_full[..8].bright_cyan()));
-    println!("{}", format!("Repository: {}", "https://github.com/getjavelin/ramparts".bright_blue()));
-    println!("{}", format!("Support: {}", "support@getjavelin.com".bright_blue()));
+    println!(
+        "Git Commit: {} ({})",
+        git_commit_short.bright_cyan(),
+        git_commit_full[..8].bright_cyan()
+    );
+    println!(
+        "Repository: {}",
+        "https://github.com/getjavelin/ramparts".bright_blue()
+    );
+    println!("Support: {}", "support@getjavelin.com".bright_blue());
     println!();
-  
-} 
+}

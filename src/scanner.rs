@@ -89,26 +89,22 @@ fn generate_context_message(item_type: &str, rule_name: &str) -> String {
     match rule_name {
         // Secrets leakage rules
         "SecretsLeakage" => format!("Potential secret exposure detected in {item_type}"),
-        "SSHKeyExposure" => format!(
-            "SSH key or configuration file access detected in {item_type}"
-        ),
-        "PEMFileAccess" => format!(
-            "PEM certificate or private key access detected in {item_type}"
-        ),
-        "EnvironmentVariableLeakage" => format!(
-            "Sensitive environment variable pattern detected in {item_type}"
-        ),
+        "SSHKeyExposure" => format!("SSH key or configuration file access detected in {item_type}"),
+        "PEMFileAccess" => format!("PEM certificate or private key access detected in {item_type}"),
+        "EnvironmentVariableLeakage" => {
+            format!("Sensitive environment variable pattern detected in {item_type}")
+        }
 
         // Cross-origin rules
-        "CrossOriginEscalation" => format!(
-            "Cross-origin escalation vulnerability detected in {item_type}"
-        ),
-        "CrossDomainContamination" => format!(
-            "Cross-domain contamination detected across multiple domains in {item_type}"
-        ),
-        "DomainOutlier" => format!(
-            "Domain outlier detected - {item_type} uses different domain than majority"
-        ),
+        "CrossOriginEscalation" => {
+            format!("Cross-origin escalation vulnerability detected in {item_type}")
+        }
+        "CrossDomainContamination" => {
+            format!("Cross-domain contamination detected across multiple domains in {item_type}")
+        }
+        "DomainOutlier" => {
+            format!("Domain outlier detected - {item_type} uses different domain than majority")
+        }
         "MixedSecuritySchemes" => format!("Mixed HTTP/HTTPS schemes detected in {item_type}"),
 
         // Default fallback
