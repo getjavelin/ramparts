@@ -24,7 +24,7 @@ pub fn display_banner() {
     println!(
         "Git Commit: {} ({})",
         git_commit_short.bright_cyan(),
-        git_commit_full[..8].bright_cyan()
+        git_commit_full[..std::cmp::min(8, git_commit_full.len())].bright_cyan()
     );
     println!(
         "Repository: {}",

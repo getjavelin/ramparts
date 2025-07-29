@@ -1,5 +1,22 @@
 use std::process::Command;
 
+fn get_git_output(args: &[&str], default: &str) -> String {
+    Command::new("git")
+        .args(args)
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                String::from_utf8(output.stdout).ok()
+            } else {
+                None
+            }
+        })
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| default.to_string())
+}
+
 fn main() {
     // YARA-X is a pure Rust implementation and doesn't require system libraries
     // or build-time configuration unlike the original YARA which needed C bindings.
@@ -8,45 +25,9 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     // Capture git commit information
-    let git_commit = Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
-        .output()
-        .ok()
-        .and_then(|output| {
-            if output.status.success() {
-                String::from_utf8(output.stdout).ok()
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| "unknown".to_string());
-
-    let git_commit_full = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .output()
-        .ok()
-        .and_then(|output| {
-            if output.status.success() {
-                String::from_utf8(output.stdout).ok()
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| "unknown".to_string());
-
-    let git_branch = Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()
-        .and_then(|output| {
-            if output.status.success() {
-                String::from_utf8(output.stdout).ok()
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| "unknown".to_string());
-
+    let git_commit = get_git_output(&["rev-parse", "--short", "HEAD"], "unknown");
+    let git_commit_full = get_git_output(&["rev-parse", "HEAD"], "unknown");
+    let git_branch = get_git_output(&["rev-parse", "--abbrev-ref", "HEAD"], "unknown");
     let git_dirty = Command::new("git")
         .args(["diff", "--quiet"])
         .output()
@@ -54,9 +35,9 @@ fn main() {
         .unwrap_or(false);
 
     // Set build-time environment variables
-    println!("cargo:rustc-env=GIT_COMMIT_SHORT={}", git_commit.trim());
-    println!("cargo:rustc-env=GIT_COMMIT_FULL={}", git_commit_full.trim());
-    println!("cargo:rustc-env=GIT_BRANCH={}", git_branch.trim());
+    println!("cargo:rustc-env=GIT_COMMIT_SHORT={}", git_commit);
+    println!("cargo:rustc-env=GIT_COMMIT_FULL={}", git_commit_full);
+    println!("cargo:rustc-env=GIT_BRANCH={}", git_branch);
     println!(
         "cargo:rustc-env=GIT_DIRTY={}",
         if git_dirty { "dirty" } else { "clean" }

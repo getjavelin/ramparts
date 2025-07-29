@@ -951,14 +951,8 @@ impl YaraScanner {
 
                 // Store YARA results for each match with metadata
                 for match_info in enhanced_matches {
-                    let yara_result = self.create_yara_result_with_metadata::<T>(
-                        item,
-                        &match_info.rule_name,
-                        &item_text,
-                        &context,
-                        phase,
-                        match_info.rule_metadata,
-                    );
+                    let yara_result =
+                        self.create_yara_result_with_metadata::<T>(item, &match_info.rule_name);
                     results.push(yara_result);
                 }
             }
@@ -977,15 +971,7 @@ impl YaraScanner {
     }
 
     /// Create a YARA scan result with original rule metadata
-    fn create_yara_result_with_metadata<T>(
-        &self,
-        item: &T,
-        rule_name: &str,
-        _matched_text: &str, // Unused - removing redundant matched_text
-        _context: &str,      // Unused - generating context from rule_name
-        _phase: ScanPhase,
-        _rule_metadata: Option<crate::types::YaraRuleMetadata>, // Unused - removing duplicate metadata
-    ) -> YaraScanResult
+    fn create_yara_result_with_metadata<T>(&self, item: &T, rule_name: &str) -> YaraScanResult
     where
         T: crate::security::BatchScannableItem,
     {
@@ -993,7 +979,7 @@ impl YaraScanner {
             target_type: T::item_type().to_string(),
             target_name: item.name().to_string(),
             rule_name: rule_name.to_string(),
-            rule_file: self.map_rule_name_to_file_name(rule_name),
+            rule_file: rule_name_to_file_name(rule_name),
             matched_text: None,
             context: generate_context_message(T::item_type(), rule_name),
             rule_metadata: None,
@@ -1003,20 +989,6 @@ impl YaraScanner {
             total_items_scanned: None,
             total_matches: None,
             status: Some("warning".to_string()),
-        }
-    }
-
-    /// Maps a YARA rule name back to its source file name for consistent reporting
-    fn map_rule_name_to_file_name(&self, rule_name: &str) -> Option<String> {
-        // Check known rule name to file name mappings
-        match rule_name {
-            "EnvironmentVariableLeakage" => Some("secrets_leakage".to_string()),
-            "CrossOriginEscalation" => Some("cross_origin_escalation".to_string()),
-            "CrossDomainContamination" => Some("cross_origin_escalation".to_string()),
-            "DomainOutlier" => Some("cross_origin_escalation".to_string()),
-            "MixedSecuritySchemes" => Some("cross_origin_escalation".to_string()),
-            // Add more mappings as needed for other rules
-            _ => None, // Return None if no mapping found, caller will use rule_name as fallback
         }
     }
 }
@@ -1057,7 +1029,7 @@ impl Scanner for YaraScanner {
                 for result in &tool_results {
                     triggered_rules.insert(result.rule_name.clone());
                     // Map YARA rule name back to file name for consistent comparison
-                    if let Some(file_name) = self.map_rule_name_to_file_name(&result.rule_name) {
+                    if let Some(file_name) = rule_name_to_file_name(&result.rule_name) {
                         triggered_file_names.insert(file_name);
                     } else {
                         // Fallback: use the rule name itself if no mapping found
@@ -1066,7 +1038,7 @@ impl Scanner for YaraScanner {
                 }
                 for result in &prompt_results {
                     triggered_rules.insert(result.rule_name.clone());
-                    if let Some(file_name) = self.map_rule_name_to_file_name(&result.rule_name) {
+                    if let Some(file_name) = rule_name_to_file_name(&result.rule_name) {
                         triggered_file_names.insert(file_name);
                     } else {
                         triggered_file_names.insert(result.rule_name.clone());
@@ -1074,7 +1046,7 @@ impl Scanner for YaraScanner {
                 }
                 for result in &resource_results {
                     triggered_rules.insert(result.rule_name.clone());
-                    if let Some(file_name) = self.map_rule_name_to_file_name(&result.rule_name) {
+                    if let Some(file_name) = rule_name_to_file_name(&result.rule_name) {
                         triggered_file_names.insert(file_name);
                     } else {
                         triggered_file_names.insert(result.rule_name.clone());
@@ -1162,7 +1134,7 @@ impl Scanner for YaraScanner {
 
                 for result in &tool_results {
                     triggered_rules.insert(result.rule_name.clone());
-                    if let Some(file_name) = self.map_rule_name_to_file_name(&result.rule_name) {
+                    if let Some(file_name) = rule_name_to_file_name(&result.rule_name) {
                         triggered_file_names.insert(file_name);
                     } else {
                         triggered_file_names.insert(result.rule_name.clone());
@@ -1170,7 +1142,7 @@ impl Scanner for YaraScanner {
                 }
                 for result in &prompt_results {
                     triggered_rules.insert(result.rule_name.clone());
-                    if let Some(file_name) = self.map_rule_name_to_file_name(&result.rule_name) {
+                    if let Some(file_name) = rule_name_to_file_name(&result.rule_name) {
                         triggered_file_names.insert(file_name);
                     } else {
                         triggered_file_names.insert(result.rule_name.clone());
@@ -1178,7 +1150,7 @@ impl Scanner for YaraScanner {
                 }
                 for result in &resource_results {
                     triggered_rules.insert(result.rule_name.clone());
-                    if let Some(file_name) = self.map_rule_name_to_file_name(&result.rule_name) {
+                    if let Some(file_name) = rule_name_to_file_name(&result.rule_name) {
                         triggered_file_names.insert(file_name);
                     } else {
                         triggered_file_names.insert(result.rule_name.clone());

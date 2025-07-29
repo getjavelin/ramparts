@@ -175,6 +175,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     debug!("Starting MCP Scanner");
 
+    // Create MCPScanner only if needed
+    let scanner = match &cli.command {
+        Commands::Scan { .. } | Commands::ScanConfig { .. } => {
+            match MCPScanner::with_timeout(scanner_config.scanner.http_timeout) {
+                Ok(scanner) => Some(scanner),
+                Err(e) => {
+                    error!("Failed to create scanner: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        _ => None,
+    };
+
     match cli.command {
         Commands::Scan {
             url,
@@ -198,13 +212,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let options_clone = options.clone();
-            let scanner = match MCPScanner::with_timeout(scanner_config.scanner.http_timeout) {
-                Ok(scanner) => scanner,
-                Err(e) => {
-                    error!("Failed to create scanner: {}", e);
-                    std::process::exit(1);
-                }
-            };
+            let scanner = scanner.as_ref().unwrap();
 
             match scanner.scan_single(&url, options).await {
                 Ok(result) => {
@@ -219,7 +227,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-
         Commands::ScanConfig {
             auth_headers,
             format,
@@ -240,13 +247,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
 
-            let scanner = match MCPScanner::with_timeout(scanner_config.scanner.http_timeout) {
-                Ok(scanner) => scanner,
-                Err(e) => {
-                    error!("Failed to create scanner: {}", e);
-                    std::process::exit(1);
-                }
-            };
+            let scanner = scanner.as_ref().unwrap();
 
             match scanner.scan_config(options).await {
                 Ok(results) => {
