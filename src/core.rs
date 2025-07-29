@@ -4,6 +4,7 @@ use crate::types::{config_utils, ScanConfigBuilder, ScanOptions, ScanResult};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tracing::warn;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ScanRequest {
@@ -55,10 +56,16 @@ pub struct MCPScannerCore {
 impl MCPScannerCore {
     pub fn new() -> Result<Self> {
         let config_manager = ScannerConfigManager::new();
-        let scanner_config = config_manager.load_config().unwrap_or_default();
+        let scanner_config = match config_manager.load_config() {
+            Ok(config) => config,
+            Err(e) => {
+                warn!("Failed to load scanner config, using defaults: {}", e);
+                Default::default()
+            }
+        };
 
         Ok(Self {
-            scanner: MCPScanner::with_timeout(scanner_config.scanner.http_timeout),
+            scanner: MCPScanner::with_timeout(scanner_config.scanner.http_timeout)?,
             config_manager,
         })
     }

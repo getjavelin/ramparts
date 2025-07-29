@@ -437,7 +437,7 @@ impl ScannerConfigManager {
         let config: ScannerConfig = serde_yaml::from_str(&content)
             .map_err(|e| anyhow!("Failed to parse config.yaml: {}", e))?;
 
-        info!("Loaded configuration from config.yaml");
+        debug!("Loaded configuration from config.yaml");
         Ok(config)
     }
 

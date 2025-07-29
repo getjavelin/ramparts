@@ -35,6 +35,7 @@ MCP servers can expose powerful capabilities to AI agents, including:
 Without proper security analysis, these capabilities can become attack vectors for:
 - **Tool Poisoning** - bypassing AI safety measures
 - **MCP Rug Pulls** - unauthorized changes to MCP tool descriptions after initial user approval
+- **Cross-Origin Escalation** - exploiting tools across multiple domains to hijack context or inject malicious content
 - **Data exfiltration** - leaking sensitive information
 - **Privilege escalation** - gaining unauthorized access
 - **Path traversal attacks** - accessing files outside intended directories
@@ -47,8 +48,23 @@ Ramparts provides **security scanning** of MCP servers by:
 
 1. **Discovering Capabilities**: Scans all MCP endpoints to identify available tools, resources, and prompts
 2. **Static Analysis**: Performs yara-based checks for common vulnerabilities
-3. **LLM-Powered Analysis**: Uses AI models to detect sophisticated security issues
-4. **Risk Assessment**: Categorizes findings by severity and provides actionable recommendations
+3. **Cross-Origin Analysis**: Detects when tools span multiple domains, which could enable context hijacking or injection attacks
+4. **LLM-Powered Analysis**: Uses AI models to detect sophisticated security issues
+5. **Risk Assessment**: Categorizes findings by severity and provides actionable recommendations
+
+### Cross-Origin Escalation Detection
+
+Ramparts includes specialized detection for **Cross-Origin Escalation** attacks, which occur when MCP tools access resources across multiple domains. This creates opportunities for:
+
+- **Context Hijacking**: One domain injecting malicious content that affects tools on other domains
+- **Domain Contamination**: Tools from untrusted domains mixing with trusted ones
+- **Mixed Security Schemes**: HTTP and HTTPS tools creating security vulnerabilities
+
+The scanner performs comprehensive URL analysis across all tools and resources to:
+- Extract and normalize domains from tool parameters, schemas, and metadata
+- Identify cross-domain contamination patterns
+- Flag outlier tools using different domains than the majority
+- Detect mixed HTTP/HTTPS schemes that could compromise security
 
 ## Who Ramparts is For
 
@@ -65,7 +81,7 @@ The Ramparts mcp scanner is implemented in Rust to prioritize performance, relia
 ## Features
 
 - **Comprehensive MCP Coverage**: Analyzes all MCP endpoints (server/info, tools/list, resources/list, prompts/list) and evaluates each tool, resource, and prompt
-- **Advanced Security Detection**: Detects path traversal, command injection, SQL injection, prompt injection, secret leakage, auth bypass, and more using both static checks and LLM-assisted analysis
+- **Advanced Security Detection**: Detects path traversal, command injection, SQL injection, prompt injection, secret leakage, auth bypass, cross-origin escalation, and more using both static checks and LLM-assisted analysis
 - **Optional YARA-X Integration**: Advanced pattern-based scanning with configurable YARA rules using the modern YARA-X engine for enhanced security analysis
 - **High Performance**: Built in Rust for fast, efficient scanning of large MCP servers with minimal memory overhead
 - **Flexible Installation**: Install with or without YARA-X dependency based on your security requirements
@@ -177,6 +193,22 @@ Security Assessment Results
       📋 Analysis: Standard GitHub file deletion functionality
       ├── HIGH: Tool allowing directory traversal attacks: Potential Path Traversal Vulnerability
       │   Details: The tool allows the deletion of a file from a GitHub repository and accepts parameters like branch, message, owner, path, and repo. If path validation is not implemented properly, an attacker could manipulate the path to access files outside the intended directory.
+
+YARA Scan Results
+================================================================================
+⚠️ PRE-SCAN - WARNING
+  Context: Pre-scan completed: 2 rules executed on 74 items
+  Items scanned: 74
+  Security matches: 1
+  Rules executed: secrets_leakage:*, cross_origin_escalation:*
+  Security issues detected: cross_origin_escalation:CrossDomainContamination
+
+🔍 Detailed Results:
+⚠️ domain-analysis (domain-analysis)
+  Rule: CrossDomainContamination (HIGH)
+  Description: Detected tools and resources spanning multiple domains, indicating potential cross-origin escalation risk
+  Matched: Cross-domain contamination detected across 2 domains: api.github.com, webhooks.github.com
+  Context: Found tools and resources spanning 2 different root domains
 
 Summary:
   • Tools scanned: 74
@@ -336,6 +368,7 @@ security:
     command_injection: true
     path_traversal: true
     auth_bypass: true
+    cross_origin_escalation: true
     prompt_injection: true
     pii_leakage: true
     jailbreak: true
@@ -359,7 +392,7 @@ scanner:
 ```
 
 **Rules Directory**: `rules/pre/` (auto-loaded `.yar` files)  
-**Built-in Rules**: secrets_leakage, command_injection, path_traversal, sql_injection
+**Built-in Rules**: secrets_leakage, command_injection, path_traversal, sql_injection, cross_origin_escalation
 **Custom Rules**: Create `.yar` files and place directly in `rules/pre/` or `rules/post/` - no compilation needed with YARA-X!
 
 ## Output Formats

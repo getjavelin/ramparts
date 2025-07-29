@@ -1,7 +1,8 @@
 use clap::{Parser, Subcommand};
-use tracing::{error, info, Level};
+use tracing::{debug, error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
+mod banner;
 mod config;
 mod constants;
 mod core;
@@ -11,6 +12,7 @@ mod server;
 mod types;
 mod utils;
 
+use banner::display_banner;
 use scanner::MCPScanner;
 use server::MCPScannerServer;
 use types::{config_utils, ScanConfigBuilder};
@@ -136,9 +138,18 @@ enum Commands {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
+    // Display banner
+    display_banner();
+
     // Load configuration and setup logging
     let config_manager = config::ScannerConfigManager::new();
-    let scanner_config = config_manager.load_config().unwrap_or_default();
+    let scanner_config = match config_manager.load_config() {
+        Ok(config) => config,
+        Err(e) => {
+            warn!("Failed to load scanner config, using defaults: {}", e);
+            Default::default()
+        }
+    };
 
     // Determine logging level (CLI args take precedence over config)
     let level = if cli.debug || cli.verbose {
@@ -162,7 +173,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_thread_names(false)
         .init();
 
-    info!("Starting MCP Scanner");
+    debug!("Starting MCP Scanner");
+
+    // Create MCPScanner only if needed
+    let scanner = match &cli.command {
+        Commands::Scan { .. } | Commands::ScanConfig { .. } => {
+            match MCPScanner::with_timeout(scanner_config.scanner.http_timeout) {
+                Ok(scanner) => Some(scanner),
+                Err(e) => {
+                    error!("Failed to create scanner: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        _ => None,
+    };
 
     match cli.command {
         Commands::Scan {
@@ -187,7 +212,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let options_clone = options.clone();
-            let scanner = MCPScanner::with_timeout(scanner_config.scanner.http_timeout);
+            let scanner = scanner.as_ref().unwrap();
 
             match scanner.scan_single(&url, options).await {
                 Ok(result) => {
@@ -202,7 +227,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-
         Commands::ScanConfig {
             auth_headers,
             format,
@@ -223,7 +247,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
 
-            let scanner = MCPScanner::with_timeout(scanner_config.scanner.http_timeout);
+            let scanner = scanner.as_ref().unwrap();
 
             match scanner.scan_config(options).await {
                 Ok(results) => {

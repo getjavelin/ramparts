@@ -7,14 +7,23 @@ use std::collections::HashMap;
 /// Original YARA rule metadata from the rule definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct YaraRuleMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub severity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
 }
 
@@ -23,17 +32,26 @@ pub struct YaraRuleMetadata {
 pub struct YaraScanResult {
     pub target_type: String, // "tool", "prompt", "resource"
     pub target_name: String,
-    pub rule_name: String,
+    pub rule_name: String, // The actual YARA rule name (e.g., "EnvironmentVariableLeakage")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rule_file: Option<String>, // The rule file name (e.g., "secrets_leakage")
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub matched_text: Option<String>,
     pub context: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rule_metadata: Option<YaraRuleMetadata>,
     // Execution summary fields (when target_type is "summary")
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub phase: Option<String>,
-    pub rules_executed: Option<Vec<String>>,
-    pub rules_passed: Option<Vec<String>>,
-    pub rules_failed: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rules_executed: Option<Vec<String>>, // Rules executed (format: "filename:rulename" or just "filename" for file-level)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub security_issues_detected: Option<Vec<String>>, // Rules that detected issues (format: "filename:rulename")
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub total_items_scanned: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub total_matches: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>, // "success", "warning", "error"
 }
 
@@ -670,13 +688,18 @@ mod tests {
             target_type: "tool".to_string(),
             target_name: "test_tool".to_string(),
             rule_name: "test_rule".to_string(),
+            rule_file: Some("test_file".to_string()),
             matched_text: Some("matched content".to_string()),
             context: "test context".to_string(),
             rule_metadata: None,
             phase: Some("pre-scan".to_string()),
-            rules_executed: Some(vec!["rule1".to_string(), "rule2".to_string()]),
-            rules_passed: Some(vec!["rule1".to_string()]),
-            rules_failed: Some(vec!["rule2".to_string()]),
+            rules_executed: Some(vec![
+                "secrets_leakage:SecretsLeakage".to_string(),
+                "cross_origin_escalation:CrossDomainContamination".to_string(),
+            ]),
+            security_issues_detected: Some(vec![
+                "secrets_leakage:EnvironmentVariableLeakage".to_string()
+            ]),
             total_items_scanned: Some(10),
             total_matches: Some(2),
             status: Some("warning".to_string()),

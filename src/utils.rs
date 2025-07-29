@@ -3,7 +3,7 @@ use crate::types::*;
 use anyhow::{anyhow, Result};
 use colored::*;
 use std::time::Instant;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use tabled::{Table, Tabled};
 
@@ -116,11 +116,11 @@ pub mod performance {
 
         pub fn finish(self) -> u64 {
             let elapsed = self.timer.elapsed_ms();
-            if elapsed > 1000 {
-                warn!(
-                    "Slow operation detected: {} took {}ms",
-                    self.operation_name, elapsed
-                );
+            if elapsed > 5000 {
+                // Only warn if over 5 seconds
+                warn!("Slow operation: {} took {}ms", self.operation_name, elapsed);
+            } else if elapsed > 1000 {
+                debug!("{} completed in {}ms", self.operation_name, elapsed);
             }
             elapsed
         }
@@ -482,9 +482,14 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
             if let Some(total_matches) = summary.total_matches {
                 println!("  Security matches: {total_matches}");
             }
-            if let Some(rules_executed) = &summary.rules_executed {
-                if !rules_executed.is_empty() && rules_executed[0] != "none" {
-                    println!("  Rules executed: {}", rules_executed.join(", "));
+            if let Some(rules) = &summary.rules_executed {
+                if !rules.is_empty() {
+                    println!("  Rules executed: {}", rules.join(", "));
+                }
+            }
+            if let Some(security_issues) = &summary.security_issues_detected {
+                if !security_issues.is_empty() {
+                    println!("  Security issues detected: {}", security_issues.join(", "));
                 }
             }
             println!();

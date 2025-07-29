@@ -1,6 +1,8 @@
 use crate::config::MCPConfigManager;
 use crate::constants::{messages, protocol};
-use crate::security::{SecurityScanResult, SecurityScanner};
+use crate::security::{
+    cross_origin_scanner::CrossOriginScanner, SecurityScanResult, SecurityScanner,
+};
 use crate::types::{YaraScanResult, *};
 use crate::utils::{
     error_utils, parse_jsonrpc_array_response, performance::track_performance, retry_with_backoff,
@@ -24,6 +26,91 @@ type YaraRules = Rules;
 
 #[cfg(not(feature = "yara-x-scanning"))]
 type YaraRules = ();
+
+/// Map rule names to their file names for consistent naming
+fn rule_name_to_file_name(rule_name: &str) -> Option<String> {
+    match rule_name {
+        // secrets_leakage.yar rules
+        "SecretsLeakage" | "SSHKeyExposure" | "PEMFileAccess" | "EnvironmentVariableLeakage" => {
+            Some("secrets_leakage".to_string())
+        }
+        // cross_origin_escalation.yar rules
+        "CrossOriginEscalation"
+        | "CrossDomainContamination"
+        | "DomainOutlier"
+        | "MixedSecuritySchemes" => Some("cross_origin_escalation".to_string()),
+        // Add more mappings as needed
+        _ => None,
+    }
+}
+
+/// Sanitize header values for safe logging - prevents credential exposure
+fn sanitize_header_for_logging(key: &str, value: &str) -> String {
+    let key_lower = key.to_lowercase();
+
+    // Comprehensive list of sensitive header patterns
+    if key_lower.contains("auth")
+        || key_lower.contains("key")
+        || key_lower.contains("secret")
+        || key_lower.contains("token")
+        || key_lower.contains("bearer")
+        || key_lower.contains("password")
+        || key_lower.contains("credential")
+        || key_lower.contains("session")
+        || key_lower.contains("cookie")
+        || key_lower.starts_with("x-api")
+        || key_lower.starts_with("x-secret")
+        || key_lower.starts_with("x-auth")
+    {
+        "[REDACTED]".to_string()
+    } else {
+        // Additional check for common header names
+        match key_lower.as_str() {
+            "authorization" | "x-api-key" | "x-secret-key" | "x-auth-token" | "x-session-token"
+            | "api-key" | "apikey" | "secret" | "token" => "[REDACTED]".to_string(),
+            _ => {
+                // Final safety check: if value looks like a credential (long alphanumeric string)
+                if value.len() > 20
+                    && value
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                {
+                    "[REDACTED]".to_string()
+                } else {
+                    value.to_string()
+                }
+            }
+        }
+    }
+}
+
+/// Generate descriptive context messages based on rule names
+fn generate_context_message(item_type: &str, rule_name: &str) -> String {
+    match rule_name {
+        // Secrets leakage rules
+        "SecretsLeakage" => format!("Potential secret exposure detected in {item_type}"),
+        "SSHKeyExposure" => format!("SSH key or configuration file access detected in {item_type}"),
+        "PEMFileAccess" => format!("PEM certificate or private key access detected in {item_type}"),
+        "EnvironmentVariableLeakage" => {
+            format!("Sensitive environment variable pattern detected in {item_type}")
+        }
+
+        // Cross-origin rules
+        "CrossOriginEscalation" => {
+            format!("Cross-origin escalation vulnerability detected in {item_type}")
+        }
+        "CrossDomainContamination" => {
+            format!("Cross-domain contamination detected across multiple domains in {item_type}")
+        }
+        "DomainOutlier" => {
+            format!("Domain outlier detected - {item_type} uses different domain than majority")
+        }
+        "MixedSecuritySchemes" => format!("Mixed HTTP/HTTPS schemes detected in {item_type}"),
+
+        // Default fallback
+        _ => format!("{item_type} matched by security rule {rule_name}"),
+    }
+}
 
 /// Check if YARA is available and enabled
 fn is_yara_available(config_enabled: bool) -> bool {
@@ -413,6 +500,7 @@ use std::sync::Arc;
 #[cfg(feature = "yara-x-scanning")]
 pub struct YaraMatchInfo {
     pub rule_name: String,
+    #[allow(dead_code)]
     pub rule_metadata: Option<crate::types::YaraRuleMetadata>,
 }
 
@@ -420,6 +508,7 @@ pub struct YaraMatchInfo {
 #[cfg(not(feature = "yara-x-scanning"))]
 pub struct YaraMatchInfo {
     pub rule_name: String,
+    #[allow(dead_code)]
     pub rule_metadata: Option<crate::types::YaraRuleMetadata>,
 }
 
@@ -517,7 +606,7 @@ impl ThreatRules {
         self.calculate_memory_usage();
 
         let load_duration = start_time.elapsed();
-        info!(
+        debug!(
             "Loaded {} pre-scan rules, {} post-scan rules in {}ms (memory: {}KB)",
             self.pre_scan_rules.len(),
             self.post_scan_rules.len(),
@@ -694,8 +783,8 @@ impl ThreatRules {
         }
 
         if !all_matches.is_empty() {
-            warn!(
-                "YARA {}-scan matches in {}: {} rules matched",
+            debug!(
+                "{}-scan matches in {}: {} rules triggered",
                 phase,
                 context,
                 all_matches.len()
@@ -796,7 +885,9 @@ pub struct RuleStats {
     pub post_scan_count: usize,
     pub pre_scan_rules: Vec<String>,
     pub post_scan_rules: Vec<String>,
+    #[allow(dead_code)]
     pub pre_scan_tags: HashMap<String, usize>,
+    #[allow(dead_code)]
     pub post_scan_tags: HashMap<String, usize>,
 }
 
@@ -853,12 +944,8 @@ impl YaraScanner {
             let enhanced_matches: Vec<YaraMatchInfo> = Vec::new();
 
             if !enhanced_matches.is_empty() {
-                info!(
-                    "YARA {}-scan issue in {} '{}': {} rules matched",
-                    match phase {
-                        ScanPhase::PreScan => "pre",
-                        ScanPhase::PostScan => "post",
-                    },
+                warn!(
+                    "Security issue detected in {} '{}': {} rules matched",
                     T::item_type(),
                     item.name(),
                     enhanced_matches.len()
@@ -866,14 +953,8 @@ impl YaraScanner {
 
                 // Store YARA results for each match with metadata
                 for match_info in enhanced_matches {
-                    let yara_result = self.create_yara_result_with_metadata::<T>(
-                        item,
-                        &match_info.rule_name,
-                        &item_text,
-                        &context,
-                        phase,
-                        match_info.rule_metadata,
-                    );
+                    let yara_result =
+                        self.create_yara_result_with_metadata::<T>(item, &match_info.rule_name);
                     results.push(yara_result);
                 }
             }
@@ -892,15 +973,7 @@ impl YaraScanner {
     }
 
     /// Create a YARA scan result with original rule metadata
-    fn create_yara_result_with_metadata<T>(
-        &self,
-        item: &T,
-        rule_name: &str,
-        matched_text: &str,
-        context: &str,
-        _phase: ScanPhase,
-        rule_metadata: Option<crate::types::YaraRuleMetadata>,
-    ) -> YaraScanResult
+    fn create_yara_result_with_metadata<T>(&self, item: &T, rule_name: &str) -> YaraScanResult
     where
         T: crate::security::BatchScannableItem,
     {
@@ -908,16 +981,16 @@ impl YaraScanner {
             target_type: T::item_type().to_string(),
             target_name: item.name().to_string(),
             rule_name: rule_name.to_string(),
-            matched_text: Some(matched_text.to_string()),
-            context: context.to_string(),
-            rule_metadata,
+            rule_file: rule_name_to_file_name(rule_name),
+            matched_text: None,
+            context: generate_context_message(T::item_type(), rule_name),
+            rule_metadata: None,
             phase: None,
             rules_executed: None,
-            rules_passed: None,
-            rules_failed: None,
+            security_issues_detected: None,
             total_items_scanned: None,
             total_matches: None,
-            status: Some("warning".to_string()), // YARA match indicates a warning
+            status: Some("warning".to_string()),
         }
     }
 }
@@ -935,10 +1008,7 @@ impl Scanner for YaraScanner {
         match self.phase {
             ScanPhase::PreScan => {
                 let stats = self.scanner.stats();
-                info!(
-                    "[YARA] Running pre-scan with {} rules (tags: {:?})",
-                    stats.pre_scan_count, stats.pre_scan_tags
-                );
+                debug!("Running pre-scan with {} rules", stats.pre_scan_count);
 
                 // Scan all item types using the generic scanner
                 let tool_results =
@@ -954,6 +1024,37 @@ impl Scanner for YaraScanner {
                 let total_items =
                     scan_data.tools.len() + scan_data.prompts.len() + scan_data.resources.len();
 
+                // Collect triggered rule names from all results and map them to file names for consistency
+                let mut triggered_file_names = std::collections::HashSet::new();
+                let mut triggered_rules = std::collections::HashSet::new();
+
+                for result in &tool_results {
+                    triggered_rules.insert(result.rule_name.clone());
+                    // Map YARA rule name back to file name for consistent comparison
+                    if let Some(file_name) = rule_name_to_file_name(&result.rule_name) {
+                        triggered_file_names.insert(file_name);
+                    } else {
+                        // Fallback: use the rule name itself if no mapping found
+                        triggered_file_names.insert(result.rule_name.clone());
+                    }
+                }
+                for result in &prompt_results {
+                    triggered_rules.insert(result.rule_name.clone());
+                    if let Some(file_name) = rule_name_to_file_name(&result.rule_name) {
+                        triggered_file_names.insert(file_name);
+                    } else {
+                        triggered_file_names.insert(result.rule_name.clone());
+                    }
+                }
+                for result in &resource_results {
+                    triggered_rules.insert(result.rule_name.clone());
+                    if let Some(file_name) = rule_name_to_file_name(&result.rule_name) {
+                        triggered_file_names.insert(file_name);
+                    } else {
+                        triggered_file_names.insert(result.rule_name.clone());
+                    }
+                }
+
                 // Add all results to scan data
                 scan_data.yara_results.extend(tool_results);
                 scan_data.yara_results.extend(prompt_results);
@@ -964,6 +1065,7 @@ impl Scanner for YaraScanner {
                     target_type: "summary".to_string(),
                     target_name: "pre-scan".to_string(),
                     rule_name: "YARA_PRE_SCAN_SUMMARY".to_string(),
+                    rule_file: None,
                     matched_text: None,
                     context: format!(
                         "Pre-scan completed: {} rules executed on {} items",
@@ -972,17 +1074,31 @@ impl Scanner for YaraScanner {
                     rule_metadata: None,
                     phase: Some("pre-scan".to_string()),
                     rules_executed: if !stats.pre_scan_rules.is_empty() {
-                        Some(stats.pre_scan_rules.clone())
+                        Some(
+                            stats
+                                .pre_scan_rules
+                                .iter()
+                                .map(|f| format!("{f}:*"))
+                                .collect(),
+                        )
                     } else {
                         None
                     },
-                    rules_passed: if total_matches == 0 {
-                        Some(vec!["all".to_string()])
-                    } else {
-                        None
-                    },
-                    rules_failed: if total_matches > 0 {
-                        Some(vec!["security_check".to_string()])
+                    security_issues_detected: if total_matches > 0 {
+                        // Show actual rules that triggered matches with filename:rulename format
+                        let triggered_vec: Vec<String> = triggered_rules
+                            .into_iter()
+                            .map(|rule_name| {
+                                // Get the file name for this rule
+                                if let Some(file_name) = rule_name_to_file_name(&rule_name) {
+                                    format!("{file_name}:{rule_name}")
+                                } else {
+                                    rule_name
+                                }
+                            })
+                            .collect();
+                        debug!("Pre-scan triggered rules: {:?}", triggered_vec);
+                        Some(triggered_vec)
                     } else {
                         None
                     },
@@ -998,10 +1114,7 @@ impl Scanner for YaraScanner {
             }
             ScanPhase::PostScan => {
                 let stats = self.scanner.stats();
-                info!(
-                    "[YARA] Running post-scan with {} rules (tags: {:?})",
-                    stats.post_scan_count, stats.post_scan_tags
-                );
+                debug!("Running post-scan with {} rules", stats.post_scan_count);
 
                 // Scan all item types using the generic scanner
                 let tool_results =
@@ -1017,6 +1130,35 @@ impl Scanner for YaraScanner {
                 let total_items =
                     scan_data.tools.len() + scan_data.prompts.len() + scan_data.resources.len();
 
+                // Collect triggered rule names from all results and map them to file names for consistency
+                let mut triggered_file_names = std::collections::HashSet::new();
+                let mut triggered_rules = std::collections::HashSet::new();
+
+                for result in &tool_results {
+                    triggered_rules.insert(result.rule_name.clone());
+                    if let Some(file_name) = rule_name_to_file_name(&result.rule_name) {
+                        triggered_file_names.insert(file_name);
+                    } else {
+                        triggered_file_names.insert(result.rule_name.clone());
+                    }
+                }
+                for result in &prompt_results {
+                    triggered_rules.insert(result.rule_name.clone());
+                    if let Some(file_name) = rule_name_to_file_name(&result.rule_name) {
+                        triggered_file_names.insert(file_name);
+                    } else {
+                        triggered_file_names.insert(result.rule_name.clone());
+                    }
+                }
+                for result in &resource_results {
+                    triggered_rules.insert(result.rule_name.clone());
+                    if let Some(file_name) = rule_name_to_file_name(&result.rule_name) {
+                        triggered_file_names.insert(file_name);
+                    } else {
+                        triggered_file_names.insert(result.rule_name.clone());
+                    }
+                }
+
                 // Add all results to scan data
                 scan_data.yara_results.extend(tool_results);
                 scan_data.yara_results.extend(prompt_results);
@@ -1027,6 +1169,7 @@ impl Scanner for YaraScanner {
                     target_type: "summary".to_string(),
                     target_name: "post-scan".to_string(),
                     rule_name: "YARA_POST_SCAN_SUMMARY".to_string(),
+                    rule_file: None,
                     matched_text: None,
                     context: format!(
                         "Post-scan completed: {} rules executed on {} items",
@@ -1035,17 +1178,31 @@ impl Scanner for YaraScanner {
                     rule_metadata: None,
                     phase: Some("post-scan".to_string()),
                     rules_executed: if !stats.post_scan_rules.is_empty() {
-                        Some(stats.post_scan_rules.clone())
-                    } else {
-                        Some(vec!["none".to_string()])
-                    },
-                    rules_passed: if total_matches == 0 {
-                        Some(vec!["all".to_string()])
+                        Some(
+                            stats
+                                .post_scan_rules
+                                .iter()
+                                .map(|f| format!("{f}:*"))
+                                .collect(),
+                        )
                     } else {
                         None
                     },
-                    rules_failed: if total_matches > 0 {
-                        Some(vec!["security_check".to_string()])
+                    security_issues_detected: if total_matches > 0 {
+                        // Show actual rules that triggered matches with filename:rulename format
+                        let triggered_vec: Vec<String> = triggered_rules
+                            .into_iter()
+                            .map(|rule_name| {
+                                // Get the file name for this rule
+                                if let Some(file_name) = rule_name_to_file_name(&rule_name) {
+                                    format!("{file_name}:{rule_name}")
+                                } else {
+                                    rule_name
+                                }
+                            })
+                            .collect();
+                        debug!("Post-scan triggered rules: {:?}", triggered_vec);
+                        Some(triggered_vec)
                     } else {
                         None
                     },
@@ -1082,12 +1239,12 @@ pub struct MCPScanner {
 // MCPScanner implementation
 impl MCPScanner {
     /// Creates a new MCPScanner with the specified HTTP timeout.
-    pub fn with_timeout(http_timeout: u64) -> Self {
+    pub fn with_timeout(http_timeout: u64) -> Result<Self> {
         let client = Client::builder()
             .timeout(Duration::from_secs(http_timeout))
             .user_agent(protocol::USER_AGENT)
             .build()
-            .unwrap_or_default();
+            .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
 
         // Set up middleware chain with dynamic YARA capabilities
         let mut middleware_chain = ScannerChain::new();
@@ -1095,7 +1252,7 @@ impl MCPScanner {
         // Add dynamic YARA pre-scan capability
         if let Ok(pre_cap) = YaraScanner::new("rules", ScanPhase::PreScan) {
             middleware_chain.add(Box::new(pre_cap));
-            info!("{}", messages::YARA_PRE_SCAN_LOADED);
+            debug!("{}", messages::YARA_PRE_SCAN_LOADED);
         } else {
             warn!("{}", messages::YARA_PRE_SCAN_FAILED);
         }
@@ -1103,27 +1260,32 @@ impl MCPScanner {
         // Add dynamic YARA post-scan capability
         if let Ok(post_cap) = YaraScanner::new("rules", ScanPhase::PostScan) {
             middleware_chain.add(Box::new(post_cap));
-            info!("{}", messages::YARA_POST_SCAN_LOADED);
+            debug!("{}", messages::YARA_POST_SCAN_LOADED);
         } else {
             warn!("{}", messages::YARA_POST_SCAN_FAILED);
         }
 
-        Self {
+        // Add cross-origin escalation scanner (pre-scan)
+        let cross_origin_scanner = CrossOriginScanner::new(ScanPhase::PreScan);
+        middleware_chain.add(Box::new(cross_origin_scanner));
+        debug!("Cross-origin scanner loaded");
+
+        Ok(Self {
             client,
             http_timeout,
             middleware_chain,
-        }
+        })
     }
 
     /// Scan a single MCP server
     pub async fn scan_single(&self, url: &str, options: ScanOptions) -> Result<ScanResult> {
         let mut result = ScanResult::new(url.to_string());
 
-        info!("Scanning MCP server: [\x1b[1m{}\x1b[0m]", url);
+        info!("Scanning {}", url);
 
         // Detect transport type
         let transport_type = TransportType::from_url(url);
-        info!("Detected transport type: {:?}", transport_type);
+        debug!("Transport type: {:?}", transport_type);
 
         // Normalize URL with error context
         let normalized_url = error_utils::wrap_error(self.normalize_url(url), "URL normalization")?;
@@ -1151,9 +1313,19 @@ impl MCPScanner {
                 result.prompts = scan_data.prompts.clone();
                 result.yara_results = scan_data.yara_results.clone();
 
+                // Add fetch errors to the result
+                result.errors.extend(scan_data.fetch_errors.clone());
+
                 // Load scanner configuration
                 let config_manager = crate::config::ScannerConfigManager::new();
-                let scanner_config = config_manager.load_config().unwrap_or_default();
+                let scanner_config = match config_manager.load_config() {
+                    Ok(config) => config,
+                    Err(e) => {
+                        warn!("Failed to load scanner config, using defaults: {}", e);
+                        result.errors.push(format!("Config loading failed: {e}"));
+                        Default::default()
+                    }
+                };
 
                 // Perform security scanning with configuration
                 let security_scanner = if scanner_config.security.enabled {
@@ -1212,10 +1384,7 @@ impl MCPScanner {
                 result.yara_results = scan_data.yara_results.clone();
 
                 result.response_time_ms = Timer::start().elapsed_ms(); // Track actual scan time
-                info!(
-                    "Scan completed successfully in [\x1b[1m{}\x1b[0m]ms",
-                    result.response_time_ms
-                );
+                debug!("Scan completed in {}ms", result.response_time_ms);
             }
             Err(e) => {
                 result.status = ScanStatus::Failed(e.to_string());
@@ -1365,19 +1534,51 @@ impl MCPScanner {
             scan_data.server_info = Some(server_info.clone());
         }
 
-        // Fetch tools, resources, and prompts using the new methods
-        scan_data.tools = self
+        // Fetch tools, resources, and prompts with proper error handling
+        let mut fetch_errors = Vec::new();
+
+        scan_data.tools = match self
             .fetch_tools(url, options, transport_type, &session)
             .await
-            .unwrap_or_default();
-        scan_data.resources = self
+        {
+            Ok(tools) => tools,
+            Err(e) => {
+                let error_msg = format!("Failed to fetch tools: {e}");
+                warn!("{}", error_msg);
+                fetch_errors.push(error_msg);
+                Vec::new()
+            }
+        };
+
+        scan_data.resources = match self
             .fetch_resources(url, options, transport_type, &session)
             .await
-            .unwrap_or_default();
-        scan_data.prompts = self
+        {
+            Ok(resources) => resources,
+            Err(e) => {
+                let error_msg = format!("Failed to fetch resources: {e}");
+                warn!("{}", error_msg);
+                fetch_errors.push(error_msg);
+                Vec::new()
+            }
+        };
+
+        scan_data.prompts = match self
             .fetch_prompts(url, options, transport_type, &session)
             .await
-            .unwrap_or_default();
+        {
+            Ok(prompts) => prompts,
+            Err(e) => {
+                let error_msg = format!("Failed to fetch prompts: {e}");
+                warn!("{}", error_msg);
+                fetch_errors.push(error_msg);
+                Vec::new()
+            }
+        };
+
+        // Store fetch errors in scan_data for later inclusion in final result
+        // (We'll need to add this field to ScanData)
+        scan_data.fetch_errors = fetch_errors;
 
         Ok(scan_data)
     }
@@ -1569,11 +1770,7 @@ impl MCPScanner {
                                 tracing::debug!(
                                     "Adding auth header: [\x1b[1m{}\x1b[0m]: {}",
                                     key,
-                                    if key.to_lowercase().contains("bearer") {
-                                        "[REDACTED]"
-                                    } else {
-                                        value
-                                    }
+                                    sanitize_header_for_logging(key, value)
                                 );
                             }
                         }
@@ -1802,11 +1999,12 @@ impl Clone for MCPScanner {
 
 // Scan data
 pub(crate) struct ScanData {
-    server_info: Option<MCPServerInfo>,
-    tools: Vec<MCPTool>,
-    resources: Vec<MCPResource>,
-    prompts: Vec<MCPPrompt>,
-    yara_results: Vec<YaraScanResult>,
+    pub server_info: Option<MCPServerInfo>,
+    pub tools: Vec<MCPTool>,
+    pub resources: Vec<MCPResource>,
+    pub prompts: Vec<MCPPrompt>,
+    pub yara_results: Vec<YaraScanResult>,
+    pub fetch_errors: Vec<String>,
 }
 
 // Scan data implementation
@@ -1818,6 +2016,7 @@ impl ScanData {
             resources: Vec::new(),
             prompts: Vec::new(),
             yara_results: Vec::new(),
+            fetch_errors: Vec::new(),
         }
     }
 }
@@ -2111,6 +2310,7 @@ mod tests {
             resources: vec![],
             prompts: vec![],
             yara_results: vec![],
+            fetch_errors: vec![],
         };
 
         // Run post-scan scanner (should not error even with empty data)
