@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://www.rust-lang.org/)
 [![Tests](https://img.shields.io/github/actions/workflow/status/getjavelin/ramparts/pr-check.yml?label=tests)](https://github.com/getjavelin/ramparts/actions)
-[![Clippy](https://img.shields.io/github/actions/workflow/status/getjavelin/rampart/pr-check.yml?label=lint)](https://github.com/getjavelin/ramparts/actions)
+[![Clippy](https://img.shields.io/github/actions/workflow/status/getjavelin/ramparts/pr-check.yml?label=lint)](https://github.com/getjavelin/ramparts/actions)
 [![Release](https://img.shields.io/github/release/getjavelin/ramparts)](https://github.com/getjavelin/ramparts/releases)
 
 </div>
@@ -34,7 +34,7 @@ MCP servers can expose powerful capabilities to AI agents, including:
 
 Without proper security analysis, these capabilities can become attack vectors for:
 - **Tool Poisoning** - bypassing AI safety measures
-- **MCP Rug Pulls** - unauthorized changes to MCP tool descriptions after initial user approval.
+- **MCP Rug Pulls** - unauthorized changes to MCP tool descriptions after initial user approval
 - **Data exfiltration** - leaking sensitive information
 - **Privilege escalation** - gaining unauthorized access
 - **Path traversal attacks** - accessing files outside intended directories
@@ -46,7 +46,7 @@ Without proper security analysis, these capabilities can become attack vectors f
 Ramparts provides **security scanning** of MCP servers by:
 
 1. **Discovering Capabilities**: Scans all MCP endpoints to identify available tools, resources, and prompts
-2. **Static Analysis**: Performs rule-based checks for common vulnerabilities
+2. **Static Analysis**: Performs yara-based checks for common vulnerabilities
 3. **LLM-Powered Analysis**: Uses AI models to detect sophisticated security issues
 4. **Risk Assessment**: Categorizes findings by severity and provides actionable recommendations
 
@@ -58,7 +58,6 @@ Ramparts is designed for developers using local, remote MCP servers or building 
 
 **If you're building MCP servers** - whether you're creating tools, resources, or prompts - Ramparts gives you confidence that your implementation doesn't expose vulnerabilities to AI agents. It's especially useful for developers who want to ensure their MCP tools are secure by design.
 
-
 ## Why Rust?
 
 The Ramparts mcp scanner is implemented in Rust to prioritize performance, reliability, and broad portability. Rust offers native execution speed with minimal memory overhead, making it well-suited for analyzing large prompt contexts, tool manifests, or server topologies—without the need for a heavyweight runtime. Ramparts was built with a view of operating in CI pipelines, agent sandboxes, or constrained edge environments which made the ability to compile to a single, compact binary essential.
@@ -67,9 +66,9 @@ The Ramparts mcp scanner is implemented in Rust to prioritize performance, relia
 
 - **Comprehensive MCP Coverage**: Analyzes all MCP endpoints (server/info, tools/list, resources/list, prompts/list) and evaluates each tool, resource, and prompt
 - **Advanced Security Detection**: Detects path traversal, command injection, SQL injection, prompt injection, secret leakage, auth bypass, and more using both static checks and LLM-assisted analysis
-- **Optional YARA Integration**: Advanced pattern-based scanning with configurable YARA rules for enhanced security analysis
+- **Optional YARA-X Integration**: Advanced pattern-based scanning with configurable YARA rules using the modern YARA-X engine for enhanced security analysis
 - **High Performance**: Built in Rust for fast, efficient scanning of large MCP servers with minimal memory overhead
-- **Flexible Installation**: Install with or without YARA dependency based on your security requirements
+- **Flexible Installation**: Install with or without YARA-X dependency based on your security requirements
 - **Multiple Transport Support**: HTTP and STDIO transport mechanisms for various MCP server configurations
 - **Rich Output Formats**: Choose from tree-style text, JSON, or raw formats for easy integration with scripts and dashboards
 - **Configuration Management**: Load settings from IDE configuration files and custom YAML configs
@@ -81,52 +80,31 @@ The Ramparts mcp scanner is implemented in Rust to prioritize performance, relia
 - **Development**: Testing MCP servers during development and testing phases
 - **Compliance**: Meeting security requirements for AI agent deployments
 
-## Caution:
-- **Adopt a layered approach** consider a layered approach to security. **ramparts** scanner is designed to work on the mcp server & tool _metadata_. It can catch **Tool Poisoning** or other static vulnerabilities in MCP server. You need to continually run the scans AND implement runtime MCP guardrails. For runtime attack detection of MCP tools, please contact support@getjavelin.com for Javelin's runtime MCP guardrails. 
+## Caution
+
+- **Adopt a layered approach** consider a layered approach to security. **ramparts** scanner is designed to work on the mcp server & tool _metadata_. It can catch **Tool Poisoning** or other static vulnerabilities in MCP server but you need to continually run the scans AND implement runtime MCP guardrails. For runtime attack detection of MCP tools, please contact support@getjavelin.com for Javelin's runtime MCP guardrails. 
 - **Evolving standards & threats** both the MCP standard as well as the AI/MCP threat landscape is evolving rapidly and there may be several threats or attack vectors that ramparts may fail to catch (until it catches up with the specific attack/threat)
 
-## Prerequisites
+## Installation
 
-### YARA Installation (Optional)
+### YARA-X Integration (Optional)
 
-Ramparts uses YARA rules for advanced pattern-based security scanning. YARA installation is **optional** but **recommended** for comprehensive security analysis.
+Ramparts uses YARA-X, a modern rewrite of YARA in Rust, for advanced pattern-based security scanning. YARA-X integration is **optional** but **recommended** for comprehensive security analysis.
 
-#### Quick Install
+#### Key Benefits of YARA-X
 
-**macOS**: `brew install yara`  
-**Ubuntu/Debian**: `sudo apt update && sudo apt install yara`  
-**CentOS/RHEL**: `sudo yum install yara`  
-**Fedora**: `sudo dnf install yara`  
-**Windows**: `vcpkg install yara` or download from [releases](https://github.com/VirusTotal/yara/releases)
+- **Pure Rust**: No system dependencies required - everything is handled at compile time
+- **Better Performance**: Optimized for complex security rules and mixed rule sets
+- **Memory Safe**: Built with Rust's safety guarantees
 
-#### From Source
-```bash
-git clone https://github.com/VirusTotal/yara.git
-cd yara && ./bootstrap.sh && ./configure && make && sudo make install
-```
-
-#### Automated Setup
-```bash
-chmod +x scripts/setup_yara.sh && ./scripts/setup_yara.sh
-```
-
-#### Without YARA
-```bash
-cargo install ramparts --no-default-features
-```
-
-Verify installation: `yara --version`
-
-## Quick Start
-
-### Installation
+#### Installation Options
 
 **From crates.io (Recommended)**
 ```bash
-# With YARA support (recommended - install YARA first)
+# With YARA-X support (recommended)
 cargo install ramparts
 
-# Without YARA support (lighter installation)
+# Without YARA-X support (lighter installation)
 cargo install ramparts --no-default-features
 ```
 
@@ -135,58 +113,16 @@ cargo install ramparts --no-default-features
 git clone https://github.com/getjavelin/ramparts.git
 cd ramparts
 
-# With YARA support
+# With YARA-X support
 cargo install --path .
 
-# Without YARA support
+# Without YARA-X support
 cargo install --path . --no-default-features
 ```
 
-> **Note**: If you have YARA installed but want to disable it temporarily, you can control this via configuration (see Configuration section below).
+> **Note**: You can disable YARA-X scanning temporarily via configuration (see Configuration section below).
 
-### Troubleshooting YARA Issues
-
-If you encounter build errors related to YARA, try these solutions:
-
-#### macOS Issues
-
-**Error: `'yara.h' file not found`**
-```bash
-# Set environment variables manually
-export YARA_LIBRARY_PATH="/opt/homebrew/lib"  # Apple Silicon
-export YARA_LIBRARY_PATH="/usr/local/lib"     # Intel Mac
-export BINDGEN_EXTRA_CLANG_ARGS="-I/opt/homebrew/include"  # Apple Silicon
-export BINDGEN_EXTRA_CLANG_ARGS="-I/usr/local/include"     # Intel Mac
-
-# Then rebuild
-cargo clean && cargo build
-```
-
-**Error: `dyld: Library not loaded`**
-```bash
-# Reinstall YARA and rebuild
-brew uninstall yara && brew install yara
-cargo clean && cargo build
-```
-
-#### Linux Issues
-
-**Error: `yara.h: No such file or directory`**
-```bash
-# Install development headers
-sudo apt-get install libyara-dev  # Ubuntu/Debian
-sudo yum install yara-devel       # CentOS/RHEL
-
-# Then rebuild
-cargo clean && cargo build
-```
-
-#### General Issues
-
-If you continue to have problems, you can temporarily disable YARA:
-```bash
-cargo install ramparts --no-default-features
-```
+## Quick Start
 
 ### Basic Usage
 
@@ -313,14 +249,6 @@ https://server3.com/mcp/" > servers.txt
 ramparts scan --batch servers.txt
 ```
 
-### Scan from IDE Configuration
-
-Scan MCP servers configured in your IDE:
-
-```bash
-ramparts scan-config
-```
-
 ## CLI Reference
 
 ### Basic Commands
@@ -331,9 +259,6 @@ ramparts scan <url> [options]
 
 # Start Ramparts server mode
 ramparts server [options]
-
-# Scan from IDE configuration
-ramparts scan-config
 
 # Initialize configuration file
 ramparts init-config
@@ -377,7 +302,7 @@ Create a custom configuration file:
 ramparts init-config
 ```
 
-This creates a `ramparts.yaml` file:
+This creates a `ramparts.yaml` file with the following structure:
 
 ```yaml
 # Example ramparts.yaml
@@ -399,7 +324,6 @@ scanner:
   max_retries: 3
   retry_delay_ms: 1000
   llm_batch_size: 10
-  # YARA Configuration
   enable_yara: true  # Set to false to disable YARA scanning
 
 security:
@@ -426,18 +350,17 @@ performance:
   slow_threshold_ms: 5000
 ```
 
-### YARA Configuration
+### YARA-X Configuration
 
-Control YARA scanning via config file:
+Control YARA-X scanning via config file:
 ```yaml
 scanner:
-  enable_yara: true   # Enable/disable YARA scanning
+  enable_yara: true   # Enable/disable YARA-X scanning
 ```
 
-**Rules Directory**: `rules/pre/` (auto-loaded `.yarac` files)  
+**Rules Directory**: `rules/pre/` (auto-loaded `.yar` files)  
 **Built-in Rules**: secrets_leakage, command_injection, path_traversal, sql_injection
-
-**Custom Rules**: Create `.yar` files, compile with `yarac your_rule.yar your_rule.yarac`, place in `rules/pre/`
+**Custom Rules**: Create `.yar` files and place directly in `rules/pre/` or `rules/post/` - no compilation needed with YARA-X!
 
 ## Output Formats
 
@@ -504,83 +427,54 @@ chmod +x $(which ramparts)
 ramparts init-config
 ```
 
-### YARA-Related Issues
+### YARA-X Related Issues
 
-**YARA Not Found During Installation**
-```bash
-# Error: failed to find YARA installation
-# Solution: Install YARA first, then reinstall ramparts
-brew install yara  # macOS
-sudo apt install yara  # Ubuntu/Debian
-cargo install ramparts --force
-```
-
-**YARA Rules Not Loading**
+**YARA-X Rules Not Loading**
 ```bash
 # Check if rules directory exists
 ls -la rules/
 ls -la rules/pre/
 
-# Check YARA rule compilation
-yarac --help
-yarac rules/src/your_rule.yar rules/pre/your_rule.yarac
+# List .yar files (no compilation needed)
+ls rules/pre/*.yar
 ```
 
-**YARA Compilation Errors**
+**Rule Syntax Errors**
 ```bash
-# Error: cannot compile .yar files
-# Solution: Check YARA syntax
-yara rules/src/your_rule.yar /dev/null
-
-# Common fixes:
-# 1. Check rule syntax
-# 2. Verify string escaping
-# 3. Ensure proper rule structure
+# YARA-X provides better error messages for rule syntax issues
+# Check rule syntax in your .yar files:
+# 1. Ensure proper rule structure
+# 2. Verify string escaping (especially { characters in regex)
+# 3. Check metadata format
 ```
 
-**Mixed YARA Versions**
+**Performance Issues with YARA-X**
 ```bash
-# Error: YARA version mismatch
-# Solution: Ensure consistent YARA version
-yara --version
-yarac --version
-
-# Reinstall YARA if versions differ
-brew reinstall yara  # macOS
-sudo apt remove yara && sudo apt install yara  # Ubuntu
-```
-
-**Performance Issues with YARA**
-```bash
-# If YARA scanning is slow, you can:
-# 1. Disable YARA temporarily
+# If YARA-X scanning is slow, you can:
+# 1. Disable YARA-X temporarily
 echo "scanner:
   enable_yara: false" > ramparts.yaml
 
-# 2. Or reduce rule complexity
-# 3. Or use --no-default-features installation
+# 2. Or use --no-default-features installation
 cargo install ramparts --no-default-features --force
 ```
 
-**YARA Rules Directory Permissions**
+**YARA-X Rules Directory Permissions**
 ```bash
 # Error: Permission denied accessing rules
 # Solution: Check directory permissions
 chmod -R 755 rules/
-chmod 644 rules/pre/*.yarac
+chmod 644 rules/pre/*.yar
 ```
 
 **Custom Rules Not Working**
 ```bash
 # Debug rule loading
-# 1. Check file extension (.yarac not .yar)
-ls rules/pre/*.yarac
+# 1. Check file extension (.yar files directly)
+ls rules/pre/*.yar
 
-# 2. Test rule compilation
-yarac your_rule.yar test.yarac
-
-# 3. Verify rule syntax
-yara your_rule.yar test_file.txt
+# 2. Verify rule syntax (YARA-X will show errors during compilation)
+# 3. Check for 99% compatibility issues with original YARA rules
 ```
 
 ## Contributing

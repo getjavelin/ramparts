@@ -187,7 +187,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let options_clone = options.clone();
-            let scanner = MCPScanner::new_with_timeout(scanner_config.scanner.http_timeout);
+            let scanner = MCPScanner::with_timeout(scanner_config.scanner.http_timeout);
 
             match scanner.scan_single(&url, options).await {
                 Ok(result) => {
@@ -223,9 +223,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
 
-            let scanner = MCPScanner::new_with_timeout(scanner_config.scanner.http_timeout);
+            let scanner = MCPScanner::with_timeout(scanner_config.scanner.http_timeout);
 
-            match scanner.scan_from_config(options).await {
+            match scanner.scan_config(options).await {
                 Ok(results) => {
                     for result in results {
                         utils::print_result(
