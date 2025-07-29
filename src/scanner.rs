@@ -1282,7 +1282,7 @@ impl MCPScanner {
         // Add dynamic YARA pre-scan capability
         if let Ok(pre_cap) = YaraScanner::new("rules", ScanPhase::PreScan) {
             middleware_chain.add(Box::new(pre_cap));
-            info!("{}", messages::YARA_PRE_SCAN_LOADED);
+            debug!("{}", messages::YARA_PRE_SCAN_LOADED);
         } else {
             warn!("{}", messages::YARA_PRE_SCAN_FAILED);
         }
@@ -1290,7 +1290,7 @@ impl MCPScanner {
         // Add dynamic YARA post-scan capability
         if let Ok(post_cap) = YaraScanner::new("rules", ScanPhase::PostScan) {
             middleware_chain.add(Box::new(post_cap));
-            info!("{}", messages::YARA_POST_SCAN_LOADED);
+            debug!("{}", messages::YARA_POST_SCAN_LOADED);
         } else {
             warn!("{}", messages::YARA_POST_SCAN_FAILED);
         }

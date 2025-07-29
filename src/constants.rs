@@ -20,6 +20,6 @@ pub mod protocol {
     pub const MCP_PROTOCOL_VERSIONS: &[&str] =
         &["2025-06-18", "2024-11-05", "2024-11-01", "2024-10-01"];
     pub const CLIENT_NAME: &str = "ramparts";
-    pub const CLIENT_VERSION: &str = "0.4.0";
-    pub const USER_AGENT: &str = "ramparts/0.4.0";
+    pub const CLIENT_VERSION: &str = "0.5.0";
+    pub const USER_AGENT: &str = "ramparts/0.5.0";
 }
