@@ -39,17 +39,18 @@ impl CrossOriginScanner {
     }
 
     /// Extract all URLs from a JSON value recursively
+    #[allow(clippy::only_used_in_recursion)]
     fn extract_urls_from_json(&self, value: &Value, urls: &mut Vec<String>) {
         match value {
             Value::String(s) => {
-                if self.is_url(s) {
+                if Self::is_url(s) {
                     urls.push(s.clone());
                 }
             }
             Value::Object(map) => {
                 for (key, val) in map {
                     // Check both key and value for URLs
-                    if self.is_url(key) {
+                    if Self::is_url(key) {
                         urls.push(key.clone());
                     }
                     self.extract_urls_from_json(val, urls);
@@ -65,7 +66,7 @@ impl CrossOriginScanner {
     }
 
     /// Check if a string looks like a URL
-    fn is_url(&self, s: &str) -> bool {
+    fn is_url(s: &str) -> bool {
         s.starts_with("http://")
             || s.starts_with("https://")
             || s.starts_with("ws://")
@@ -73,10 +74,10 @@ impl CrossOriginScanner {
     }
 
     /// Parse URL and extract detailed domain information
-    fn parse_domain_info(&self, url_str: &str) -> Option<DomainInfo> {
+    fn parse_domain_info(url_str: &str) -> Option<DomainInfo> {
         if let Ok(url) = Url::parse(url_str) {
             if let Some(host) = url.host_str() {
-                let root_domain = self.extract_root_domain(host);
+                let root_domain = Self::extract_root_domain(host);
 
                 return Some(DomainInfo {
                     scheme: url.scheme().to_string(),
@@ -89,7 +90,7 @@ impl CrossOriginScanner {
     }
 
     /// Extract root domain from host (e.g., "api.example.com" -> "example.com")
-    fn extract_root_domain(&self, host: &str) -> String {
+    fn extract_root_domain(host: &str) -> String {
         // Handle IP addresses
         if host.chars().all(|c| c.is_numeric() || c == '.') {
             return host.to_string();
@@ -134,7 +135,7 @@ impl CrossOriginScanner {
 
         // Also check description for URLs
         if let Some(description) = &tool.description {
-            if self.is_url(description) {
+            if Self::is_url(description) {
                 urls.push(description.clone());
             }
         }
@@ -147,7 +148,7 @@ impl CrossOriginScanner {
         let mut urls = Vec::new();
 
         // Check URI field
-        if self.is_url(&resource.uri) {
+        if Self::is_url(&resource.uri) {
             urls.push(resource.uri.clone());
         }
 
@@ -158,7 +159,7 @@ impl CrossOriginScanner {
 
         // Check description for URLs
         if let Some(description) = &resource.description {
-            if self.is_url(description) {
+            if Self::is_url(description) {
                 urls.push(description.clone());
             }
         }
@@ -178,7 +179,7 @@ impl CrossOriginScanner {
             let urls = self.extract_tool_urls(tool);
 
             for url in urls {
-                if let Some(domain_info) = self.parse_domain_info(&url) {
+                if let Some(domain_info) = Self::parse_domain_info(&url) {
                     unique_root_domains.insert(domain_info.root_domain.clone());
                     unique_hosts.insert(domain_info.host.clone());
                     schemes.insert(domain_info.scheme.clone());
@@ -197,7 +198,7 @@ impl CrossOriginScanner {
             let urls = self.extract_resource_urls(resource);
 
             for url in urls {
-                if let Some(domain_info) = self.parse_domain_info(&url) {
+                if let Some(domain_info) = Self::parse_domain_info(&url) {
                     unique_root_domains.insert(domain_info.root_domain.clone());
                     unique_hosts.insert(domain_info.host.clone());
                     schemes.insert(domain_info.scheme.clone());
@@ -291,7 +292,7 @@ impl CrossOriginScanner {
                 rules_executed: None,
                 security_issues_detected: None,
                 total_items_scanned: Some(
-                    analysis.domain_distribution.values().map(|v| v.len()).sum(),
+                    analysis.domain_distribution.values().map(Vec::len).sum(),
                 ),
                 total_matches: Some(1),
                 status: Some("warning".to_string()),
@@ -553,24 +554,33 @@ mod tests {
 
     #[test]
     fn test_domain_extraction() {
-        let scanner = CrossOriginScanner::new(ScanPhase::PreScan);
+        let _scanner = CrossOriginScanner::new(ScanPhase::PreScan);
 
         // Test root domain extraction
         assert_eq!(
-            scanner.extract_root_domain("api.service1.com"),
+            CrossOriginScanner::extract_root_domain("api.service1.com"),
             "service1.com"
         );
         assert_eq!(
-            scanner.extract_root_domain("auth.service1.com"),
+            CrossOriginScanner::extract_root_domain("auth.service1.com"),
             "service1.com"
         );
-        assert_eq!(scanner.extract_root_domain("service2.com"), "service2.com");
         assert_eq!(
-            scanner.extract_root_domain("subdomain.example.org"),
+            CrossOriginScanner::extract_root_domain("service2.com"),
+            "service2.com"
+        );
+        assert_eq!(
+            CrossOriginScanner::extract_root_domain("subdomain.example.org"),
             "example.org"
         );
-        assert_eq!(scanner.extract_root_domain("localhost"), "localhost");
-        assert_eq!(scanner.extract_root_domain("127.0.0.1"), "127.0.0.1");
+        assert_eq!(
+            CrossOriginScanner::extract_root_domain("localhost"),
+            "localhost"
+        );
+        assert_eq!(
+            CrossOriginScanner::extract_root_domain("127.0.0.1"),
+            "127.0.0.1"
+        );
     }
 
     #[test]

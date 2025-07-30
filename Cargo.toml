@@ -1,6 +1,6 @@
 [package]
 name = "ramparts"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 authors = ["Sharath Rajasekar <sharath@getjavelin.com>"]
 description = "A CLI tool for scanning Model Context Protocol (MCP) servers"
@@ -36,7 +36,7 @@ clap = { version = "4.4", features = ["derive"] }
 tokio = { version = "1.35", features = ["full"] }
 
 # HTTP client
-reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
 
 # Async streams
 futures-util = "0.3"
@@ -83,6 +83,9 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 # JSON-RPC handling for microservice
 jsonrpc-core = "18.0"
 yara-x = { version = "1.4", optional = true }
+
+# Official Rust MCP SDK  
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = ["client", "reqwest", "transport-child-process", "transport-streamable-http-client", "transport-sse-client", "transport-worker"] }
 
 [build-dependencies]
 chrono = "0.4"

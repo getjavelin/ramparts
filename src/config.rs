@@ -98,12 +98,12 @@ impl MCPConfigManager {
     }
 
     /// Load configuration from all available IDE config files
-    pub fn load_config(&self) -> Result<MCPConfig> {
+    pub fn load_config(&self) -> MCPConfig {
         let mut merged_config = MCPConfig::default();
 
         for path in &self.config_paths {
-            if let Ok(config) = self.load_config_from_path(path) {
-                self.merge_config(&mut merged_config, &config);
+            if let Ok(config) = Self::load_config_from_path(path) {
+                Self::merge_config(&mut merged_config, &config);
                 info!(
                     "Loaded MCP configuration from IDE config: {}",
                     path.display()
@@ -116,11 +116,11 @@ impl MCPConfigManager {
             }
         }
 
-        Ok(merged_config)
+        merged_config
     }
 
     /// Load configuration from a specific IDE config path
-    pub fn load_config_from_path(&self, path: &Path) -> Result<MCPConfig> {
+    pub fn load_config_from_path(path: &Path) -> Result<MCPConfig> {
         if !path.exists() {
             return Err(anyhow!(
                 "IDE configuration file does not exist: {}",
@@ -138,7 +138,7 @@ impl MCPConfigManager {
     }
 
     /// Merge two configurations, with the second one taking precedence
-    fn merge_config(&self, base: &mut MCPConfig, other: &MCPConfig) {
+    fn merge_config(base: &mut MCPConfig, other: &MCPConfig) {
         // Merge servers
         if let Some(other_servers) = &other.servers {
             match &mut base.servers {
@@ -162,7 +162,7 @@ impl MCPConfigManager {
                         base_options.http_timeout = other_options.http_timeout;
                     }
                     if other_options.format.is_some() {
-                        base_options.format = other_options.format.clone();
+                        base_options.format.clone_from(&other_options.format);
                     }
                     if other_options.detailed.is_some() {
                         base_options.detailed = other_options.detailed;
@@ -222,8 +222,7 @@ mod tests {
 
         fs::write(&config_path, config_content).unwrap();
 
-        let manager = MCPConfigManager::new();
-        let config = manager.load_config_from_path(&config_path).unwrap();
+        let config = MCPConfigManager::load_config_from_path(&config_path).unwrap();
 
         assert!(config.servers.is_some());
         assert_eq!(config.servers.unwrap().len(), 1);
@@ -250,8 +249,7 @@ mod tests {
             auth_headers: None,
         };
 
-        let manager = MCPConfigManager::new();
-        manager.merge_config(&mut base, &other);
+        MCPConfigManager::merge_config(&mut base, &other);
 
         assert!(base.servers.is_some());
         assert_eq!(base.servers.unwrap().len(), 1);
@@ -329,6 +327,7 @@ pub struct SecurityConfig {
 
 /// Security Checks Configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct SecurityChecks {
     pub tool_poisoning: bool,
     pub secrets_leakage: bool,
@@ -368,7 +367,7 @@ impl Default for ScannerConfig {
                 provider: "openai".to_string(),
                 model: "gpt-4o".to_string(),
                 base_url: "https://api.openai.com/v1".to_string(),
-                api_key: "".to_string(),
+                api_key: String::new(),
                 timeout: 30,
                 max_tokens: 4000,
                 temperature: 0.1,

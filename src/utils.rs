@@ -1,7 +1,7 @@
 use crate::security::SecurityIssue;
-use crate::types::*;
+use crate::types::{ScanResult, ScanStatus};
 use anyhow::{anyhow, Result};
-use colored::*;
+use colored::Colorize;
 use std::time::Instant;
 use tracing::{debug, warn};
 
@@ -24,13 +24,16 @@ impl Timer {
     }
 
     pub fn elapsed_ms(&self) -> u64 {
-        self.start_time.elapsed().as_millis() as u64
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            self.start_time.elapsed().as_millis() as u64
+        }
     }
 }
 
 /// Enhanced error handling utilities
 pub mod error_utils {
-    use super::*;
+    use super::{anyhow, Result};
 
     /// Create a standardized error message
     pub fn create_error_msg(operation: &str, details: &str) -> String {
@@ -38,67 +41,15 @@ pub mod error_utils {
     }
 
     /// Wrap an error with context
+    #[allow(dead_code)]
     pub fn wrap_error<T>(result: Result<T>, context: &str) -> Result<T> {
         result.map_err(|e| anyhow!("{context}: {e}"))
     }
 }
 
-/// Generic array response parser
-pub fn parse_jsonrpc_array_response<T>(
-    response: &serde_json::Value,
-    result_key: &str,
-) -> Result<Vec<T>>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let array = response["result"][result_key]
-        .as_array()
-        .ok_or_else(|| anyhow!("Invalid {result_key} response format"))?;
-
-    let mut items = Vec::new();
-    for item_value in array {
-        let item: T = serde_json::from_value(item_value.clone())
-            .map_err(|e| anyhow!("Failed to parse {result_key} item: {e}"))?;
-        items.push(item);
-    }
-
-    Ok(items)
-}
-
-/// Retry utility for HTTP requests
-pub async fn retry_with_backoff<F, Fut, T>(
-    mut operation: F,
-    max_retries: usize,
-    initial_delay_ms: u64,
-) -> Result<T>
-where
-    F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = Result<T>>,
-{
-    use tokio::time::{sleep, Duration};
-
-    let mut last_err = None;
-    let mut delay = Duration::from_millis(initial_delay_ms);
-
-    for attempt in 0..max_retries {
-        match operation().await {
-            Ok(result) => return Ok(result),
-            Err(e) => {
-                last_err = Some(e);
-                if attempt + 1 < max_retries {
-                    sleep(delay).await;
-                    delay *= 2; // Exponential backoff
-                }
-            }
-        }
-    }
-
-    Err(last_err.unwrap_or_else(|| anyhow!("Operation failed after {} retries", max_retries)))
-}
-
 /// Performance monitoring utilities
 pub mod performance {
-    use super::*;
+    use super::{debug, warn, Result, Timer};
 
     /// Track performance metrics
     pub struct PerformanceTracker {
@@ -157,10 +108,16 @@ pub fn print_result(result: &ScanResult, format: &str, detailed: bool) {
 }
 
 fn print_json_result(result: &ScanResult) {
-    let json = serde_json::to_string_pretty(result).unwrap();
-    println!("{json}");
+    match serde_json::to_string_pretty(result) {
+        Ok(json) => println!("{json}"),
+        Err(e) => {
+            eprintln!("Error serializing result to JSON: {e}");
+            println!("{{\"error\": \"Failed to serialize scan result\"}}");
+        }
+    }
 }
 
+#[allow(clippy::too_many_lines)]
 fn print_raw_json_result(result: &ScanResult) {
     // Create a raw JSON structure that preserves the original MCP server schema
     let mut raw_result = serde_json::Map::new();
@@ -296,10 +253,16 @@ fn print_raw_json_result(result: &ScanResult) {
         raw_result.insert("errors".to_string(), serde_json::Value::Array(errors_array));
     }
 
-    let json = serde_json::to_string_pretty(&serde_json::Value::Object(raw_result)).unwrap();
-    println!("{json}");
+    match serde_json::to_string_pretty(&serde_json::Value::Object(raw_result)) {
+        Ok(json) => println!("{json}"),
+        Err(e) => {
+            eprintln!("Error serializing raw result to JSON: {e}");
+            println!("{{\"error\": \"Failed to serialize raw scan result\"}}");
+        }
+    }
 }
 
+#[allow(clippy::too_many_lines)]
 fn print_table_result(result: &ScanResult, detailed: bool) {
     println!("{}", "=".repeat(80));
     println!("MCP Server Scan Result");
@@ -406,7 +369,7 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
         let prompt_table = Table::new(result.prompts.iter().map(|p| PromptRow {
             name: p.name.clone(),
             description: p.description.clone().unwrap_or_else(|| "N/A".to_string()),
-            arguments: p.arguments.as_ref().map(|args| args.len()).unwrap_or(0),
+            arguments: p.arguments.as_ref().map_or(0, Vec::len),
         }))
         .to_string();
         println!("{prompt_table}");
@@ -438,7 +401,13 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
     }
 
     // YARA scan results
-    if !result.yara_results.is_empty() {
+    if result.yara_results.is_empty() {
+        // Show YARA execution status even when no results at all
+        println!("\n{}", "YARA Scan Results".bold());
+        println!("{}", "=".repeat(80));
+        println!("❌ YARA scanning not executed or no results available");
+        println!();
+    } else {
         println!("\n{}", "YARA Scan Results".bold());
         println!("{}", "=".repeat(80));
 
@@ -554,12 +523,6 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
                 println!();
             }
         }
-    } else {
-        // Show YARA execution status even when no results at all
-        println!("\n{}", "YARA Scan Results".bold());
-        println!("{}", "=".repeat(80));
-        println!("❌ YARA scanning not executed or no results available");
-        println!();
     }
 
     // Errors
@@ -573,6 +536,7 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
     println!("{}", "=".repeat(80));
 }
 
+#[allow(clippy::too_many_lines)]
 fn print_text_result(result: &ScanResult) {
     println!("Scan Result for: {}", result.url);
     println!("Status: {}", format_status(&result.status));
@@ -681,8 +645,7 @@ fn print_text_result(result: &ScanResult) {
                 .rule_metadata
                 .as_ref()
                 .and_then(|m| m.severity.as_ref())
-                .map(|s| s.as_str())
-                .unwrap_or("MEDIUM");
+                .map_or("MEDIUM", String::as_str);
             let status = yara_result.status.as_deref().unwrap_or("unknown");
 
             println!(
@@ -736,6 +699,7 @@ struct PromptRow {
 }
 
 /// Enhanced security assessment table with per-tool results
+#[allow(clippy::too_many_lines)]
 fn print_enhanced_security_table(result: &ScanResult) {
     if let Some(security_issues) = &result.security_issues {
         println!("\n{}", "Security Assessment Results".bold());
@@ -879,8 +843,8 @@ fn print_enhanced_security_table(result: &ScanResult) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serde_json::json;
+    use super::{error_utils, format_status, Timer};
+    use anyhow::anyhow;
 
     #[test]
     fn test_timer_functionality() {
@@ -911,104 +875,6 @@ mod tests {
         let error_msg = wrapped.unwrap_err().to_string();
         assert!(error_msg.contains("Test context"));
         assert!(error_msg.contains("Original error"));
-    }
-
-    #[test]
-    fn test_parse_jsonrpc_array_response() {
-        // Test successful parsing
-        let response = json!({
-            "result": {
-                "tools": [
-                    {"name": "tool1", "description": "Test tool 1"},
-                    {"name": "tool2", "description": "Test tool 2"}
-                ]
-            }
-        });
-
-        #[derive(Debug, Clone, serde::Deserialize, PartialEq)]
-        struct TestTool {
-            name: String,
-            description: String,
-        }
-
-        let result = parse_jsonrpc_array_response::<TestTool>(&response, "tools");
-        assert!(result.is_ok());
-
-        let tools = result.unwrap();
-        assert_eq!(tools.len(), 2);
-        assert_eq!(tools[0].name, "tool1");
-        assert_eq!(tools[1].name, "tool2");
-    }
-
-    #[test]
-    fn test_parse_jsonrpc_array_response_invalid_format() {
-        let response = json!({
-            "result": {
-                "tools": "not an array"
-            }
-        });
-
-        #[derive(Debug, Clone, serde::Deserialize)]
-        struct TestTool {}
-
-        let result = parse_jsonrpc_array_response::<TestTool>(&response, "tools");
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid tools response format"));
-    }
-
-    #[test]
-    fn test_parse_jsonrpc_array_response_missing_key() {
-        let response = json!({
-            "result": {
-                "other_key": []
-            }
-        });
-
-        #[derive(Debug, Clone, serde::Deserialize)]
-        struct TestTool {}
-
-        let result = parse_jsonrpc_array_response::<TestTool>(&response, "tools");
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid tools response format"));
-    }
-
-    #[tokio::test]
-    async fn test_retry_with_backoff_success() {
-        let attempts = std::sync::Arc::new(std::sync::Mutex::new(0));
-        let attempts_clone = attempts.clone();
-
-        let operation = move || {
-            let attempts_clone = attempts_clone.clone();
-            async move {
-                let mut count = attempts_clone.lock().unwrap();
-                *count += 1;
-                if *count == 1 {
-                    Err(anyhow!("First attempt fails"))
-                } else {
-                    Ok("Success".to_string())
-                }
-            }
-        };
-
-        let result: Result<String> = retry_with_backoff(operation, 3, 10).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Success");
-        assert_eq!(*attempts.lock().unwrap(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_retry_with_backoff_all_failures() {
-        let operation = || async { Err::<String, anyhow::Error>(anyhow!("Always fails")) };
-
-        let result: Result<String> = retry_with_backoff(operation, 2, 10).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Always fails"));
     }
 
     // TODO: Add test for track_performance when async closure type inference is resolved

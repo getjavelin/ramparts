@@ -1,4 +1,4 @@
-use colored::*;
+use colored::Colorize;
 use std::env;
 
 /// Displays a clean banner with version, date, git commit info, and other useful information
