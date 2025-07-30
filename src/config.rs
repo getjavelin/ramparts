@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use tracing::{debug, info, warn};
+use url::Url;
 
 /// MCP Configuration structure for reading from IDE config files
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -549,10 +550,10 @@ impl MCPConfigManager {
                     // Create a map of existing servers by URL for deduplication
                     let mut server_map: HashMap<String, MCPServerConfig> = HashMap::new();
 
-                    // Add existing servers to the map using normalized URLs
-                    for server in base_servers.iter() {
+                    // Move existing servers to the map using drain() to avoid cloning
+                    for server in base_servers.drain(..) {
                         let normalized_url = Self::normalize_url(&server.url);
-                        server_map.insert(normalized_url, server.clone());
+                        server_map.insert(normalized_url, server);
                     }
 
                     // Add new servers, replacing duplicates based on normalized URLs
@@ -619,60 +620,55 @@ impl MCPConfigManager {
         Ok(())
     }
 
-    fn validate_server_url(url: &str, server_index: usize) -> Result<()> {
-        if url.is_empty() {
+    fn validate_server_url(url_str: &str, server_index: usize) -> Result<()> {
+        if url_str.is_empty() {
             return Err(anyhow!("Server {} has empty URL", server_index));
         }
 
-        let url = url.trim();
-        if url.len() > 2048 {
+        let url_str = url_str.trim();
+        if url_str.len() > 2048 {
             return Err(anyhow!(
                 "Server {} URL too long ({}), maximum 2048 characters",
                 server_index,
-                url.len()
+                url_str.len()
             ));
         }
 
-        if !url.starts_with("http://") && !url.starts_with("https://") && !url.starts_with("stdio:")
-        {
-            return Err(anyhow!(
-                "Server {} has invalid URL scheme: {}. Supported: http://, https://, stdio:",
-                server_index,
-                url
-            ));
+        // Handle stdio: URLs separately as they're not standard URLs
+        if url_str.starts_with("stdio:") {
+            return Ok(());
         }
 
-        if url.starts_with("http") {
-            if !url.contains("://") {
-                return Err(anyhow!(
-                    "Server {} has malformed URL: {}",
-                    server_index,
-                    url
-                ));
-            }
-
-            if let Some(port_part) = url.split("://").nth(1).and_then(|s| s.split('/').next()) {
-                if let Some(port_str) = port_part.split(':').nth(1) {
-                    if let Ok(port) = port_str.parse::<u16>() {
+        // Parse HTTP/HTTPS URLs using the url crate
+        if url_str.starts_with("http://") || url_str.starts_with("https://") {
+            match Url::parse(url_str) {
+                Ok(parsed_url) => {
+                    // Validate port if present
+                    if let Some(port) = parsed_url.port() {
                         if port == 0 {
                             return Err(anyhow!(
                                 "Server {} has invalid port 0: {}",
                                 server_index,
-                                url
+                                url_str
                             ));
                         }
-                    } else {
-                        return Err(anyhow!(
-                            "Server {} has invalid port format: {}",
-                            server_index,
-                            url
-                        ));
                     }
+                    Ok(())
                 }
+                Err(e) => Err(anyhow!(
+                    "Server {} has malformed URL '{}': {}",
+                    server_index,
+                    url_str,
+                    e
+                )),
             }
+        } else {
+            Err(anyhow!(
+                "Server {} has invalid URL scheme: {}. Supported: http://, https://, stdio:",
+                server_index,
+                url_str
+            ))
         }
-
-        Ok(())
     }
 
     fn validate_server_name(name: &str, server_index: usize) -> Result<()> {
