@@ -1,4 +1,4 @@
-use crate::config::ScannerConfigManager;
+use crate::config::{ScannerConfig, ScannerConfigManager};
 use crate::scanner::MCPScanner;
 use crate::types::{config_utils, ScanConfigBuilder, ScanOptions, ScanResult};
 use anyhow::{anyhow, Result};
@@ -60,7 +60,7 @@ impl MCPScannerCore {
             Ok(config) => config,
             Err(e) => {
                 warn!("Failed to load scanner config, using defaults: {}", e);
-                Default::default()
+                ScannerConfig::default()
             }
         };
 
@@ -71,7 +71,7 @@ impl MCPScannerCore {
     }
 
     /// Parse scan options from request parameters
-    fn parse_scan_options(&self, request: &ScanRequest) -> Result<ScanOptions> {
+    fn parse_scan_options(&self, request: &ScanRequest) -> ScanOptions {
         let scanner_config = self.config_manager.load_config().unwrap_or_default();
 
         let mut builder = ScanConfigBuilder::new()
@@ -97,7 +97,7 @@ impl MCPScannerCore {
             builder = builder.auth_headers(Some(auth_headers.clone()));
         }
 
-        Ok(builder.build())
+        builder.build()
     }
 
     /// Perform a scan with the given options
@@ -123,7 +123,7 @@ impl MCPScannerCore {
     /// Internal scan implementation
     async fn perform_scan_internal(&self, request: ScanRequest) -> Result<ScanResult> {
         // Parse and validate options
-        let scan_options = self.parse_scan_options(&request)?;
+        let scan_options = self.parse_scan_options(&request);
 
         // Validate configuration
         config_utils::validate_scan_config(&scan_options)
@@ -138,20 +138,13 @@ impl MCPScannerCore {
     pub fn validate_config(&self, request: &ScanRequest) -> ValidationResponse {
         let timestamp = chrono::Utc::now().to_rfc3339();
 
-        match self.parse_scan_options(request) {
-            Ok(options) => match config_utils::validate_scan_config(&options) {
-                Ok(_) => ValidationResponse {
-                    success: true,
-                    valid: true,
-                    error: None,
-                    timestamp,
-                },
-                Err(e) => ValidationResponse {
-                    success: false,
-                    valid: false,
-                    error: Some(e.to_string()),
-                    timestamp,
-                },
+        let options = self.parse_scan_options(request);
+        match config_utils::validate_scan_config(&options) {
+            Ok(()) => ValidationResponse {
+                success: true,
+                valid: true,
+                error: None,
+                timestamp,
             },
             Err(e) => ValidationResponse {
                 success: false,
@@ -268,7 +261,7 @@ mod tests {
             "http://example2.com".to_string(),
         ];
         let options = ScanRequest {
-            url: "".to_string(),
+            url: String::new(),
             timeout: Some(60),
             http_timeout: Some(30),
             detailed: Some(false),
@@ -371,9 +364,6 @@ mod tests {
         };
 
         let options = core.parse_scan_options(&request);
-        assert!(options.is_ok());
-
-        let options = options.unwrap();
         assert_eq!(options.timeout, 120);
         assert_eq!(options.http_timeout, 60);
         assert!(options.detailed);
@@ -394,9 +384,6 @@ mod tests {
         };
 
         let options = core.parse_scan_options(&request);
-        assert!(options.is_ok());
-
-        let options = options.unwrap();
         // These will use default values from config
         assert!(options.timeout > 0);
         assert!(options.http_timeout > 0);

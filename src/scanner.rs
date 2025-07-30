@@ -1,22 +1,20 @@
-use crate::config::MCPConfigManager;
+use crate::config::{MCPConfigManager, ScannerConfig};
 use crate::constants::{messages, protocol};
+use crate::mcp_client::McpClient;
 use crate::security::{
     cross_origin_scanner::CrossOriginScanner, SecurityScanResult, SecurityScanner,
 };
-use crate::types::{YaraScanResult, *};
-use crate::utils::{
-    error_utils, parse_jsonrpc_array_response, performance::track_performance, retry_with_backoff,
-    Timer,
+use crate::types::{
+    MCPPrompt, MCPResource, MCPServerInfo, MCPTool, ScanOptions, ScanResult, ScanStatus,
+    YaraScanResult,
 };
+use crate::utils::{error_utils, performance::track_performance, Timer};
 use anyhow::{anyhow, Result};
 use reqwest::Client;
-use serde_json::{json, Value};
 use std::collections::HashMap;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::process::Command;
+use std::path::Path;
 use tokio::time::{timeout, Duration};
 use tracing::{debug, info, warn};
-use url::Url;
 
 #[cfg(feature = "yara-x-scanning")]
 use yara_x::Rules;
@@ -41,46 +39,6 @@ fn rule_name_to_file_name(rule_name: &str) -> Option<String> {
         | "MixedSecuritySchemes" => Some("cross_origin_escalation".to_string()),
         // Add more mappings as needed
         _ => None,
-    }
-}
-
-/// Sanitize header values for safe logging - prevents credential exposure
-fn sanitize_header_for_logging(key: &str, value: &str) -> String {
-    let key_lower = key.to_lowercase();
-
-    // Comprehensive list of sensitive header patterns
-    if key_lower.contains("auth")
-        || key_lower.contains("key")
-        || key_lower.contains("secret")
-        || key_lower.contains("token")
-        || key_lower.contains("bearer")
-        || key_lower.contains("password")
-        || key_lower.contains("credential")
-        || key_lower.contains("session")
-        || key_lower.contains("cookie")
-        || key_lower.starts_with("x-api")
-        || key_lower.starts_with("x-secret")
-        || key_lower.starts_with("x-auth")
-    {
-        "[REDACTED]".to_string()
-    } else {
-        // Additional check for common header names
-        match key_lower.as_str() {
-            "authorization" | "x-api-key" | "x-secret-key" | "x-auth-token" | "x-session-token"
-            | "api-key" | "apikey" | "secret" | "token" => "[REDACTED]".to_string(),
-            _ => {
-                // Final safety check: if value looks like a credential (long alphanumeric string)
-                if value.len() > 20
-                    && value
-                        .chars()
-                        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
-                {
-                    "[REDACTED]".to_string()
-                } else {
-                    value.to_string()
-                }
-            }
-        }
     }
 }
 
@@ -151,260 +109,9 @@ fn print_yara_install_message() {
 // TRANSPORT LAYER - Support for multiple MCP transport mechanisms
 // ============================================================================
 
-/// Transport type for MCP communication
-#[derive(Debug, Clone, PartialEq)]
-pub enum TransportType {
-    Http,
-    Stdio,
-}
-
-impl TransportType {
-    pub fn from_url(url: &str) -> Self {
-        if url.starts_with("stdio://") || url.contains("|") || Path::new(url).exists() {
-            TransportType::Stdio
-        } else {
-            TransportType::Http
-        }
-    }
-}
-
-/// STDIO transport implementation for MCP servers
-pub struct STDIOTransport {
-    command: String,
-    args: Vec<String>,
-    process: Option<tokio::process::Child>,
-}
-
-impl STDIOTransport {
-    pub fn new(command: &str) -> Result<Self> {
-        let parts: Vec<&str> = command.split_whitespace().collect();
-        if parts.is_empty() {
-            return Err(anyhow!("Empty command for STDIO transport"));
-        }
-
-        let cmd = parts[0].to_string();
-        let args = if parts.len() > 1 {
-            parts[1..].iter().map(|s| s.to_string()).collect()
-        } else {
-            Vec::new()
-        };
-
-        Ok(Self {
-            command: cmd,
-            args,
-            process: None,
-        })
-    }
-
-    pub fn from_stdio_url(url: &str) -> Result<Self> {
-        // Handle different STDIO URL formats:
-        // - stdio:///path/to/executable
-        // - stdio:///path/to/executable --arg1 --arg2
-        // - /path/to/executable
-        // - executable --arg1 --arg2
-
-        let command = if url.starts_with("stdio://") {
-            url.strip_prefix("stdio://").unwrap_or(url)
-        } else {
-            url
-        };
-
-        Self::new(command)
-    }
-
-    pub async fn start(&mut self) -> Result<()> {
-        let mut cmd = Command::new(&self.command);
-        cmd.args(&self.args);
-        cmd.stdin(std::process::Stdio::piped());
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        let child = cmd.spawn()?;
-        self.process = Some(child);
-
-        info!("Started STDIO process: {} {:?}", self.command, self.args);
-        Ok(())
-    }
-
-    pub async fn send_request(&mut self, request: Value) -> Result<Value> {
-        let process = self
-            .process
-            .as_mut()
-            .ok_or_else(|| anyhow!("STDIO process not started"))?;
-
-        let stdin = process
-            .stdin
-            .as_mut()
-            .ok_or_else(|| anyhow!("STDIO stdin not available"))?;
-
-        let stdout = process
-            .stdout
-            .as_mut()
-            .ok_or_else(|| anyhow!("STDIO stdout not available"))?;
-
-        // Send JSON-RPC request with newline delimiter
-        let request_str = serde_json::to_string(&request)?;
-        stdin
-            .write_all(format!("{request_str}\n").as_bytes())
-            .await?;
-        stdin.flush().await?;
-
-        // Read response with timeout
-        let mut buffer = Vec::new();
-        let mut response_buffer = [0u8; 4096];
-
-        loop {
-            match tokio::time::timeout(Duration::from_secs(30), stdout.read(&mut response_buffer))
-                .await
-            {
-                Ok(Ok(n)) => {
-                    if n == 0 {
-                        break; // EOF
-                    }
-                    buffer.extend_from_slice(&response_buffer[..n]);
-
-                    // Check if we have a complete JSON response
-                    if let Ok(response_str) = String::from_utf8(buffer.clone()) {
-                        for line in response_str.lines() {
-                            if !line.trim().is_empty() {
-                                if let Ok(json_response) = serde_json::from_str::<Value>(line) {
-                                    debug!(
-                                        "STDIO response: {}",
-                                        serde_json::to_string_pretty(&json_response)
-                                            .unwrap_or_default()
-                                    );
-                                    return Ok(json_response);
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok(Err(e)) => return Err(anyhow!("STDIO read error: {}", e)),
-                Err(_) => return Err(anyhow!("STDIO read timeout")),
-            }
-        }
-
-        Err(anyhow!("No valid JSON-RPC response received from STDIO"))
-    }
-
-    pub async fn shutdown(&mut self) -> Result<()> {
-        if let Some(mut process) = self.process.take() {
-            let _ = process.kill().await;
-            info!("STDIO process terminated");
-        }
-        Ok(())
-    }
-}
-
-impl Drop for STDIOTransport {
-    fn drop(&mut self) {
-        if let Some(mut process) = self.process.take() {
-            // Spawn a task to handle the async kill operation
-            // We can't await in Drop, so we spawn and forget
-            tokio::spawn(async move {
-                let _ = process.kill().await;
-            });
-        }
-    }
-}
-
 // ============================================================================
 // SCAN CAPABILITIES - Middleware-like system for extensible scanning
 // ============================================================================
-
-// Optimized request builder to reduce redundancy
-#[derive(Debug, Clone)]
-struct JsonRpcRequest {
-    method: &'static str,
-    id: u64,
-    params: serde_json::Value,
-}
-
-impl JsonRpcRequest {
-    fn new(method: &'static str, id: u64) -> Self {
-        Self {
-            method,
-            id,
-            params: json!({}),
-        }
-    }
-
-    fn to_json(&self) -> serde_json::Value {
-        json!({
-            "jsonrpc": protocol::JSONRPC_VERSION,
-            "id": self.id,
-            "method": self.method,
-            "params": self.params
-        })
-    }
-}
-
-// 1. Migrate protocol fetch logic to simple async methods on MCPScanner
-impl MCPScanner {
-    /// Fetches the list of tools from the MCP server.
-    pub async fn fetch_tools(
-        &self,
-        url: &str,
-        options: &ScanOptions,
-        transport_type: &TransportType,
-        session: &MCPSession,
-    ) -> Result<Vec<MCPTool>> {
-        let request = JsonRpcRequest::new("tools/list", 2).to_json();
-        let (response, _) = self
-            .send_jsonrpc_request_with_headers_and_session(
-                url,
-                request,
-                options,
-                transport_type,
-                session.session_id.clone(),
-            )
-            .await?;
-        let tool_response = ToolResponse::from_json_response(&response)?;
-        Ok(tool_response.tools)
-    }
-    /// Fetches the list of resources from the MCP server.
-    pub async fn fetch_resources(
-        &self,
-        url: &str,
-        options: &ScanOptions,
-        transport_type: &TransportType,
-        session: &MCPSession,
-    ) -> Result<Vec<MCPResource>> {
-        let request = JsonRpcRequest::new("resources/list", 3).to_json();
-        let (response, _) = self
-            .send_jsonrpc_request_with_headers_and_session(
-                url,
-                request,
-                options,
-                transport_type,
-                session.session_id.clone(),
-            )
-            .await?;
-        let resources = parse_jsonrpc_array_response::<MCPResource>(&response, "resources")?;
-        Ok(resources)
-    }
-    /// Fetches the list of prompts from the MCP server.
-    pub async fn fetch_prompts(
-        &self,
-        url: &str,
-        options: &ScanOptions,
-        transport_type: &TransportType,
-        session: &MCPSession,
-    ) -> Result<Vec<MCPPrompt>> {
-        let request = JsonRpcRequest::new("prompts/list", 4).to_json();
-        let (response, _) = self
-            .send_jsonrpc_request_with_headers_and_session(
-                url,
-                request,
-                options,
-                transport_type,
-                session.session_id.clone(),
-            )
-            .await?;
-        let prompt_response = PromptResponse::from_json_response(&response)?;
-        Ok(prompt_response.prompts)
-    }
-}
 
 // =====================
 // CAPABILITY TRAIT & CHAIN (Composable Middleware)
@@ -493,7 +200,6 @@ impl Clone for ScannerChain {
 
 #[cfg(feature = "yara-x-scanning")]
 use glob::glob;
-use std::path::Path;
 use std::sync::Arc;
 
 /// Enhanced YARA match with rule metadata
@@ -542,23 +248,23 @@ impl ThreatRules {
                 print_yara_install_message();
             }
             // Return a scanner that will skip YARA operations
-            return Self::new_disabled(rules_dir);
+            return Ok(Self::new_disabled(rules_dir));
         }
 
         Self::new_enabled(rules_dir)
     }
 
     /// Creates a disabled threat rules engine (no rule loading)
-    fn new_disabled(rules_dir: &str) -> Result<Self> {
+    fn new_disabled(rules_dir: &str) -> Self {
         let start_time = std::time::Instant::now();
-        Ok(Self {
+        Self {
             pre_scan_rules: Vec::new(),
             post_scan_rules: Vec::new(),
             rules_dir: rules_dir.to_string(),
             rule_metadata: HashMap::new(),
             memory_usage_bytes: 0,
             last_load_time: start_time,
-        })
+        }
     }
 
     /// Creates an enabled threat rules engine (loads rules)
@@ -716,7 +422,24 @@ impl ThreatRules {
             raw_metadata.insert(key.to_string(), value_str);
         }
 
-        if !raw_metadata.is_empty() {
+        if raw_metadata.is_empty() {
+            // Fallback to stored metadata if no match metadata available
+            let rule_name = rule.identifier();
+            let metadata_key = format!("{phase}:{rule_name}");
+            self.rule_metadata.get(&metadata_key).map(|stored_meta| {
+                crate::types::YaraRuleMetadata {
+                    name: Some(stored_meta.name.clone()),
+                    author: Some("Ramparts Security Team".to_string()),
+                    date: None,
+                    version: None,
+                    description: Some(stored_meta.name.clone()),
+                    severity: Some("MEDIUM".to_string()),
+                    category: Some(stored_meta.tags.join(",")),
+                    confidence: None,
+                    tags: stored_meta.tags.clone(),
+                }
+            })
+        } else {
             let tags = if let Some(category) = raw_metadata.get("category") {
                 category.split(',').map(|s| s.trim().to_string()).collect()
             } else {
@@ -734,23 +457,6 @@ impl ThreatRules {
                 confidence: raw_metadata.get("confidence").cloned(),
                 tags,
             })
-        } else {
-            // Fallback to stored metadata if no match metadata available
-            let rule_name = rule.identifier();
-            let metadata_key = format!("{phase}:{rule_name}");
-            self.rule_metadata.get(&metadata_key).map(|stored_meta| {
-                crate::types::YaraRuleMetadata {
-                    name: Some(stored_meta.name.clone()),
-                    author: Some("Ramparts Security Team".to_string()),
-                    date: None,
-                    version: None,
-                    description: Some(stored_meta.name.clone()),
-                    severity: Some("MEDIUM".to_string()),
-                    category: Some(stored_meta.tags.join(",")),
-                    confidence: None,
-                    tags: stored_meta.tags.clone(),
-                }
-            })
         }
     }
 
@@ -762,7 +468,7 @@ impl ThreatRules {
         context: &str,
         rules: &[Arc<YaraRules>],
         phase: &str,
-    ) -> Result<Vec<YaraMatchInfo>> {
+    ) -> Vec<YaraMatchInfo> {
         let mut all_matches = Vec::new();
 
         for (i, rule_set) in rules.iter().enumerate() {
@@ -791,18 +497,18 @@ impl ThreatRules {
             );
         }
 
-        Ok(all_matches)
+        all_matches
     }
 
     /// Scans text with pre-scan rules and returns enhanced match information
     #[cfg(feature = "yara-x-scanning")]
-    pub fn pre_scan(&self, text: &str, context: &str) -> Result<Vec<YaraMatchInfo>> {
+    pub fn pre_scan(&self, text: &str, context: &str) -> Vec<YaraMatchInfo> {
         self.scan_with_rules_enhanced_internal(text, context, &self.pre_scan_rules, "pre")
     }
 
     /// Scans text with post-scan rules and returns enhanced match information
     #[cfg(feature = "yara-x-scanning")]
-    pub fn post_scan(&self, text: &str, context: &str) -> Result<Vec<YaraMatchInfo>> {
+    pub fn post_scan(&self, text: &str, context: &str) -> Vec<YaraMatchInfo> {
         self.scan_with_rules_enhanced_internal(text, context, &self.post_scan_rules, "post")
     }
 
@@ -918,26 +624,22 @@ impl YaraScanner {
         Ok(Self { scanner, phase })
     }
 
-    /// Generic YARA scanning method for any item type that implements BatchScannableItem
-    fn scan_items_with_yara<T>(
-        &self,
-        items: &[T],
-        phase: ScanPhase,
-    ) -> anyhow::Result<Vec<YaraScanResult>>
+    /// Generic YARA scanning method for any item type that implements `BatchScannableItem`
+    fn scan_items_with_yara<T>(&self, items: &[T], phase: ScanPhase) -> Vec<YaraScanResult>
     where
         T: crate::security::BatchScannableItem,
     {
         let mut results = Vec::new();
 
         for item in items {
-            let item_text = self.format_item_for_yara_scan(item);
+            let item_text = Self::format_item_for_yara_scan(item);
             let context = format!("{} '{}'", T::item_type(), item.name());
 
             // Use enhanced scanning methods that return metadata
             #[cfg(feature = "yara-x-scanning")]
             let enhanced_matches = match phase {
-                ScanPhase::PreScan => self.scanner.pre_scan(&item_text, &context)?,
-                ScanPhase::PostScan => self.scanner.post_scan(&item_text, &context)?,
+                ScanPhase::PreScan => self.scanner.pre_scan(&item_text, &context),
+                ScanPhase::PostScan => self.scanner.post_scan(&item_text, &context),
             };
 
             #[cfg(not(feature = "yara-x-scanning"))]
@@ -954,16 +656,16 @@ impl YaraScanner {
                 // Store YARA results for each match with metadata
                 for match_info in enhanced_matches {
                     let yara_result =
-                        self.create_yara_result_with_metadata::<T>(item, &match_info.rule_name);
+                        Self::create_yara_result_with_metadata::<T>(item, &match_info.rule_name);
                     results.push(yara_result);
                 }
             }
         }
-        Ok(results)
+        results
     }
 
     /// Format an item for YARA scanning with specialized logic per type
-    fn format_item_for_yara_scan<T>(&self, item: &T) -> String
+    fn format_item_for_yara_scan<T>(item: &T) -> String
     where
         T: crate::security::BatchScannableItem,
     {
@@ -973,7 +675,7 @@ impl YaraScanner {
     }
 
     /// Create a YARA scan result with original rule metadata
-    fn create_yara_result_with_metadata<T>(&self, item: &T, rule_name: &str) -> YaraScanResult
+    fn create_yara_result_with_metadata<T>(item: &T, rule_name: &str) -> YaraScanResult
     where
         T: crate::security::BatchScannableItem,
     {
@@ -1004,6 +706,7 @@ impl Scanner for YaraScanner {
         self.phase
     }
 
+    #[allow(clippy::too_many_lines)]
     fn run(&self, scan_data: &mut ScanData) -> anyhow::Result<()> {
         match self.phase {
             ScanPhase::PreScan => {
@@ -1011,12 +714,11 @@ impl Scanner for YaraScanner {
                 debug!("Running pre-scan with {} rules", stats.pre_scan_count);
 
                 // Scan all item types using the generic scanner
-                let tool_results =
-                    self.scan_items_with_yara(&scan_data.tools, ScanPhase::PreScan)?;
+                let tool_results = self.scan_items_with_yara(&scan_data.tools, ScanPhase::PreScan);
                 let prompt_results =
-                    self.scan_items_with_yara(&scan_data.prompts, ScanPhase::PreScan)?;
+                    self.scan_items_with_yara(&scan_data.prompts, ScanPhase::PreScan);
                 let resource_results =
-                    self.scan_items_with_yara(&scan_data.resources, ScanPhase::PreScan)?;
+                    self.scan_items_with_yara(&scan_data.resources, ScanPhase::PreScan);
 
                 // Count total matches found
                 let total_matches =
@@ -1073,7 +775,9 @@ impl Scanner for YaraScanner {
                     ),
                     rule_metadata: None,
                     phase: Some("pre-scan".to_string()),
-                    rules_executed: if !stats.pre_scan_rules.is_empty() {
+                    rules_executed: if stats.pre_scan_rules.is_empty() {
+                        None
+                    } else {
                         Some(
                             stats
                                 .pre_scan_rules
@@ -1081,8 +785,6 @@ impl Scanner for YaraScanner {
                                 .map(|f| format!("{f}:*"))
                                 .collect(),
                         )
-                    } else {
-                        None
                     },
                     security_issues_detected: if total_matches > 0 {
                         // Show actual rules that triggered matches with filename:rulename format
@@ -1117,12 +819,11 @@ impl Scanner for YaraScanner {
                 debug!("Running post-scan with {} rules", stats.post_scan_count);
 
                 // Scan all item types using the generic scanner
-                let tool_results =
-                    self.scan_items_with_yara(&scan_data.tools, ScanPhase::PostScan)?;
+                let tool_results = self.scan_items_with_yara(&scan_data.tools, ScanPhase::PostScan);
                 let prompt_results =
-                    self.scan_items_with_yara(&scan_data.prompts, ScanPhase::PostScan)?;
+                    self.scan_items_with_yara(&scan_data.prompts, ScanPhase::PostScan);
                 let resource_results =
-                    self.scan_items_with_yara(&scan_data.resources, ScanPhase::PostScan)?;
+                    self.scan_items_with_yara(&scan_data.resources, ScanPhase::PostScan);
 
                 // Count total matches found
                 let total_matches =
@@ -1177,7 +878,9 @@ impl Scanner for YaraScanner {
                     ),
                     rule_metadata: None,
                     phase: Some("post-scan".to_string()),
-                    rules_executed: if !stats.post_scan_rules.is_empty() {
+                    rules_executed: if stats.post_scan_rules.is_empty() {
+                        None
+                    } else {
                         Some(
                             stats
                                 .post_scan_rules
@@ -1185,8 +888,6 @@ impl Scanner for YaraScanner {
                                 .map(|f| format!("{f}:*"))
                                 .collect(),
                         )
-                    } else {
-                        None
                     },
                     security_issues_detected: if total_matches > 0 {
                         // Show actual rules that triggered matches with filename:rulename format
@@ -1234,11 +935,12 @@ pub struct MCPScanner {
     client: Client,
     http_timeout: u64,
     middleware_chain: ScannerChain, // New: pre/post scan hooks
+    mcp_client: McpClient,          // Official rmcp SDK client
 }
 
 // MCPScanner implementation
 impl MCPScanner {
-    /// Creates a new MCPScanner with the specified HTTP timeout.
+    /// Creates a new `MCPScanner` with the specified HTTP timeout.
     pub fn with_timeout(http_timeout: u64) -> Result<Self> {
         let client = Client::builder()
             .timeout(Duration::from_secs(http_timeout))
@@ -1274,6 +976,7 @@ impl MCPScanner {
             client,
             http_timeout,
             middleware_chain,
+            mcp_client: McpClient::new(),
         })
     }
 
@@ -1283,17 +986,13 @@ impl MCPScanner {
 
         info!("Scanning {}", url);
 
-        // Detect transport type
-        let transport_type = TransportType::from_url(url);
-        debug!("Transport type: {:?}", transport_type);
-
         // Normalize URL with error context
-        let normalized_url = error_utils::wrap_error(self.normalize_url(url), "URL normalization")?;
-        result.url = normalized_url.clone();
+        let normalized_url = Self::normalize_url(url);
+        result.url.clone_from(&normalized_url);
 
-        // Perform the scan with performance tracking
+        // Perform the scan with performance tracking using rmcp SDK
         let scan_result = track_performance("MCP server scan", || async {
-            let scan_future = self.perform_scan(&normalized_url, &options, &transport_type);
+            let scan_future = self.perform_scan_with_rmcp(&normalized_url, &options);
             match timeout(Duration::from_secs(options.timeout), scan_future).await {
                 Ok(result) => result,
                 Err(_) => Err(anyhow!("Scan operation timed out")),
@@ -1307,11 +1006,11 @@ impl MCPScanner {
                 self.middleware_chain.run_pre_scan(&mut scan_data);
 
                 result.status = ScanStatus::Success;
-                result.server_info = scan_data.server_info.clone();
-                result.tools = scan_data.tools.clone();
-                result.resources = scan_data.resources.clone();
-                result.prompts = scan_data.prompts.clone();
-                result.yara_results = scan_data.yara_results.clone();
+                result.server_info.clone_from(&scan_data.server_info);
+                result.tools.clone_from(&scan_data.tools);
+                result.resources.clone_from(&scan_data.resources);
+                result.prompts.clone_from(&scan_data.prompts);
+                result.yara_results.clone_from(&scan_data.yara_results);
 
                 // Add fetch errors to the result
                 result.errors.extend(scan_data.fetch_errors.clone());
@@ -1323,7 +1022,7 @@ impl MCPScanner {
                     Err(e) => {
                         warn!("Failed to load scanner config, using defaults: {}", e);
                         result.errors.push(format!("Config loading failed: {e}"));
-                        Default::default()
+                        ScannerConfig::default()
                     }
                 };
 
@@ -1370,7 +1069,7 @@ impl MCPScanner {
                     {
                         Ok(resource_issues) => security_result.add_resource_issues(resource_issues),
                         Err(e) => {
-                            warn!("Failed to batch scan resources for security issues: {}", e)
+                            warn!("Failed to batch scan resources for security issues: {}", e);
                         }
                     }
                 }
@@ -1381,7 +1080,7 @@ impl MCPScanner {
                 self.middleware_chain.run_post_scan(&mut scan_data);
 
                 // Update result with any post-scan changes
-                result.yara_results = scan_data.yara_results.clone();
+                result.yara_results.clone_from(&scan_data.yara_results);
 
                 result.response_time_ms = Timer::start().elapsed_ms(); // Track actual scan time
                 debug!("Scan completed in {}ms", result.response_time_ms);
@@ -1407,7 +1106,7 @@ impl MCPScanner {
             return Err(anyhow!("No MCP IDE configuration files found"));
         }
 
-        let config = config_manager.load_config()?;
+        let config = config_manager.load_config();
         let mut results = Vec::new();
 
         if let Some(servers) = config.servers {
@@ -1435,7 +1134,7 @@ impl MCPScanner {
                         server_options.http_timeout = http_timeout;
                     }
                     if let Some(format) = &global_options.format {
-                        server_options.format = format.clone();
+                        server_options.format.clone_from(format);
                     }
                     if let Some(detailed) = global_options.detailed {
                         server_options.detailed = detailed;
@@ -1451,7 +1150,7 @@ impl MCPScanner {
                         server_options.http_timeout = http_timeout;
                     }
                     if let Some(format) = &server_specific_options.format {
-                        server_options.format = format.clone();
+                        server_options.format.clone_from(format);
                     }
                     if let Some(detailed) = server_specific_options.detailed {
                         server_options.detailed = detailed;
@@ -1516,60 +1215,66 @@ impl MCPScanner {
     }
 
     /// Perform the scan
-    async fn perform_scan(
-        &self,
-        url: &str,
-        options: &ScanOptions,
-        transport_type: &TransportType,
-    ) -> Result<ScanData> {
+    /// New rmcp-based scan implementation that replaces all legacy transport code
+    async fn perform_scan_with_rmcp(&self, url: &str, options: &ScanOptions) -> Result<ScanData> {
         let mut scan_data = ScanData::new();
 
-        // Initialize MCP client session
+        // Connect to MCP server using rmcp SDK
         let session = self
-            .initialize_mcp_session(url, options, transport_type)
+            .mcp_client
+            .connect_http(url, options.auth_headers.clone())
             .await?;
+
+        // Add a small delay to allow the server to fully complete initialization
+        // This prevents "Received request before initialization was complete" warnings
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        debug!("Starting to fetch tools, resources, and prompts after rmcp connection");
 
         // Get server info from initialization
         if let Some(ref server_info) = session.server_info {
             scan_data.server_info = Some(server_info.clone());
         }
 
-        // Fetch tools, resources, and prompts with proper error handling
+        // Fetch tools, resources, and prompts using rmcp SDK with proper error handling
         let mut fetch_errors = Vec::new();
 
-        scan_data.tools = match self
-            .fetch_tools(url, options, transport_type, &session)
-            .await
-        {
-            Ok(tools) => tools,
+        scan_data.tools = match self.mcp_client.fetch_tools(&session).await {
+            Ok(tools) => {
+                debug!("Successfully fetched {} tools via rmcp", tools.len());
+                tools
+            }
             Err(e) => {
-                let error_msg = format!("Failed to fetch tools: {e}");
+                let error_msg = format!("Failed to fetch tools via rmcp: {e}");
                 warn!("{}", error_msg);
                 fetch_errors.push(error_msg);
                 Vec::new()
             }
         };
 
-        scan_data.resources = match self
-            .fetch_resources(url, options, transport_type, &session)
-            .await
-        {
-            Ok(resources) => resources,
+        scan_data.resources = match self.mcp_client.fetch_resources(&session).await {
+            Ok(resources) => {
+                debug!(
+                    "Successfully fetched {} resources via rmcp",
+                    resources.len()
+                );
+                resources
+            }
             Err(e) => {
-                let error_msg = format!("Failed to fetch resources: {e}");
+                let error_msg = format!("Failed to fetch resources via rmcp: {e}");
                 warn!("{}", error_msg);
                 fetch_errors.push(error_msg);
                 Vec::new()
             }
         };
 
-        scan_data.prompts = match self
-            .fetch_prompts(url, options, transport_type, &session)
-            .await
-        {
-            Ok(prompts) => prompts,
+        scan_data.prompts = match self.mcp_client.fetch_prompts(&session).await {
+            Ok(prompts) => {
+                debug!("Successfully fetched {} prompts via rmcp", prompts.len());
+                prompts
+            }
             Err(e) => {
-                let error_msg = format!("Failed to fetch prompts: {e}");
+                let error_msg = format!("Failed to fetch prompts via rmcp: {e}");
                 warn!("{}", error_msg);
                 fetch_errors.push(error_msg);
                 Vec::new()
@@ -1577,412 +1282,21 @@ impl MCPScanner {
         };
 
         // Store fetch errors in scan_data for later inclusion in final result
-        // (We'll need to add this field to ScanData)
         scan_data.fetch_errors = fetch_errors;
 
         Ok(scan_data)
     }
 
-    /// Initialize an MCP session
-    async fn initialize_mcp_session(
-        &self,
-        url: &str,
-        options: &ScanOptions,
-        transport_type: &TransportType,
-    ) -> Result<MCPSession> {
-        // Try different protocol versions for compatibility, prioritizing latest
-        let protocol_versions = protocol::MCP_PROTOCOL_VERSIONS;
+    /// Simple URL normalization for rmcp-based scanning
+    fn normalize_url(url: &str) -> String {
+        let mut normalized_url = url.to_string();
 
-        for protocol_version in protocol_versions {
-            let request = json!({
-                "jsonrpc": protocol::JSONRPC_VERSION,
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": protocol_version,
-                    "capabilities": {
-                        "tools": {},
-                        "resources": {},
-                        "prompts": {}
-                    },
-                    "clientInfo": {
-                        "name": protocol::CLIENT_NAME,
-                        "version": protocol::CLIENT_VERSION
-                    }
-                }
-            });
-
-            match self
-                .send_jsonrpc_request_with_headers_and_session(
-                    url,
-                    request,
-                    options,
-                    transport_type,
-                    None,
-                )
-                .await
-            {
-                Ok((response, session_id)) => {
-                    // Use utility function for debug logging
-                    debug!(
-                        "Initialize response: [\x1b[1m{}\x1b[0m]",
-                        serde_json::to_string_pretty(&response).unwrap_or_default()
-                    );
-
-                    // Parse server info from response
-                    let server_info = MCPServerInfo {
-                        name: response["result"]["serverInfo"]["name"]
-                            .as_str()
-                            .unwrap_or("Unknown")
-                            .to_string(),
-                        version: response["result"]["serverInfo"]["version"]
-                            .as_str()
-                            .unwrap_or("Unknown")
-                            .to_string(),
-                        description: response["result"]["serverInfo"]["description"]
-                            .as_str()
-                            .map(|s| s.to_string()),
-                        capabilities: self.extract_capabilities(&response),
-                        metadata: HashMap::new(),
-                    };
-
-                    return Ok(MCPSession {
-                        server_info: Some(server_info),
-                        session_id,
-                    });
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to initialize with protocol version [\x1b[1m{}\x1b[0m]: {}",
-                        protocol_version, e
-                    );
-                    continue;
-                }
-            }
+        // Add http:// if no scheme is provided
+        if !normalized_url.contains("://") {
+            normalized_url = format!("http://{normalized_url}");
         }
 
-        // Try a simpler initialize request without capabilities
-        let simple_request = json!({
-            "jsonrpc": protocol::JSONRPC_VERSION,
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": protocol::MCP_PROTOCOL_VERSIONS[0],
-                "clientInfo": {
-                    "name": protocol::CLIENT_NAME,
-                    "version": protocol::CLIENT_VERSION
-                }
-            }
-        });
-
-        match self
-            .send_jsonrpc_request_with_headers_and_session(
-                url,
-                simple_request,
-                options,
-                transport_type,
-                None,
-            )
-            .await
-        {
-            Ok((response, session_id)) => {
-                debug!(
-                    "Simple initialize response: [\x1b[1m{}\x1b[0m]",
-                    serde_json::to_string_pretty(&response).unwrap_or_default()
-                );
-
-                let server_info = MCPServerInfo {
-                    name: response["result"]["serverInfo"]["name"]
-                        .as_str()
-                        .unwrap_or("Unknown")
-                        .to_string(),
-                    version: response["result"]["serverInfo"]["version"]
-                        .as_str()
-                        .unwrap_or("Unknown")
-                        .to_string(),
-                    description: response["result"]["serverInfo"]["description"]
-                        .as_str()
-                        .map(|s| s.to_string()),
-                    capabilities: self.extract_capabilities(&response),
-                    metadata: HashMap::new(),
-                };
-
-                return Ok(MCPSession {
-                    server_info: Some(server_info),
-                    session_id,
-                });
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to initialize with simple request: [\x1b[1m{}\x1b[0m]",
-                    e
-                );
-            }
-        }
-
-        Err(anyhow!(
-            "Failed to initialize MCP session with any protocol version"
-        ))
-    }
-
-    /// Send a JSON-RPC request with session ID support
-    async fn send_jsonrpc_request_with_headers_and_session(
-        &self,
-        url: &str,
-        request: Value,
-        options: &ScanOptions,
-        transport_type: &TransportType,
-        session_id: Option<String>,
-    ) -> Result<(Value, Option<String>)> {
-        match transport_type {
-            TransportType::Http => {
-                retry_with_backoff(
-                    || async {
-                        // Debug: Log the exact request being sent
-                        tracing::debug!(
-                            "Sending JSON-RPC request to [\x1b[1m{}\x1b[0m]: {}",
-                            url,
-                            serde_json::to_string_pretty(&request).unwrap_or_default()
-                        );
-
-                        let mut req = self
-                            .client
-                            .post(url)
-                            .header("Content-Type", "application/json")
-                            .header("Accept", "application/json, text/event-stream")
-                            .header("User-Agent", protocol::USER_AGENT)
-                            .header("MCP-Protocol-Version", protocol::MCP_PROTOCOL_VERSIONS[0])
-                            .json(&request);
-
-                        // Add session ID header if provided
-                        if let Some(ref session_id) = session_id {
-                            req = req.header("Mcp-Session-Id", session_id);
-                            tracing::debug!(
-                                "Adding session header: Mcp-Session-Id: [\x1b[1m{}\x1b[0m]",
-                                session_id
-                            );
-                        }
-
-                        // Add authentication headers if provided
-                        if let Some(ref auth_headers) = options.auth_headers {
-                            for (key, value) in auth_headers {
-                                req = req.header(key, value);
-                                tracing::debug!(
-                                    "Adding auth header: [\x1b[1m{}\x1b[0m]: {}",
-                                    key,
-                                    sanitize_header_for_logging(key, value)
-                                );
-                            }
-                        }
-
-                        let response = req.send().await?;
-
-                        // Debug: Log response status and headers
-                        let status = response.status();
-                        tracing::debug!("Response status: [\x1b[1m{}\x1b[0m]", status);
-                        tracing::debug!("Response headers: {:?}", response.headers());
-
-                        // Extract session ID from response headers
-                        let response_session_id = response
-                            .headers()
-                            .get("mcp-session-id")
-                            .and_then(|h| h.to_str().ok())
-                            .map(|s| s.to_string());
-
-                        // Check for SSE/streaming response
-                        if let Some(content_type) = response.headers().get("content-type") {
-                            let content_type_str = content_type.to_str().unwrap_or("");
-                            if content_type_str.contains("text/event-stream") {
-                                let response_json = self.handle_sse_response(response).await?;
-                                return Ok((response_json, response_session_id));
-                            }
-                        }
-
-                        let response_body = response.text().await.unwrap_or_default();
-
-                        if !status.is_success() {
-                            // Debug: Log the response body for error cases
-                            tracing::debug!(
-                                "Error response body: [\x1b[1m{}\x1b[0m]",
-                                response_body
-                            );
-                            return Err(anyhow!(
-                                "HTTP request returned status: {} - Body: {}",
-                                status,
-                                response_body
-                            ));
-                        }
-
-                        let response_json: Value = serde_json::from_str(&response_body)
-                            .map_err(|e| anyhow!("Failed to parse JSON response: {}", e))?;
-
-                        // Debug: Log the response
-                        tracing::debug!(
-                            "JSON-RPC response: {}",
-                            serde_json::to_string_pretty(&response_json).unwrap_or_default()
-                        );
-
-                        if let Some(error) = response_json.get("error") {
-                            return Err(anyhow!("JSON-RPC error: {}", error));
-                        }
-
-                        Ok((response_json, response_session_id))
-                    },
-                    3,   // max_retries
-                    500, // initial_delay_ms
-                )
-                .await
-            }
-            TransportType::Stdio => {
-                // Handle STDIO transport
-                let mut stdio_transport = STDIOTransport::from_stdio_url(url)?;
-                stdio_transport.start().await?;
-
-                // Send request via STDIO
-                let response = stdio_transport.send_request(request).await?;
-
-                // STDIO doesn't support session IDs in the same way as HTTP
-                // but we can extract from response if available
-                let response_session_id = response
-                    .get("session_id")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-
-                // Clean up STDIO transport
-                let _ = stdio_transport.shutdown().await;
-
-                if let Some(error) = response.get("error") {
-                    return Err(anyhow!("JSON-RPC error from STDIO: {}", error));
-                }
-
-                Ok((response, response_session_id))
-            }
-        }
-    }
-
-    /// Handle an SSE response
-    async fn handle_sse_response(&self, response: reqwest::Response) -> Result<Value> {
-        use futures_util::StreamExt;
-
-        info!("Detected SSE response, parsing stream...");
-
-        let mut stream = response.bytes_stream();
-        let mut buffer = String::new();
-        let mut json_response = None;
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| anyhow!("Failed to read SSE chunk: {}", e))?;
-            let chunk_str = String::from_utf8_lossy(&chunk);
-            buffer.push_str(&chunk_str);
-
-            // Parse SSE format: "data: {json}\n\n"
-            for line in buffer.lines() {
-                if let Some(json_str) = line.strip_prefix("data: ") {
-                    if !json_str.trim().is_empty() {
-                        match serde_json::from_str::<Value>(json_str) {
-                            Ok(json) => {
-                                json_response = Some(json);
-                                break;
-                            }
-                            Err(e) => {
-                                warn!("Failed to parse SSE JSON: {}", e);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // If we found a valid JSON response, break
-            if json_response.is_some() {
-                break;
-            }
-        }
-
-        match json_response {
-            Some(json) => {
-                if let Some(error) = json.get("error") {
-                    return Err(anyhow!("JSON-RPC error from SSE: {}", error));
-                }
-                Ok(json)
-            }
-            None => Err(anyhow!("No valid JSON-RPC response found in SSE stream")),
-        }
-    }
-
-    /// Extract capabilities from the response
-    fn extract_capabilities(&self, response: &Value) -> Vec<String> {
-        let mut capabilities = Vec::new();
-
-        if let Some(caps) = response["result"]["capabilities"].as_object() {
-            for (capability, _) in caps {
-                capabilities.push(capability.clone());
-            }
-        }
-
-        capabilities
-    }
-
-    /// Normalize a URL
-    fn normalize_url(&self, url: &str) -> Result<String> {
-        let transport_type = TransportType::from_url(url);
-
-        match transport_type {
-            TransportType::Http => {
-                let mut url = url.to_string();
-
-                // Add http:// if no scheme is provided
-                if !url.contains("://") {
-                    url = format!("http://{url}");
-                }
-
-                // Validate URL
-                Url::parse(&url).map_err(|e| anyhow!("Invalid URL: {}", e))?;
-
-                Ok(url)
-            }
-            TransportType::Stdio => {
-                // For STDIO, just return the command as-is
-                // Remove stdio:// prefix if present
-                let normalized = if url.starts_with("stdio://") {
-                    url.strip_prefix("stdio://").unwrap_or(url).to_string()
-                } else {
-                    url.to_string()
-                };
-
-                // Validate that the command exists or is executable
-                let parts: Vec<&str> = normalized.split_whitespace().collect();
-                if parts.is_empty() {
-                    return Err(anyhow!("Empty STDIO command"));
-                }
-
-                let command = parts[0];
-                if !Path::new(command).exists() && !self.is_executable(command) {
-                    warn!("STDIO command may not exist or be executable: {}", command);
-                }
-
-                Ok(normalized)
-            }
-        }
-    }
-
-    /// Check if a command is executable (basic check)
-    fn is_executable(&self, command: &str) -> bool {
-        // Check if it's in PATH
-        if let Ok(path) = std::env::var("PATH") {
-            for dir in path.split(':') {
-                let executable_path = Path::new(dir).join(command);
-                if executable_path.exists() {
-                    return true;
-                }
-            }
-        }
-
-        // Check if it's an absolute path and exists
-        if Path::new(command).exists() {
-            return true;
-        }
-
-        false
+        normalized_url
     }
 }
 
@@ -1993,6 +1307,7 @@ impl Clone for MCPScanner {
             client: self.client.clone(),
             http_timeout: self.http_timeout,
             middleware_chain: self.middleware_chain.clone(),
+            mcp_client: McpClient::new(),
         }
     }
 }

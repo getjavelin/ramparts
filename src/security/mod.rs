@@ -34,7 +34,7 @@ impl BatchScannableItem for MCPTool {
         let input_summary = if let Some(schema) = &self.input_schema {
             if let Some(properties) = schema.get("properties") {
                 if let Some(props_obj) = properties.as_object() {
-                    let param_names: Vec<&str> = props_obj.keys().map(|k| k.as_str()).collect();
+                    let param_names: Vec<&str> = props_obj.keys().map(String::as_str).collect();
                     format!("Parameters: {}", param_names.join(", "))
                 } else {
                     "Parameters: complex schema".to_string()
@@ -72,11 +72,10 @@ impl BatchScannableItem for MCPPrompt {
     }
 
     fn format_for_analysis(&self, index: usize) -> String {
-        let arguments = self
-            .arguments
-            .as_ref()
-            .map(|args| serde_json::to_string_pretty(args).ok().unwrap_or_default())
-            .unwrap_or_else(|| "No arguments".to_string());
+        let arguments = self.arguments.as_ref().map_or_else(
+            || "No arguments".to_string(),
+            |args| serde_json::to_string_pretty(args).ok().unwrap_or_default(),
+        );
 
         format!(
             "\n\nPROMPT {}: {}\nDescription: {}\nArguments: {}",
@@ -120,7 +119,7 @@ impl BatchScannableItem for MCPResource {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum SecurityIssueType {
     ToolPoisoning,
     SQLInjection,
@@ -134,21 +133,21 @@ pub enum SecurityIssueType {
 }
 
 impl SecurityIssueType {
-    fn default_severity(&self) -> &'static str {
+    fn default_severity(self) -> &'static str {
         match self {
-            SecurityIssueType::ToolPoisoning => "CRITICAL",
-            SecurityIssueType::SQLInjection => "CRITICAL",
-            SecurityIssueType::CommandInjection => "CRITICAL",
-            SecurityIssueType::PathTraversal => "HIGH",
-            SecurityIssueType::AuthBypass => "CRITICAL",
-            SecurityIssueType::PromptInjection => "HIGH",
-            SecurityIssueType::Jailbreak => "HIGH",
+            SecurityIssueType::ToolPoisoning
+            | SecurityIssueType::SQLInjection
+            | SecurityIssueType::CommandInjection
+            | SecurityIssueType::AuthBypass => "CRITICAL",
+            SecurityIssueType::PathTraversal
+            | SecurityIssueType::PromptInjection
+            | SecurityIssueType::Jailbreak
+            | SecurityIssueType::SecretsLeakage => "HIGH",
             SecurityIssueType::PIILeakage => "MEDIUM",
-            SecurityIssueType::SecretsLeakage => "HIGH",
         }
     }
 
-    fn default_message(&self) -> &'static str {
+    fn default_message(self) -> &'static str {
         match self {
             SecurityIssueType::ToolPoisoning => "Tool with destructive or malicious intent",
             SecurityIssueType::SQLInjection => "Tool allowing SQL injection attacks",
@@ -179,7 +178,7 @@ impl SecurityIssue {
     pub fn new(issue_type: SecurityIssueType, description: String) -> Self {
         let message = format!("{}: {}", issue_type.default_message(), &description);
         Self {
-            issue_type: issue_type.clone(),
+            issue_type,
             tool_name: None,
             prompt_name: None,
             resource_uri: None,
@@ -278,12 +277,12 @@ impl Default for SecurityScanner {
 }
 
 impl SecurityScanner {
-    /// Create a new SecurityScanner with configuration
+    /// Create a new `SecurityScanner` with configuration
     pub fn with_config(config: crate::config::ScannerConfig) -> Self {
-        let api_key = if !config.llm.api_key.is_empty() {
-            Some(config.llm.api_key.clone())
-        } else {
+        let api_key = if config.llm.api_key.is_empty() {
             std::env::var("OPENAI_API_KEY").ok()
+        } else {
+            Some(config.llm.api_key.clone())
         };
 
         let model_endpoint = Some(format!("{}/chat/completions", config.llm.base_url));
@@ -316,13 +315,12 @@ impl SecurityScanner {
 
     /// Get batch size from config with default fallback
     fn get_batch_size(&self) -> usize {
-        self.config
-            .as_ref()
-            .map(|c| c.scanner.llm_batch_size as usize)
-            .unwrap_or(DEFAULT_LLM_BATCH_SIZE)
+        self.config.as_ref().map_or(DEFAULT_LLM_BATCH_SIZE, |c| {
+            c.scanner.llm_batch_size as usize
+        })
     }
 
-    /// Generic batch scanner for any type that implements BatchScannableItem
+    /// Generic batch scanner for any type that implements `BatchScannableItem`
     async fn scan_batch<T: BatchScannableItem>(
         &self,
         items: &[T],
@@ -394,7 +392,7 @@ impl SecurityScanner {
             );
 
             // Parse the LLM response and extract security issues
-            let (issues, _) = self.parse_batch_llm_response(&response).await?;
+            let (issues, _) = Self::parse_batch_llm_response(&response)?;
             all_issues.extend(issues);
         }
 
@@ -459,7 +457,7 @@ impl SecurityScanner {
                 .map(|(i, tool)| tool.format_for_analysis(i))
                 .collect::<String>();
 
-            let prompt = self.create_tools_analysis_prompt(&tools_info);
+            let prompt = Self::create_tools_analysis_prompt(&tools_info);
 
             tracing::debug!(
                 "Sending batch LLM request for {} batch {} ({} {})",
@@ -482,7 +480,7 @@ impl SecurityScanner {
                 }
             );
 
-            let (issues, analysis_details) = self.parse_batch_llm_response(&response).await?;
+            let (issues, analysis_details) = Self::parse_batch_llm_response(&response)?;
             all_issues.extend(issues);
             all_analysis_details.extend(analysis_details);
         }
@@ -503,12 +501,8 @@ impl SecurityScanner {
         prompts: &[MCPPrompt],
         show_details: bool,
     ) -> Result<Vec<SecurityIssue>> {
-        self.scan_batch(
-            prompts,
-            |info| self.create_prompts_analysis_prompt(info),
-            show_details,
-        )
-        .await
+        self.scan_batch(prompts, Self::create_prompts_analysis_prompt, show_details)
+            .await
     }
 
     /// Batch scan resources for security vulnerabilities
@@ -519,14 +513,14 @@ impl SecurityScanner {
     ) -> Result<Vec<SecurityIssue>> {
         self.scan_batch(
             resources,
-            |info| self.create_resources_analysis_prompt(info),
+            Self::create_resources_analysis_prompt,
             show_details,
         )
         .await
     }
 
     /// Create tools analysis prompt
-    fn create_tools_analysis_prompt(&self, tools_info: &str) -> String {
+    fn create_tools_analysis_prompt(tools_info: &str) -> String {
         format!(
             "ROLE
 You are a Senior Application Security Engineer reviewing MCP tool definitions for real security issues. MCP tools run within an authenticated server context — do not flag missing auth parameters unless there's a clear bypass.
@@ -583,7 +577,7 @@ Be accurate. Flag only real risks — don't overreport."
     }
 
     /// Create prompts analysis prompt
-    fn create_prompts_analysis_prompt(&self, prompts_info: &str) -> String {
+    fn create_prompts_analysis_prompt(prompts_info: &str) -> String {
         format!(
             "Analyze these MCP prompts for ALL potential security vulnerabilities in a single comprehensive assessment.
 
@@ -638,7 +632,7 @@ If no genuine security issues found, return empty array []."
     }
 
     /// Create resources analysis prompt
-    fn create_resources_analysis_prompt(&self, resources_info: &str) -> String {
+    fn create_resources_analysis_prompt(resources_info: &str) -> String {
         format!(
             "Analyze these MCP resources for ALL potential security vulnerabilities in a single comprehensive assessment.
 
@@ -671,17 +665,9 @@ If no genuine security issues found, return empty array []."
         let client = Client::new();
 
         // Get configuration values, with defaults if not configured
-        let temperature = self
-            .config
-            .as_ref()
-            .map(|c| c.llm.temperature)
-            .unwrap_or(0.1);
-        let max_tokens = self
-            .config
-            .as_ref()
-            .map(|c| c.llm.max_tokens)
-            .unwrap_or(4000);
-        let timeout = self.config.as_ref().map(|c| c.llm.timeout).unwrap_or(30);
+        let temperature = self.config.as_ref().map_or(0.1, |c| c.llm.temperature);
+        let max_tokens = self.config.as_ref().map_or(4000, |c| c.llm.max_tokens);
+        let timeout = self.config.as_ref().map_or(30, |c| c.llm.timeout);
 
         let request_body = json!({
             "model": self.model_name,
@@ -752,14 +738,13 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
     }
 
     /// Parse batch LLM response for multiple tools, prompts, and resources
-    async fn parse_batch_llm_response(
-        &self,
+    fn parse_batch_llm_response(
         response: &str,
     ) -> Result<(
         Vec<SecurityIssue>,
         std::collections::HashMap<String, String>,
     )> {
-        let issues_array = self.extract_json_array(response)?;
+        let issues_array = Self::extract_json_array(response)?;
         let mut issues = Vec::new();
         let mut analysis_details = std::collections::HashMap::new();
 
@@ -781,7 +766,7 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
                             tracing::debug!("Tool {} has {} issues", tool_name, issues_array.len());
                             for issue_value in issues_array {
                                 tracing::debug!("Parsing issue: {:?}", issue_value);
-                                if let Some(issue) = self.parse_issue_from_value(issue_value) {
+                                if let Some(issue) = Self::parse_issue_from_value(issue_value) {
                                     // Set the tool name from the parent object
                                     let mut issue = issue;
                                     issue.tool_name = Some(tool_name.to_string());
@@ -810,7 +795,7 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
                 }
             } else {
                 // Fallback to old format for prompts and resources
-                if let Some(issue) = self.parse_issue_from_value(&tool_value) {
+                if let Some(issue) = Self::parse_issue_from_value(&tool_value) {
                     issues.push(issue);
                 }
             }
@@ -821,7 +806,7 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
     }
 
     /// Parse a single issue from JSON value
-    fn parse_issue_from_value(&self, issue_value: &Value) -> Option<SecurityIssue> {
+    fn parse_issue_from_value(issue_value: &Value) -> Option<SecurityIssue> {
         tracing::debug!("Parsing issue value: {:?}", issue_value);
 
         // For individual issues in the issues array, we don't expect name fields
@@ -839,8 +824,8 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
             details
         );
 
-        let issue_type = self.parse_issue_type(issue_type_str)?;
-        let severity = self.parse_severity(severity_str);
+        let issue_type = Self::parse_issue_type(issue_type_str)?;
+        let severity = Self::parse_severity(severity_str);
 
         let mut issue = SecurityIssue::new(issue_type, message.to_string());
         issue.severity = severity.to_string();
@@ -853,19 +838,18 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
         Some(issue)
     }
 
-    /// Parse severity string to SecuritySeverity enum
-    fn parse_severity(&self, severity_str: &str) -> SecuritySeverity {
+    /// Parse severity string to `SecuritySeverity` enum
+    fn parse_severity(severity_str: &str) -> SecuritySeverity {
         match severity_str.to_uppercase().as_str() {
             "CRITICAL" => SecuritySeverity::Critical,
             "HIGH" => SecuritySeverity::High,
-            "MEDIUM" => SecuritySeverity::Medium,
             "LOW" => SecuritySeverity::Low,
             _ => SecuritySeverity::Medium,
         }
     }
 
-    /// Parse issue type string to SecurityIssueType enum
-    fn parse_issue_type(&self, issue_type_str: &str) -> Option<SecurityIssueType> {
+    /// Parse issue type string to `SecurityIssueType` enum
+    fn parse_issue_type(issue_type_str: &str) -> Option<SecurityIssueType> {
         match issue_type_str {
             "ToolPoisoning" => Some(SecurityIssueType::ToolPoisoning),
             "SQLInjection" => Some(SecurityIssueType::SQLInjection),
@@ -881,7 +865,7 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
     }
 
     /// Extract JSON array from LLM response
-    fn extract_json_array(&self, response: &str) -> Result<Vec<Value>> {
+    fn extract_json_array(response: &str) -> Result<Vec<Value>> {
         tracing::debug!("Raw LLM response: {}", response);
 
         // Try to find JSON array in the response
@@ -895,9 +879,8 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
                         array.len()
                     );
                     return Ok(array);
-                } else {
-                    tracing::warn!("Failed to parse extracted JSON string: {}", json_str);
                 }
+                tracing::warn!("Failed to parse extracted JSON string: {}", json_str);
             }
         }
 
@@ -908,9 +891,8 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
                 array.len()
             );
             return Ok(array);
-        } else {
-            tracing::warn!("Failed to parse entire response as JSON: {}", response);
         }
+        tracing::warn!("Failed to parse entire response as JSON: {}", response);
 
         // If we still can't parse it, try to find any JSON-like structure
         if response.contains("[]") {

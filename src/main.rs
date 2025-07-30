@@ -2,10 +2,13 @@ use clap::{Parser, Subcommand};
 use tracing::{debug, error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
+use crate::config::ScannerConfig;
+
 mod banner;
 mod config;
 mod constants;
 mod core;
+mod mcp_client;
 mod scanner;
 mod security;
 mod server;
@@ -104,7 +107,7 @@ enum Commands {
         format: Option<String>,
     },
 
-    /// Scan MCP servers from IDE configuration files (~/.cursor/mcp.json, ~/.codium/windsurf/mcp_config.json)
+    /// Scan MCP servers from IDE configuration files (~/.cursor/mcp.json, ~/.`codium/windsurf/mcp_config.json`)
     ScanConfig {
         /// Authentication headers for the MCP servers (format: "Header: Value")
         #[arg(long, value_delimiter = ',')]
@@ -135,6 +138,7 @@ enum Commands {
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
@@ -147,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(config) => config,
         Err(e) => {
             warn!("Failed to load scanner config, using defaults: {}", e);
-            Default::default()
+            ScannerConfig::default()
         }
     };
 
@@ -159,7 +163,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match scanner_config.logging.level.to_lowercase().as_str() {
             "trace" => Level::TRACE,
             "debug" => Level::DEBUG,
-            "info" => Level::INFO,
             "warn" => Level::WARN,
             "error" => Level::ERROR,
             _ => Level::INFO,
@@ -212,7 +215,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let options_clone = options.clone();
-            let scanner = scanner.as_ref().unwrap();
+            let scanner = scanner
+                .as_ref()
+                .expect("Scanner should be initialized for scan command");
 
             match scanner.scan_single(&url, options).await {
                 Ok(result) => {
@@ -247,7 +252,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
 
-            let scanner = scanner.as_ref().unwrap();
+            let scanner = scanner
+                .as_ref()
+                .expect("Scanner should be initialized for scan-config command");
 
             match scanner.scan_config(options).await {
                 Ok(results) => {
@@ -281,7 +288,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             match config_manager.save_config(&config::ScannerConfig::default()) {
-                Ok(_) => {
+                Ok(()) => {
                     println!("Created config.yaml with default settings");
                     println!("📝 Edit the file to customize LLM settings, security checks, and other options");
                 }

@@ -2,7 +2,6 @@ use crate::core::{
     BatchScanRequest, BatchScanResponse, MCPScannerCore, ScanRequest, ScanResponse,
     ValidationResponse,
 };
-use crate::scanner::TransportType;
 use axum::{
     extract::State,
     http::{Method, StatusCode},
@@ -205,41 +204,18 @@ async fn scan_endpoint(
         ));
     }
 
-    // Validate URL format based on transport type
-    let transport_type = TransportType::from_url(&request.url);
-    match transport_type {
-        TransportType::Http => {
-            // Validate HTTP URL format
-            if !request.url.starts_with("http://") && !request.url.starts_with("https://") {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({
-                        "success": false,
-                        "error": "HTTP URL must start with http:// or https://",
-                        "timestamp": chrono::Utc::now().to_rfc3339()
-                    })),
-                ));
-            }
-        }
-        TransportType::Stdio => {
-            // Validate STDIO command format
-            let command = if request.url.starts_with("stdio://") {
-                request.url.strip_prefix("stdio://").unwrap_or(&request.url)
-            } else {
-                &request.url
-            };
-
-            if command.trim().is_empty() {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({
-                        "success": false,
-                        "error": "STDIO command cannot be empty",
-                        "timestamp": chrono::Utc::now().to_rfc3339()
-                    })),
-                ));
-            }
-        }
+    // Validate URL format - only HTTP/HTTPS supported with rmcp
+    if !request.url.contains("://") {
+        // Allow URLs without scheme - they'll be normalized to http://
+    } else if !request.url.starts_with("http://") && !request.url.starts_with("https://") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "error": "Only HTTP and HTTPS URLs are supported",
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            })),
+        ));
     }
 
     // Validate timeout values
@@ -256,10 +232,7 @@ async fn scan_endpoint(
         }
     }
 
-    info!(
-        "Received scan request for URL: {} (transport: {:?})",
-        request.url, transport_type
-    );
+    info!("Received scan request for URL: {}", request.url);
 
     let response = state.core.scan(request).await;
 

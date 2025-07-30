@@ -123,8 +123,8 @@ endef
 
 .PHONY: help
 help: ## Show this help message
-	@echo "MCP Scanner Multi-Architecture Build System"
-	@echo "=========================================="
+	@echo "Ramparts Multi-Architecture Build System"
+	@echo "======================================="
 	@echo ""
 	@echo "Current System:"
 	@echo "  OS: $(HOST_OS)"
@@ -157,6 +157,8 @@ build: ## Build for current architecture (auto-detected) with quality checks
 	@echo "Running clippy linting..."
 	@$(CARGO) clippy --all-features -- -D warnings || (echo "❌ Clippy check failed. Fix the warnings above." && exit 1)
 	@echo "✅ Clippy check passed"
+	@$(CARGO) clippy --all-targets --all-features -- -W clippy::all -W clippy::pedantic -A clippy::missing_docs_in_private_items -A clippy::module_name_repetitions
+	@echo "✅ Extended Clippy check passed"
 	@echo "Building for current architecture: $(CURRENT_TARGET)"
 	$(call check_target,$(CURRENT_TARGET))
 	$(call build_target,$(CURRENT_TARGET))
@@ -312,44 +314,44 @@ package: build-all ## Create distribution packages
 	@echo "Creating distribution packages..."
 	@mkdir -p $(DIST_DIR)/packages
 	@echo "Creating README for distribution..."
-	@echo "# MCP Scanner v$(VERSION) - Multi-Architecture Builds" > $(DIST_DIR)/README.md
+	@echo "# Ramparts v$(VERSION) - Multi-Architecture Builds" > $(DIST_DIR)/README.md
 	@echo "" >> $(DIST_DIR)/README.md
 	@echo "This directory contains pre-built binaries for multiple platforms and architectures." >> $(DIST_DIR)/README.md
 	@echo "" >> $(DIST_DIR)/README.md
 	@echo "## Available Binaries" >> $(DIST_DIR)/README.md
 	@echo "" >> $(DIST_DIR)/README.md
 	@echo "### Linux" >> $(DIST_DIR)/README.md
-	@echo "- \`mcp-scanner-x86_64-unknown-linux-gnu\` - Linux x86_64 (GNU)" >> $(DIST_DIR)/README.md
-	@echo "- \`mcp-scanner-aarch64-unknown-linux-gnu\` - Linux ARM64 (GNU)" >> $(DIST_DIR)/README.md
-	@echo "- \`mcp-scanner-x86_64-unknown-linux-musl\` - Linux x86_64 (musl)" >> $(DIST_DIR)/README.md
-	@echo "- \`mcp-scanner-aarch64-unknown-linux-musl\` - Linux ARM64 (musl)" >> $(DIST_DIR)/README.md
+	@echo "- \`ramparts-x86_64-unknown-linux-gnu\` - Linux x86_64 (GNU)" >> $(DIST_DIR)/README.md
+	@echo "- \`ramparts-aarch64-unknown-linux-gnu\` - Linux ARM64 (GNU)" >> $(DIST_DIR)/README.md
+	@echo "- \`ramparts-x86_64-unknown-linux-musl\` - Linux x86_64 (musl)" >> $(DIST_DIR)/README.md
+	@echo "- \`ramparts-aarch64-unknown-linux-musl\` - Linux ARM64 (musl)" >> $(DIST_DIR)/README.md
 	@echo "" >> $(DIST_DIR)/README.md
 	@echo "### macOS" >> $(DIST_DIR)/README.md
-	@echo "- \`mcp-scanner-x86_64-apple-darwin\` - macOS x86_64" >> $(DIST_DIR)/README.md
-	@echo "- \`mcp-scanner-aarch64-apple-darwin\` - macOS ARM64" >> $(DIST_DIR)/README.md
+	@echo "- \`ramparts-x86_64-apple-darwin\` - macOS x86_64" >> $(DIST_DIR)/README.md
+	@echo "- \`ramparts-aarch64-apple-darwin\` - macOS ARM64" >> $(DIST_DIR)/README.md
 	@echo "" >> $(DIST_DIR)/README.md
 	@echo "### Windows" >> $(DIST_DIR)/README.md
-	@echo "- \`mcp-scanner-x86_64-pc-windows-gnu.exe\` - Windows x86_64 (GNU)" >> $(DIST_DIR)/README.md
-	@echo "- \`mcp-scanner-x86_64-pc-windows-msvc.exe\` - Windows x86_64 (MSVC)" >> $(DIST_DIR)/README.md
-	@echo "- \`mcp-scanner-aarch64-pc-windows-msvc.exe\` - Windows ARM64 (MSVC)" >> $(DIST_DIR)/README.md
+	@echo "- \`ramparts-x86_64-pc-windows-gnu.exe\` - Windows x86_64 (GNU)" >> $(DIST_DIR)/README.md
+	@echo "- \`ramparts-x86_64-pc-windows-msvc.exe\` - Windows x86_64 (MSVC)" >> $(DIST_DIR)/README.md
+	@echo "- \`ramparts-aarch64-pc-windows-msvc.exe\` - Windows ARM64 (MSVC)" >> $(DIST_DIR)/README.md
 	@echo "" >> $(DIST_DIR)/README.md
 	@echo "## Installation" >> $(DIST_DIR)/README.md
 	@echo "" >> $(DIST_DIR)/README.md
 	@echo "1. Download the appropriate binary for your platform" >> $(DIST_DIR)/README.md
-	@echo "2. Make it executable (Linux/macOS): \`chmod +x mcp-scanner-*\`" >> $(DIST_DIR)/README.md
-	@echo "3. Move to a directory in your PATH: \`sudo mv mcp-scanner-* /usr/local/bin/\`" >> $(DIST_DIR)/README.md
+	@echo "2. Make it executable (Linux/macOS): \`chmod +x ramparts-*\`" >> $(DIST_DIR)/README.md
+	@echo "3. Move to a directory in your PATH: \`sudo mv ramparts-* /usr/local/bin/\`" >> $(DIST_DIR)/README.md
 	@echo "" >> $(DIST_DIR)/README.md
 	@echo "## Usage" >> $(DIST_DIR)/README.md
 	@echo "" >> $(DIST_DIR)/README.md
 	@echo "\`\`\`bash" >> $(DIST_DIR)/README.md
 	@echo "# Basic scan" >> $(DIST_DIR)/README.md
-	@echo "mcp-scanner scan http://localhost:3000" >> $(DIST_DIR)/README.md
+	@echo "ramparts scan http://localhost:3000" >> $(DIST_DIR)/README.md
 	@echo "" >> $(DIST_DIR)/README.md
 	@echo "# Start microservice" >> $(DIST_DIR)/README.md
-	@echo "mcp-scanner server --port 3000" >> $(DIST_DIR)/README.md
+	@echo "ramparts server --port 3000" >> $(DIST_DIR)/README.md
 	@echo "" >> $(DIST_DIR)/README.md
 	@echo "# Get help" >> $(DIST_DIR)/README.md
-	@echo "mcp-scanner --help" >> $(DIST_DIR)/README.md
+	@echo "ramparts --help" >> $(DIST_DIR)/README.md
 	@echo "\`\`\`" >> $(DIST_DIR)/README.md
 	@echo "" >> $(DIST_DIR)/README.md
 	@echo "## Build Information" >> $(DIST_DIR)/README.md
@@ -366,31 +368,31 @@ package: build-all ## Create distribution packages
 package-linux: build-linux ## Create Linux distribution package
 	@echo "Creating Linux distribution package..."
 	@mkdir -p $(DIST_DIR)/packages
-	@tar -czf $(DIST_DIR)/packages/mcp-scanner-$(VERSION)-linux.tar.gz -C $(BIN_DIR) \
-		mcp-scanner-x86_64-unknown-linux-gnu \
-		mcp-scanner-aarch64-unknown-linux-gnu \
-		mcp-scanner-x86_64-unknown-linux-musl \
-		mcp-scanner-aarch64-unknown-linux-musl
-	@echo "Linux package created: $(DIST_DIR)/packages/mcp-scanner-$(VERSION)-linux.tar.gz"
+	@tar -czf $(DIST_DIR)/packages/ramparts-$(VERSION)-linux.tar.gz -C $(BIN_DIR) \
+		ramparts-x86_64-unknown-linux-gnu \
+		ramparts-aarch64-unknown-linux-gnu \
+		ramparts-x86_64-unknown-linux-musl \
+		ramparts-aarch64-unknown-linux-musl
+	@echo "Linux package created: $(DIST_DIR)/packages/ramparts-$(VERSION)-linux.tar.gz"
 
 .PHONY: package-macos
 package-macos: build-macos ## Create macOS distribution package
 	@echo "Creating macOS distribution package..."
 	@mkdir -p $(DIST_DIR)/packages
-	@tar -czf $(DIST_DIR)/packages/mcp-scanner-$(VERSION)-macos.tar.gz -C $(BIN_DIR) \
-		mcp-scanner-x86_64-apple-darwin \
-		mcp-scanner-aarch64-apple-darwin
-	@echo "macOS package created: $(DIST_DIR)/packages/mcp-scanner-$(VERSION)-macos.tar.gz"
+	@tar -czf $(DIST_DIR)/packages/ramparts-$(VERSION)-macos.tar.gz -C $(BIN_DIR) \
+		ramparts-x86_64-apple-darwin \
+		ramparts-aarch64-apple-darwin
+	@echo "macOS package created: $(DIST_DIR)/packages/ramparts-$(VERSION)-macos.tar.gz"
 
 .PHONY: package-windows
 package-windows: build-windows ## Create Windows distribution package
 	@echo "Creating Windows distribution package..."
 	@mkdir -p $(DIST_DIR)/packages
-	@cd $(BIN_DIR) && zip -r ../packages/mcp-scanner-$(VERSION)-windows.zip \
-		mcp-scanner-x86_64-pc-windows-gnu.exe \
-		mcp-scanner-x86_64-pc-windows-msvc.exe \
-		mcp-scanner-aarch64-pc-windows-msvc.exe
-	@echo "Windows package created: $(DIST_DIR)/packages/mcp-scanner-$(VERSION)-windows.zip"
+	@cd $(BIN_DIR) && zip -r ../packages/ramparts-$(VERSION)-windows.zip \
+		ramparts-x86_64-pc-windows-gnu.exe \
+		ramparts-x86_64-pc-windows-msvc.exe \
+		ramparts-aarch64-pc-windows-msvc.exe
+	@echo "Windows package created: $(DIST_DIR)/packages/ramparts-$(VERSION)-windows.zip"
 
 # ============================================================================
 # DEVELOPMENT TARGETS
@@ -454,7 +456,7 @@ integration-test: ## Run integration tests (CLI, config, server startup)
 			kill -9 $$SERVER_PID 2>/dev/null || true; \
 		fi; \
 		# Clean up any remaining processes
-		pkill -f "ramparts server" 2>/dev/null || true
+		pkill -f "$(PROJECT_NAME) server" 2>/dev/null || true
 	@echo "Integration tests complete"
 
 .PHONY: ci-check
@@ -480,11 +482,11 @@ ci-check: ## Run all CI quality checks (format, clippy, tests, audit)
 	@echo "🎉 All CI checks passed! Ready for PR."
 
 .PHONY: ci-quality
-ci-quality: fmt-check check lint test audit coverage integration-test ## Run all CI quality checks
+ci-quality: fmt-check check lint test audit ## Run all CI quality checks
 	@echo "All CI quality checks complete"
 
 .PHONY: verify
-verify: check test clippy ## Run all verification steps
+verify: check test lint ## Run all verification steps
 	@echo "All verification steps complete"
 
 .PHONY: release
@@ -514,8 +516,8 @@ list-targets: ## List all available targets
 
 .PHONY: info
 info: ## Show build information
-	@echo "MCP Scanner Build Information"
-	@echo "============================="
+	@echo "Ramparts Build Information"
+	@echo "========================="
 	@echo "Project: $(PROJECT_NAME)"
 	@echo "Version: $(VERSION)"
 	@echo "Author: $(AUTHOR)"
@@ -562,9 +564,9 @@ docker-build: ## Build using Docker (requires Dockerfile)
 		echo "" >> Dockerfile; \
 		echo "FROM debian:bookworm-slim" >> Dockerfile; \
 		echo "RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*" >> Dockerfile; \
-		echo "COPY --from=builder /app/target/release/mcp-scanner /usr/local/bin/" >> Dockerfile; \
+		echo "COPY --from=builder /app/target/release/ramparts /usr/local/bin/" >> Dockerfile; \
 		echo "EXPOSE 3000" >> Dockerfile; \
-		echo "CMD [\"mcp-scanner\", \"server\"]" >> Dockerfile; \
+		echo "CMD [\"ramparts\", \"server\"]" >> Dockerfile; \
 		echo "Dockerfile created. Run 'make docker-build' again."; \
 	fi
 

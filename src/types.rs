@@ -124,7 +124,7 @@ impl ScanConfigBuilder {
 
 /// Configuration validation utilities
 pub mod config_utils {
-    use super::*;
+    use super::{Result, ScanOptions};
 
     pub fn validate_scan_config(options: &ScanOptions) -> Result<()> {
         if options.timeout == 0 {
@@ -246,7 +246,9 @@ pub struct MCPTool {
 #[derive(Debug, Clone)]
 pub struct MCPSession {
     pub server_info: Option<MCPServerInfo>,
+    #[allow(dead_code)]
     pub session_id: Option<String>,
+    pub endpoint_url: String, // Store the successful endpoint URL for reuse
 }
 
 /// MCP resource definition
@@ -304,155 +306,9 @@ pub struct PromptResponse {
     pub response_timestamp: DateTime<Utc>,
 }
 
-impl ToolResponse {
-    pub fn new() -> Self {
-        Self {
-            tools: Vec::new(),
-            total_count: 0,
-            response_timestamp: Utc::now(),
-        }
-    }
-
-    pub fn add_tool(&mut self, tool: MCPTool) {
-        self.tools.push(tool);
-        self.total_count = self.tools.len();
-    }
-
-    pub fn from_json_response(response: &serde_json::Value) -> Result<Self> {
-        let mut tool_response = ToolResponse::new();
-
-        if let Some(tools_array) = response["result"]["tools"].as_array() {
-            for tool_value in tools_array {
-                let tool = Self::parse_tool_from_json(tool_value)?;
-                tool_response.add_tool(tool);
-            }
-        }
-
-        Ok(tool_response)
-    }
-
-    fn parse_tool_from_json(tool_value: &serde_json::Value) -> Result<MCPTool> {
-        let name = tool_value["name"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("Tool name is required"))?
-            .to_string();
-
-        let description = tool_value["description"].as_str().map(|s| s.to_string());
-
-        let input_schema = tool_value["inputSchema"].clone();
-        let output_schema = tool_value["outputSchema"].clone();
-
-        let mut parameters = HashMap::new();
-        if let Some(params) = tool_value["parameters"].as_object() {
-            for (key, value) in params {
-                parameters.insert(key.clone(), value.clone());
-            }
-        }
-
-        let category = tool_value["category"].as_str().map(|s| s.to_string());
-
-        let mut tags = Vec::new();
-        if let Some(tags_array) = tool_value["tags"].as_array() {
-            for tag in tags_array {
-                if let Some(tag_str) = tag.as_str() {
-                    tags.push(tag_str.to_string());
-                }
-            }
-        }
-
-        let deprecated = tool_value["deprecated"].as_bool().unwrap_or(false);
-
-        Ok(MCPTool {
-            name,
-            description,
-            input_schema: if input_schema.is_null() {
-                None
-            } else {
-                Some(input_schema)
-            },
-            output_schema: if output_schema.is_null() {
-                None
-            } else {
-                Some(output_schema)
-            },
-            parameters,
-            category,
-            tags,
-            deprecated,
-            raw_json: Some(tool_value.clone()),
-        })
-    }
-}
-
-impl PromptResponse {
-    pub fn new() -> Self {
-        Self {
-            prompts: Vec::new(),
-            total_count: 0,
-            response_timestamp: Utc::now(),
-        }
-    }
-
-    pub fn add_prompt(&mut self, prompt: MCPPrompt) {
-        self.prompts.push(prompt);
-        self.total_count = self.prompts.len();
-    }
-
-    pub fn from_json_response(response: &serde_json::Value) -> Result<Self> {
-        let mut prompt_response = PromptResponse::new();
-
-        if let Some(prompts_array) = response["result"]["prompts"].as_array() {
-            for prompt_value in prompts_array {
-                let prompt = Self::parse_prompt_from_json(prompt_value)?;
-                prompt_response.add_prompt(prompt);
-            }
-        }
-
-        Ok(prompt_response)
-    }
-
-    fn parse_prompt_from_json(prompt_value: &serde_json::Value) -> Result<MCPPrompt> {
-        let name = prompt_value["name"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("Prompt name is required"))?
-            .to_string();
-
-        let description = prompt_value["description"].as_str().map(|s| s.to_string());
-
-        let mut arguments = None;
-        if let Some(args_array) = prompt_value["arguments"].as_array() {
-            let mut args = Vec::new();
-            for arg_value in args_array {
-                let arg_name = arg_value["name"]
-                    .as_str()
-                    .ok_or_else(|| anyhow::anyhow!("Argument name is required"))?
-                    .to_string();
-
-                let arg_description = arg_value["description"].as_str().map(|s| s.to_string());
-                let required = arg_value["required"].as_bool();
-
-                args.push(MCPPromptArgument {
-                    name: arg_name,
-                    description: arg_description,
-                    required,
-                });
-            }
-            arguments = Some(args);
-        }
-
-        Ok(MCPPrompt {
-            name,
-            description,
-            arguments,
-            raw_json: Some(prompt_value.clone()),
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn test_scan_config_builder() {
@@ -570,96 +426,6 @@ mod tests {
 
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0], "Test error");
-    }
-
-    #[test]
-    fn test_tool_response_from_json() {
-        let response = json!({
-            "result": {
-                "tools": [
-                    {
-                        "name": "test_tool",
-                        "description": "A test tool",
-                        "inputSchema": {"type": "object"},
-                        "outputSchema": {"type": "string"}
-                    }
-                ]
-            }
-        });
-
-        let tool_response = ToolResponse::from_json_response(&response);
-        assert!(tool_response.is_ok());
-
-        let tool_response = tool_response.unwrap();
-        assert_eq!(tool_response.tools.len(), 1);
-        assert_eq!(tool_response.tools[0].name, "test_tool");
-        assert_eq!(
-            tool_response.tools[0].description,
-            Some("A test tool".to_string())
-        );
-    }
-
-    #[test]
-    fn test_tool_response_from_json_missing_result() {
-        let response = json!({
-            "other_key": {
-                "tools": []
-            }
-        });
-
-        let tool_response = ToolResponse::from_json_response(&response);
-        assert!(tool_response.is_ok());
-        assert_eq!(tool_response.unwrap().tools.len(), 0);
-    }
-
-    #[test]
-    fn test_prompt_response_from_json() {
-        let response = json!({
-            "result": {
-                "prompts": [
-                    {
-                        "name": "test_prompt",
-                        "description": "A test prompt",
-                        "arguments": [
-                            {
-                                "name": "arg1",
-                                "description": "First argument",
-                                "required": true
-                            }
-                        ]
-                    }
-                ]
-            }
-        });
-
-        let prompt_response = PromptResponse::from_json_response(&response);
-        assert!(prompt_response.is_ok());
-
-        let prompt_response = prompt_response.unwrap();
-        assert_eq!(prompt_response.prompts.len(), 1);
-        assert_eq!(prompt_response.prompts[0].name, "test_prompt");
-        assert_eq!(
-            prompt_response.prompts[0].description,
-            Some("A test prompt".to_string())
-        );
-        assert!(prompt_response.prompts[0].arguments.is_some());
-        assert_eq!(
-            prompt_response.prompts[0].arguments.as_ref().unwrap().len(),
-            1
-        );
-    }
-
-    #[test]
-    fn test_prompt_response_from_json_missing_result() {
-        let response = json!({
-            "other_key": {
-                "prompts": []
-            }
-        });
-
-        let prompt_response = PromptResponse::from_json_response(&response);
-        assert!(prompt_response.is_ok());
-        assert_eq!(prompt_response.unwrap().prompts.len(), 0);
     }
 
     #[test]
