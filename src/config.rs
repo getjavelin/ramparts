@@ -46,7 +46,20 @@ impl MCPServerConfig {
         if let Some(url) = &self.url {
             url.clone()
         } else if let Some(command) = &self.command {
-            format!("stdio:{command}")
+            // For STDIO servers, create a more descriptive URL
+            if let Some(name) = &self.name {
+                // Include the server name if available: stdio:npx[server-name]
+                format!("stdio:{command}[{name}]")
+            } else if let Some(args) = &self.args {
+                // If no name but has args, show the main package/argument
+                if let Some(main_arg) = args.first() {
+                    format!("stdio:{command}[{main_arg}]")
+                } else {
+                    format!("stdio:{command}[unknown]")
+                }
+            } else {
+                format!("stdio:{command}")
+            }
         } else {
             "unknown".to_string()
         }

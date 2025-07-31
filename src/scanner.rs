@@ -986,7 +986,12 @@ impl MCPScanner {
 
         info!("Scanning {}", url);
 
-        // Normalize URL with error context
+        // Check if this is a STDIO URL and route appropriately
+        if url.starts_with("stdio:") {
+            return self.scan_stdio_url(url, options).await;
+        }
+
+        // Normalize URL with error context for HTTP URLs
         let normalized_url = Self::normalize_url(url);
         result.url.clone_from(&normalized_url);
 
@@ -1098,6 +1103,97 @@ impl MCPScanner {
         Ok(result)
     }
 
+    /// Parse and scan a STDIO URL (format: stdio:command:arg1:arg2... or stdio://command:arg1:arg2...)
+    async fn scan_stdio_url(&self, stdio_url: &str, options: ScanOptions) -> Result<ScanResult> {
+        // Parse the STDIO URL format: stdio:command:arg1:arg2:... or stdio://command:arg1:arg2:...
+        let parts: Vec<&str> = stdio_url.splitn(3, ':').collect();
+        if parts.len() < 2 {
+            return Err(anyhow!(
+                "Invalid STDIO URL format. Expected: stdio:command or stdio:command:args"
+            ));
+        }
+
+        // Handle both stdio:command and stdio://command formats
+        let command = parts[1].trim_start_matches("//");
+        let args: Vec<String> = if parts.len() > 2 && !parts[2].is_empty() {
+            parts[2].split(':').map(|s| s.to_string()).collect()
+        } else {
+            Vec::new()
+        };
+
+        // Create a temporary server config for the STDIO URL
+        let server_config = MCPServerConfig {
+            name: Some(format!("STDIO-{command}")),
+            url: None,
+            command: Some(command.to_string()),
+            args: Some(args),
+            env: None,
+            description: Some(format!("STDIO server from URL: {stdio_url}")),
+            auth_headers: None,
+            options: None,
+        };
+
+        // Use the existing STDIO server scanning method
+        self.scan_stdio_server(&server_config, options).await
+    }
+
+    /// Scan a STDIO MCP server using subprocess transport
+    async fn scan_stdio_server(
+        &self,
+        server_config: &MCPServerConfig,
+        options: ScanOptions,
+    ) -> Result<ScanResult> {
+        let command = server_config
+            .command
+            .as_ref()
+            .ok_or_else(|| anyhow!("STDIO server missing command"))?;
+
+        let args = server_config.args.as_deref().unwrap_or(&[]);
+        let display_url = server_config.display_url();
+
+        info!("Scanning STDIO MCP server: {}", display_url);
+
+        let mut result = ScanResult::new(display_url.clone());
+
+        // Connect to the STDIO server using the MCP client
+        let session = self
+            .mcp_client
+            .connect_subprocess(command, args, server_config.env.as_ref())
+            .await
+            .map_err(|e| anyhow!("Failed to connect to STDIO server {}: {}", command, e))?;
+
+        // Perform the same MCP scanning pattern as HTTP servers
+        let scan_result = track_performance("STDIO MCP server scan", || async {
+            self.perform_scan_with_session(&session, &options).await
+        })
+        .await;
+
+        match scan_result {
+            Ok(mut scan_data) => {
+                // Apply the same middleware chain as HTTP scanning
+                self.middleware_chain.run_pre_scan(&mut scan_data);
+                self.middleware_chain.run_post_scan(&mut scan_data);
+
+                // Populate result with scan data
+                result.status = ScanStatus::Success;
+                result.server_info = session.server_info.clone();
+                result.tools = scan_data.tools;
+                result.resources = scan_data.resources;
+                result.prompts = scan_data.prompts;
+                result.yara_results = scan_data.yara_results;
+
+                info!("Successfully scanned STDIO server: {}", display_url);
+            }
+            Err(e) => {
+                result.status = ScanStatus::Failed(e.to_string());
+                result.add_error(format!("STDIO scan failed: {e}"));
+                warn!("STDIO scan failed for {}: {}", display_url, e);
+            }
+        }
+
+        Ok(result)
+    }
+
     /// Scan MCP servers from IDE configuration files
     pub async fn scan_config(&self, options: ScanOptions) -> Result<Vec<ScanResult>> {
         let config_manager = MCPConfigManager::new();
@@ -1124,28 +1220,47 @@ impl MCPScanner {
 
                 let server_options = Self::build_server_options(&options, &config, server);
 
-                // Scan the MCP server (only HTTP servers can be scanned)
+                // Scan the MCP server - HTTP or STDIO
                 if let Some(url) = server.scan_url() {
+                    // HTTP server scanning
                     match self.scan_single(url, server_options).await {
                         Ok(result) => {
                             results.push(result);
                         }
                         Err(e) => {
                             warn!(
-                                "Failed to scan MCP server [\x1b[1m{}\x1b[0m]: {}",
+                                "Failed to scan HTTP MCP server [\x1b[1m{}\x1b[0m]: {}",
                                 server.display_url(),
                                 e
                             );
                             let mut failed_result = ScanResult::new(server.display_url());
                             failed_result.status = ScanStatus::Failed(e.to_string());
-                            failed_result.add_error(format!("IDE config scan failed: {e}"));
+                            failed_result.add_error(format!("HTTP scan failed: {e}"));
+                            results.push(failed_result);
+                        }
+                    }
+                } else if server.command.is_some() {
+                    // STDIO server scanning
+                    match self.scan_stdio_server(server, server_options).await {
+                        Ok(result) => {
+                            results.push(result);
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to scan STDIO MCP server [\x1b[1m{}\x1b[0m]: {}",
+                                server.display_url(),
+                                e
+                            );
+                            let mut failed_result = ScanResult::new(server.display_url());
+                            failed_result.status = ScanStatus::Failed(e.to_string());
+                            failed_result.add_error(format!("STDIO scan failed: {e}"));
                             results.push(failed_result);
                         }
                     }
                 } else {
-                    // Skip STDIO servers for now
-                    info!(
-                        "Skipping STDIO server [\x1b[1m{}\x1b[0m] - not yet supported",
+                    // Server has neither URL nor command - this should be caught by validation
+                    warn!(
+                        "Skipping invalid server [\x1b[1m{}\x1b[0m] - no URL or command specified",
                         server.name.as_deref().unwrap_or("unnamed")
                     );
                 }
@@ -1301,6 +1416,78 @@ impl MCPScanner {
             }
             Err(e) => {
                 let error_msg = format!("Failed to fetch prompts via rmcp: {e}");
+                warn!("{}", error_msg);
+                fetch_errors.push(error_msg);
+                Vec::new()
+            }
+        };
+
+        // Store fetch errors in scan_data for later inclusion in final result
+        scan_data.fetch_errors = fetch_errors;
+
+        Ok(scan_data)
+    }
+
+    /// Perform scan with an existing MCP session (for STDIO transport)
+    async fn perform_scan_with_session(
+        &self,
+        session: &crate::types::MCPSession,
+        _options: &ScanOptions,
+    ) -> Result<ScanData> {
+        let mut scan_data = ScanData::new();
+
+        // Add a small delay for initialization
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        debug!("Starting to fetch tools, resources, and prompts from existing session");
+
+        // Get server info from session
+        if let Some(ref server_info) = session.server_info {
+            scan_data.server_info = Some(server_info.clone());
+        }
+
+        // Fetch tools, resources, and prompts using existing session with proper error handling
+        let mut fetch_errors = Vec::new();
+
+        scan_data.tools = match self.mcp_client.fetch_tools(session).await {
+            Ok(tools) => {
+                debug!("Successfully fetched {} tools from session", tools.len());
+                tools
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to fetch tools from session: {e}");
+                warn!("{}", error_msg);
+                fetch_errors.push(error_msg);
+                Vec::new()
+            }
+        };
+
+        scan_data.resources = match self.mcp_client.fetch_resources(session).await {
+            Ok(resources) => {
+                debug!(
+                    "Successfully fetched {} resources from session",
+                    resources.len()
+                );
+                resources
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to fetch resources from session: {e}");
+                warn!("{}", error_msg);
+                fetch_errors.push(error_msg);
+                Vec::new()
+            }
+        };
+
+        scan_data.prompts = match self.mcp_client.fetch_prompts(session).await {
+            Ok(prompts) => {
+                debug!(
+                    "Successfully fetched {} prompts from session",
+                    prompts.len()
+                );
+                prompts
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to fetch prompts from session: {e}");
                 warn!("{}", error_msg);
                 fetch_errors.push(error_msg);
                 Vec::new()
