@@ -90,61 +90,23 @@ The Ramparts mcp scanner is implemented in Rust to prioritize performance, relia
 - **Adopt a layered approach** consider a layered approach to security. **ramparts** scanner is designed to work on the mcp server & tool _metadata_. It can catch **Tool Poisoning** or other static vulnerabilities in MCP server but you need to continually run the scans AND implement runtime MCP guardrails. For runtime attack detection of MCP tools, please contact support@getjavelin.com for Javelin's runtime MCP guardrails. 
 - **Evolving standards & threats** both the MCP standard as well as the AI/MCP threat landscape is evolving rapidly and there may be several threats or attack vectors that ramparts may fail to catch (until it catches up with the specific attack/threat)
 
-## Installation
-
-### YARA-X Integration (Optional)
-
-Ramparts uses YARA-X, a modern rewrite of YARA in Rust, for advanced pattern-based security scanning. YARA-X integration is **optional** but **recommended** for comprehensive security analysis.
-
-#### Key Benefits of YARA-X
-
-- **Pure Rust**: No system dependencies required - everything is handled at compile time
-- **Better Performance**: Optimized for complex security rules and mixed rule sets
-- **Memory Safe**: Built with Rust's safety guarantees
-
-#### Installation Options
+## Quick Start
 
 **From crates.io (Recommended)**
 ```bash
-# With YARA-X support (recommended)
 cargo install ramparts
-
-# Without YARA-X support (lighter installation)
-cargo install ramparts --no-default-features
 ```
 
 **From source**
 ```bash
 git clone https://github.com/getjavelin/ramparts.git
 cd ramparts
-
-# With YARA-X support
 cargo install --path .
-
-# Without YARA-X support
-cargo install --path . --no-default-features
-```
-
-> **Note**: You can disable YARA-X scanning temporarily via configuration (see Configuration section below).
-
-## Quick Start
-
-### Basic Usage
-
-**Scan an MCP server**
-```bash
-ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $GITHUB_TOKEN"
-```
-
-**Scan with custom output format**
-```bash
-ramparts scan <url> --output json
-ramparts scan <url> --output raw
 ```
 
 **Scan with verbose output**
 ```bash
-ramparts scan <url> --verbose
+ramparts scan <url> 
 ```
 
 ### Example Output
