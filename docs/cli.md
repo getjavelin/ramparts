@@ -358,3 +358,68 @@ ramparts --generate-completion powershell > ramparts.ps1
 ```
 
 *Note: Completion generation may not be available in all versions.*
+
+## Advanced Usage Examples
+
+### Advanced Scanning Options
+
+```bash
+# Custom severity threshold
+ramparts scan <url> --min-severity HIGH
+
+# JSON output with formatting
+ramparts scan <url> --output json --pretty
+
+# Custom configuration file
+ramparts scan <url> --config custom-ramparts.yaml
+
+# Scan from IDE configurations
+ramparts scan-config
+```
+
+### Server Mode
+
+Ramparts can run as a REST API server for continuous monitoring:
+
+```bash
+# Start server (default: localhost:3000)
+ramparts server
+
+# Custom host and port
+ramparts server --port 8080 --host 0.0.0.0
+```
+
+### Batch Scanning
+
+```bash
+# Create a servers list
+echo "https://server1.com/mcp/
+https://server2.com/mcp/
+https://server3.com/mcp/" > servers.txt
+
+# Run batch scan
+ramparts scan --batch servers.txt
+```
+
+### Output Format Details
+
+**Table Format (Default)**
+- Human-readable with colored output
+- Tree-style security issue display
+- Progress indicators and summaries
+
+**JSON Format**
+- Machine-readable structured output
+- Perfect for scripts and automation
+- Use `--pretty` for formatted output
+
+**Raw Format**
+- Preserves original MCP server responses
+- Useful for debugging and analysis
+- Minimal processing of server data
+
+### Integration Examples
+
+**Server Mode Integration:**
+- 📚 **[Complete API Documentation](docs/api.md)** - REST endpoints and request/response formats
+- 🔧 **[Integration Patterns](docs/integration.md)** - CI/CD, Docker, Kubernetes, and monitoring examples

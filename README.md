@@ -26,23 +26,9 @@ Ramparts is under active development. Read our [launch blog](https://www.getjave
 
 ### The Security Challenge
 
-MCP servers can expose powerful capabilities to AI agents, including:
-- **File system access** (read/write files, directory traversal)
-- **Database operations** (SQL queries, data manipulation)
-- **API integrations** (external/internal/local service calls, authentication)
-- **System commands** (process execution, system administration)
+MCP servers expose powerful capabilities—file systems, databases, APIs, and system commands—that can become attack vectors like tool poisoning, command injection, and data exfiltration without proper security analysis.
 
-Without proper security analysis, these capabilities can become attack vectors for:
-- **Tool Poisoning** - bypassing AI safety measures
-- **MCP Rug Pulls** - unauthorized changes to MCP tool descriptions after initial user approval
-- **Cross-Origin Escalation** - exploiting tools across multiple domains to hijack context or inject malicious content
-- **Data exfiltration** - leaking sensitive information
-- **Privilege escalation** - gaining unauthorized access
-- **Path traversal attacks** - accessing files outside intended directories
-- **Command injection** - executing unauthorized system commands
-- **SQL injection** - manipulating database queries
-
-📚 **[Detailed Security Features Documentation](docs/security-features.md)** - Complete guide to all attack vectors and detection methods
+📚 **[Security Features & Attack Vectors](docs/security-features.md)** - Complete guide to 11+ vulnerabilities detected
 
 ### What Ramparts Does
 
@@ -57,23 +43,17 @@ Ramparts provides **security scanning** of MCP servers by:
 
 ## Who Ramparts is For
 
-Ramparts is designed for developers using local, remote MCP servers or building their own MCP servers and interested in scanning it for any vulnerabilities it may expose. Developers may use Ramparts locally to scan the MCP servers they use in their local development environment (e.g., Cursor, Windsurf, Claude Code etc.,). 
+Scan MCP servers for vulnerabilities in your development environment (Cursor, Windsurf, Claude Code) or production deployments. 
 
-**If you're using MCP servers** - whether they're running locally on your machine or hosted remotely - Ramparts helps you understand what security risks they might pose. You can scan third-party MCP servers before connecting to them, or validate your own local MCP servers before deploying them to production.
+**For MCP users**: Scan third-party servers before connecting, validate local servers before production.
 
-**If you're building MCP servers** - whether you're creating tools, resources, or prompts - Ramparts gives you confidence that your implementation doesn't expose vulnerabilities to AI agents. It's especially useful for developers who want to ensure their MCP tools are secure by design.
+**For MCP developers**: Ensure your tools, resources, and prompts don't expose vulnerabilities to AI agents.
 
 ## Key Features
 
-- **Comprehensive MCP Coverage**: Analyzes all MCP endpoints and evaluates each tool, resource, and prompt
-- **Advanced Security Detection**: Detects 11+ attack vectors using static checks and LLM-assisted analysis
-- **YARA-X Integration**: Optional advanced pattern-based scanning with configurable rules
-- **High Performance**: Built in Rust for fast, efficient scanning with minimal memory overhead
-- **Multiple Interfaces**: CLI tool, REST API server, and batch processing capabilities
-- **Rich Output Formats**: Text, JSON, and raw formats for integration with scripts and dashboards
-- **Flexible Configuration**: IDE integration, custom YAML configs, and extensible rule system
+Comprehensive MCP security scanning with 11+ attack vector detection, YARA-X integration, CLI/API interfaces, and flexible configuration options.
 
-> **Built with Rust** for performance, reliability, and portability. Compiles to a single binary for easy deployment in CI pipelines, agent sandboxes, and constrained environments.  
+📖 **[Complete Feature List & CLI Reference](docs/cli.md)** - All commands, options, and capabilities  
 
 ## Use Cases
 
@@ -211,56 +191,7 @@ ramparts scan https://api.example.com/mcp/ --auth-headers "X-API-Key: $API_KEY"
 ramparts scan <url> --timeout 60
 ```
 
-### Advanced Options
-
-```bash
-# Custom severity threshold
-ramparts scan <url> --min-severity HIGH
-
-# JSON output with formatting
-ramparts scan <url> --output json --pretty
-
-# Custom configuration file
-ramparts scan <url> --config custom-ramparts.yaml
-
-# Scan from IDE configurations
-ramparts scan-config
-```
-
-## Server Mode & Integration
-
-Ramparts can run as a REST API server for continuous monitoring:
-
-```bash
-# Start server (default: localhost:3000)
-ramparts server
-
-# Custom host and port
-ramparts server --port 8080 --host 0.0.0.0
-```
-
-### Batch Scanning
-
-```bash
-# Create a servers list
-echo "https://server1.com/mcp/
-https://server2.com/mcp/
-https://server3.com/mcp/" > servers.txt
-
-# Run batch scan
-ramparts scan --batch servers.txt
-```
-
-### Output Formats
-
-Ramparts supports multiple output formats:
-- **Table format** (default): Human-readable with colors
-- **JSON format**: Machine-readable with `--output json --pretty`  
-- **Raw format**: Preserves original MCP responses with `--output raw`
-
-**Integration Resources:**
-- 📚 **[Complete API Documentation](docs/api.md)** - REST endpoints and request/response formats
-- 🔧 **[Integration Patterns](docs/integration.md)** - CI/CD, Docker, Kubernetes, and monitoring examples
+📖 **[Advanced Usage & Server Mode](docs/cli.md#advanced-usage-examples)** - Custom options, batch scanning, output formats, and API server
 
 
 ## Configuration
