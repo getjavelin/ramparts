@@ -13,7 +13,7 @@ error: failed to compile `ramparts`
 
 **Solutions:**
 ```bash
-# Option 1: Install without YARA-X support
+# Option 1: Install without YARA-X support (see README for details)
 cargo install ramparts --no-default-features
 
 # Option 2: Update Rust toolchain
@@ -21,7 +21,6 @@ rustup update stable
 
 # Option 3: Clear cargo cache and retry
 cargo clean
-cargo install ramparts
 ```
 
 **Issue: Permission denied**

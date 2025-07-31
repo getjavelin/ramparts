@@ -2,6 +2,28 @@
 
 This document provides detailed information about the Ramparts REST API server mode.
 
+## Server Mode Overview
+
+Think of Ramparts server mode as your security scanner running as a service instead of a one-off command. While `ramparts scan` is great for quick checks, the server mode gives you a REST API that your applications, CI/CD pipelines, and monitoring systems can talk to.
+
+### When Should You Use Server Mode?
+
+If you're running `ramparts scan` more than once, you probably want server mode. Here are some common scenarios:
+
+**You're building CI/CD pipelines** and want to fail builds when MCP servers have critical security issues. Instead of installing and running the CLI in every pipeline, just POST to `/scan` and check the response.
+
+**Your team is using multiple MCP servers** and you want a centralized way to monitor their security posture. Start one Ramparts server, point it at all your MCP endpoints, and you've got a security dashboard.
+
+**You're integrating security scanning into an existing application.** Maybe you're building a developer portal that needs to show MCP server security status, or you want to automatically scan servers when they're added to your system.
+
+**You need scheduled scanning** without setting up complex cron jobs. The API makes it easy to build simple monitoring scripts that run regular scans and send alerts when issues are found.
+
+### What You Get
+
+Server mode handles multiple requests concurrently, so your team can scan different servers simultaneously without waiting. The JSON responses are consistent and easy to parse, making it simple to build automation around the results.
+
+You also get health check endpoints for monitoring, batch scanning for efficiency, and all the same security detection capabilities as the CLI—just wrapped in a REST API that plays nicely with modern development workflows.
+
 ## Starting the Server
 
 Start Ramparts as a REST API server for continuous monitoring and integration with other systems:

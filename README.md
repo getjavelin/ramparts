@@ -26,9 +26,9 @@ Ramparts is under active development. Read our [launch blog](https://www.getjave
 
 ### The Security Challenge
 
-MCP servers expose powerful capabilities—file systems, databases, APIs, and system commands—that can become attack vectors like tool poisoning, command injection, and data exfiltration without proper security analysis.
+MCP servers expose powerful capabilities—file systems, databases, APIs, and system commands—that can become attack vectors like tool poisoning, command injection, and data exfiltration without proper security analysis. - 📚 **[Security Features & Attack Vectors](docs/security-features.md)** 
 
-📚 **[Security Features & Attack Vectors](docs/security-features.md)** - Complete guide to 11+ vulnerabilities detected
+
 
 ### What Ramparts Does
 
@@ -39,21 +39,15 @@ Ramparts provides **security scanning** of MCP servers by:
 3. **Cross-Origin Analysis**: Detects when tools span multiple domains, which could enable context hijacking or injection attacks
 4. **LLM-Powered Analysis**: Uses AI models to detect sophisticated security issues
 5. **Risk Assessment**: Categorizes findings by severity and provides actionable recommendations
-
+>
+> **💡 Jump directly to detailed Rampart features?**
+> [**📚 Detailed Features**](docs/features.md)
 
 ## Who Ramparts is For
 
-Scan MCP servers for vulnerabilities in your development environment (Cursor, Windsurf, Claude Code) or production deployments. 
-
-**For MCP users**: Scan third-party servers before connecting, validate local servers before production.
-
-**For MCP developers**: Ensure your tools, resources, and prompts don't expose vulnerabilities to AI agents.
-
-## Key Features
-
-Comprehensive MCP security scanning with 11+ attack vector detection, YARA-X integration, CLI/API interfaces, and flexible configuration options.
-
-📖 **[Complete Feature List & CLI Reference](docs/cli.md)** - All commands, options, and capabilities  
+- **Developers**: Scan MCP servers for vulnerabilities in your development environment (Cursor, Windsurf, Claude Code) or production deployments.  
+- **MCP users**: Scan third-party servers before connecting, validate local servers before production.  
+- **MCP developers**: Ensure your tools, resources, and prompts don't expose vulnerabilities to AI agents.
 
 ## Use Cases
 
@@ -62,54 +56,29 @@ Comprehensive MCP security scanning with 11+ attack vector detection, YARA-X int
 - **CI/CD Integration**: Automated security scanning in deployment pipelines
 - **Compliance**: Meeting security requirements for AI agent deployments
 
-> **Important**: Ramparts analyzes MCP server metadata and static configurations. For comprehensive security, combine with runtime MCP guardrails and adopt a layered security approach. The MCP threat landscape is rapidly evolving.
-
-## Installation
-
-**From crates.io (Recommended)**
-```bash
-# With YARA-X support (recommended)
-cargo install ramparts
-
-# Without YARA-X support (lighter installation)
-cargo install ramparts --no-default-features
-```
-
-**From source**
-```bash
-git clone https://github.com/getjavelin/ramparts.git
-cd ramparts
-
-# With YARA-X support
-cargo install --path .
-
-# Without YARA-X support
-cargo install --path . --no-default-features
-```
-
-> **Note**: YARA-X provides advanced pattern-based security scanning and can be disabled via configuration if needed.
+> **💡 Caution**: Ramparts analyzes MCP server metadata and static configurations. For comprehensive security, combine with runtime MCP guardrails and adopt a layered security approach. The MCP threat landscape is rapidly evolving, and rampart is not perfect and inaccuracies are inevitable.
 
 ## Quick Start
 
-### Basic Usage
+**Installation**
+```bash
+cargo install ramparts
+```
 
 **Scan an MCP server**
 ```bash
 ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $GITHUB_TOKEN"
 ```
 
-**Scan with custom output format**
+**Scan your IDE's MCP configurations**
 ```bash
-ramparts scan <url> --output json
-ramparts scan <url> --output raw
+# Automatically discovers and scans MCP servers from Cursor, Windsurf, VS Code, Claude Code
+ramparts scan-config
 ```
 
-**Scan with verbose output**
-```bash
-ramparts scan <url> --verbose
-```
+> **💡 Did you know you can start Ramparts as a server?** Run `ramparts server` to get a REST API for continuous monitoring and CI/CD integration. See 📚 **[Ramparts Server Mode](docs/api.md)** 
 
-### Example Output
+## Example Output
 
 ```
 ================================================================================
@@ -167,73 +136,18 @@ Summary:
 ================================================================================
 ```
 
-## Examples
-
-### Scan Different MCP Servers
-
-**GitHub Copilot**
-```bash
-ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $GITHUB_TOKEN"
-```
-
-**Local MCP server**
-```bash
-ramparts scan http://localhost:3000/mcp/
-```
-
-**Custom MCP server with API key**
-```bash
-ramparts scan https://api.example.com/mcp/ --auth-headers "X-API-Key: $API_KEY"
-```
-
-**With custom timeout**
-```bash
-ramparts scan <url> --timeout 60
-```
-
-📖 **[Advanced Usage & Server Mode](docs/cli.md#advanced-usage-examples)** - Custom options, batch scanning, output formats, and API server
-
-
-## Configuration
-
-Ramparts uses a `ramparts.yaml` configuration file to customize security rules, scanning behavior, and output formats.
-
-```bash
-# Create default configuration
-ramparts init-config
-```
-
-⚙️ **[Complete Configuration Reference](docs/configuration.md)** - Detailed configuration options, YARA rules, and environment variables
-
-
-## Need Help?
-
-**Quick fixes for common issues:**
-- **Connection timeout**: `ramparts scan <url> --timeout 60`
-- **Auth errors**: `ramparts scan <url> --auth-headers "Authorization: Bearer $TOKEN"`
-- **Config not found**: `ramparts init-config`
-
-🔍 **[Complete Troubleshooting Guide](docs/troubleshooting.md)** - Detailed solutions for installation, connection, and configuration issues
-
 ## Contributing
 
 We welcome contributions to Ramparts mcp scan. If you have suggestions, bug reports, or feature requests, please open an issue on our GitHub repository.
 
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/getjavelin/ramparts/issues)
-
 ## Documentation
-
-- 📚 **[Security Features & Attack Vectors](docs/security-features.md)** - Detailed guide to all security vulnerabilities detected
-- 📚 **[Complete API Documentation](docs/api.md)** - REST API reference with endpoints and examples  
-- 🔧 **[Integration Patterns](docs/integration.md)** - CI/CD, Docker, Kubernetes, and monitoring examples
+- 🔍 **[Troubleshooting Guide](docs/troubleshooting.md)** - Solutions to common issues
 - ⚙️ **[Configuration Reference](docs/configuration.md)** - Complete configuration file documentation
 - 📖 **[CLI Reference](docs/cli.md)** - All commands, options, and usage examples
-- 🔍 **[Troubleshooting Guide](docs/troubleshooting.md)** - Solutions to common issues
+- 🔧 **[Integration Patterns](docs/integration.md)** - CI/CD, Docker, Kubernetes, and monitoring examples
 
 ## Additional Resources
-
+- [Need Support?](https://github.com/getjavelin/ramparts/issues)
 - [MCP Protocol Documentation](https://modelcontextprotocol.io/)
 - [Configuration Examples](examples/config_example.json)
 
