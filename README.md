@@ -25,30 +25,32 @@ Read our [launch blog](https://www.getjavelin.com/blogs/ramparts-mcp-scan) for m
 ## Key Features
 
 - **Comprehensive MCP Coverage** - Analyzes all MCP endpoints and evaluates tools, resources, and prompts
+- **Scan AI Coding Tools** - Analyzes all MCP servers used in AI Based Coding tools in local environment
 - **Advanced Security Detection** - Detects path traversal, command injection, SQL injection, secret leakage, and cross-origin escalation
 - **YARA-X Integration** - Optional pattern-based scanning with configurable rules
 - **High Performance** - Built in Rust for fast, efficient scanning with minimal overhead
 - **Rich Output Formats** - Text, JSON, and raw formats for easy integration
 - **LLM-Powered Analysis** - Uses AI models to detect sophisticated security issues
 
-## Quick Installation
+## Quick Start
 
 ```bash
-# With YARA-X support (recommended)
 cargo install ramparts
-
-# Lighter installation without YARA-X
-cargo install ramparts --no-default-features
 ```
 
 ## Quick Start
 
-**Scan an MCP server:**
+**Scan MCP servers used in my local IDE (Cursor, Windsurf, Claude Code, etc.,):**
+```bash
+ramparts scan-config
+```
+
+**Scan a single MCP server:**
 ```bash
 ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $GITHUB_TOKEN"
 ```
 
-**Basic local scan:**
+**Basic local MCP server scan:**
 ```bash
 ramparts scan http://localhost:3000/mcp/
 ```
@@ -92,6 +94,7 @@ Summary: 74 tools scanned, 2 warnings found
 
 ## Who Should Use Ramparts
 
+- **Developers Using AI Coding Tools** - Scan your Cursor, Windsurf, Claude Code MCP configurations for security threats
 - **MCP Server Users** - Scan third-party servers before connecting or validate local servers before production
 - **MCP Server Developers** - Ensure your implementations don't expose vulnerabilities to AI agents
 - **Security Teams** - Comprehensive assessment of MCP server security posture in AI agent deployments
