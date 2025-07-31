@@ -1,4 +1,4 @@
-use crate::config::{MCPConfigManager, ScannerConfig};
+use crate::config::{MCPConfig, MCPConfigManager, MCPServerConfig, ScannerConfig};
 use crate::constants::{messages, protocol};
 use crate::mcp_client::McpClient;
 use crate::security::{
@@ -1109,7 +1109,7 @@ impl MCPScanner {
         let config = config_manager.load_config();
         let mut results = Vec::new();
 
-        if let Some(servers) = config.servers {
+        if let Some(ref servers) = config.servers {
             info!(
                 "Found [\x1b[1m{}\x1b[0m] MCP servers in IDE configuration files",
                 servers.len()
@@ -1119,92 +1119,35 @@ impl MCPScanner {
                 info!(
                     "Scanning MCP server from IDE config: [\x1b[1m{}\x1b[0m] ({})",
                     server.name.as_deref().unwrap_or("unnamed"),
-                    server.url
+                    server.display_url()
                 );
 
-                // Merge server-specific options with global options
-                let mut server_options = options.clone();
+                let server_options = Self::build_server_options(&options, &config, server);
 
-                // Apply global options from config
-                if let Some(global_options) = &config.options {
-                    if let Some(timeout) = global_options.timeout {
-                        server_options.timeout = timeout;
-                    }
-                    if let Some(http_timeout) = global_options.http_timeout {
-                        server_options.http_timeout = http_timeout;
-                    }
-                    if let Some(format) = &global_options.format {
-                        server_options.format.clone_from(format);
-                    }
-                    if let Some(detailed) = global_options.detailed {
-                        server_options.detailed = detailed;
-                    }
-                }
-
-                // Apply server-specific options
-                if let Some(server_specific_options) = &server.options {
-                    if let Some(timeout) = server_specific_options.timeout {
-                        server_options.timeout = timeout;
-                    }
-                    if let Some(http_timeout) = server_specific_options.http_timeout {
-                        server_options.http_timeout = http_timeout;
-                    }
-                    if let Some(format) = &server_specific_options.format {
-                        server_options.format.clone_from(format);
-                    }
-                    if let Some(detailed) = server_specific_options.detailed {
-                        server_options.detailed = detailed;
-                    }
-                }
-
-                // Merge authentication headers
-                let mut auth_headers = options.auth_headers.clone();
-
-                // Add global auth headers
-                if let Some(global_auth_headers) = &config.auth_headers {
-                    match &mut auth_headers {
-                        Some(headers) => {
-                            for (key, value) in global_auth_headers {
-                                headers.insert(key.clone(), value.clone());
-                            }
+                // Scan the MCP server (only HTTP servers can be scanned)
+                if let Some(url) = server.scan_url() {
+                    match self.scan_single(url, server_options).await {
+                        Ok(result) => {
+                            results.push(result);
                         }
-                        None => {
-                            auth_headers = Some(global_auth_headers.clone());
+                        Err(e) => {
+                            warn!(
+                                "Failed to scan MCP server [\x1b[1m{}\x1b[0m]: {}",
+                                server.display_url(),
+                                e
+                            );
+                            let mut failed_result = ScanResult::new(server.display_url());
+                            failed_result.status = ScanStatus::Failed(e.to_string());
+                            failed_result.add_error(format!("IDE config scan failed: {e}"));
+                            results.push(failed_result);
                         }
                     }
-                }
-
-                // Add server-specific auth headers
-                if let Some(server_auth_headers) = &server.auth_headers {
-                    match &mut auth_headers {
-                        Some(headers) => {
-                            for (key, value) in server_auth_headers {
-                                headers.insert(key.clone(), value.clone());
-                            }
-                        }
-                        None => {
-                            auth_headers = Some(server_auth_headers.clone());
-                        }
-                    }
-                }
-
-                server_options.auth_headers = auth_headers;
-
-                // Scan the MCP server
-                match self.scan_single(&server.url, server_options).await {
-                    Ok(result) => {
-                        results.push(result);
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to scan MCP server [\x1b[1m{}\x1b[0m]: {}",
-                            server.url, e
-                        );
-                        let mut failed_result = ScanResult::new(server.url.clone());
-                        failed_result.status = ScanStatus::Failed(e.to_string());
-                        failed_result.add_error(format!("IDE config scan failed: {e}"));
-                        results.push(failed_result);
-                    }
+                } else {
+                    // Skip STDIO servers for now
+                    info!(
+                        "Skipping STDIO server [\x1b[1m{}\x1b[0m] - not yet supported",
+                        server.name.as_deref().unwrap_or("unnamed")
+                    );
                 }
             }
         } else {
@@ -1212,6 +1155,89 @@ impl MCPScanner {
         }
 
         Ok(results)
+    }
+
+    fn build_server_options(
+        options: &ScanOptions,
+        config: &MCPConfig,
+        server: &MCPServerConfig,
+    ) -> ScanOptions {
+        let mut server_options = options.clone();
+
+        // Apply global options from config
+        if let Some(global_options) = &config.options {
+            if let Some(timeout) = global_options.timeout {
+                server_options.timeout = timeout;
+            }
+            if let Some(http_timeout) = global_options.http_timeout {
+                server_options.http_timeout = http_timeout;
+            }
+            if let Some(format) = &global_options.format {
+                server_options.format.clone_from(format);
+            }
+            if let Some(detailed) = global_options.detailed {
+                server_options.detailed = detailed;
+            }
+        }
+
+        // Apply server-specific options
+        if let Some(server_specific_options) = &server.options {
+            if let Some(timeout) = server_specific_options.timeout {
+                server_options.timeout = timeout;
+            }
+            if let Some(http_timeout) = server_specific_options.http_timeout {
+                server_options.http_timeout = http_timeout;
+            }
+            if let Some(format) = &server_specific_options.format {
+                server_options.format.clone_from(format);
+            }
+            if let Some(detailed) = server_specific_options.detailed {
+                server_options.detailed = detailed;
+            }
+        }
+
+        // Merge authentication headers
+        server_options.auth_headers = Self::build_auth_headers(options, config, server);
+
+        server_options
+    }
+
+    fn build_auth_headers(
+        options: &ScanOptions,
+        config: &MCPConfig,
+        server: &MCPServerConfig,
+    ) -> Option<HashMap<String, String>> {
+        let mut auth_headers = options.auth_headers.clone();
+
+        // Add global auth headers
+        if let Some(global_auth_headers) = &config.auth_headers {
+            match &mut auth_headers {
+                Some(headers) => {
+                    for (key, value) in global_auth_headers {
+                        headers.insert(key.clone(), value.clone());
+                    }
+                }
+                None => {
+                    auth_headers = Some(global_auth_headers.clone());
+                }
+            }
+        }
+
+        // Add server-specific auth headers
+        if let Some(server_auth_headers) = &server.auth_headers {
+            match &mut auth_headers {
+                Some(headers) => {
+                    for (key, value) in server_auth_headers {
+                        headers.insert(key.clone(), value.clone());
+                    }
+                }
+                None => {
+                    auth_headers = Some(server_auth_headers.clone());
+                }
+            }
+        }
+
+        auth_headers
     }
 
     /// Perform the scan
