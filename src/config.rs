@@ -588,7 +588,8 @@ impl MCPConfigManager {
     }
 
     /// Create a new configuration manager with fresh path discovery (bypasses cache)
-    #[allow(dead_code)]
+    /// Creates a new `MCPConfigManager` without using the cache
+    #[allow(dead_code)] // Used in tests and for bypassing cache when needed
     pub fn new_uncached() -> Self {
         let paths = Self::discover_config_paths();
         Self {
@@ -869,7 +870,7 @@ impl MCPConfigManager {
     }
 
     /// Get client type from a configuration file path using component-based matching
-    #[allow(dead_code)]
+    /// Determines the MCP client type based on the configuration file path
     pub fn get_client_from_path<P: AsRef<Path>>(path: P) -> Option<MCPClient> {
         let path = path.as_ref();
         let components: Vec<_> = path
@@ -914,41 +915,6 @@ impl MCPConfigManager {
         }
 
         None
-    }
-
-    /// Convert client shorthand names to full configuration paths
-    #[allow(dead_code)]
-    pub fn client_shorthands_to_paths(clients: &[&str]) -> Vec<(PathBuf, MCPClient)> {
-        let mut paths = Vec::new();
-        let all_paths = &*CONFIG_PATHS_CACHE;
-
-        for client_name in clients {
-            let client_type = match client_name.to_lowercase().as_str() {
-                "cursor" => Some(MCPClient::Cursor),
-                "windsurf" => Some(MCPClient::Windsurf),
-                "vscode" | "code" => Some(MCPClient::VSCode),
-                "claude" => Some(MCPClient::Claude),
-                "claude-code" => Some(MCPClient::ClaudeCode),
-                "gemini" => Some(MCPClient::Gemini),
-                "neovim" | "nvim" => Some(MCPClient::Neovim),
-                "helix" => Some(MCPClient::Helix),
-                "zed" => Some(MCPClient::Zed),
-                "zencoder" => Some(MCPClient::Zencoder),
-                _ => None,
-            };
-
-            if let Some(client) = client_type {
-                paths.extend(all_paths.iter().filter(|(_, c)| *c == client).cloned());
-            }
-        }
-
-        paths
-    }
-
-    /// Get all discovered configuration file paths
-    #[allow(dead_code)]
-    pub fn get_all_config_paths() -> Vec<(PathBuf, MCPClient)> {
-        CONFIG_PATHS_CACHE.clone()
     }
 
     /// Load configuration from all available IDE config files
@@ -1580,26 +1546,6 @@ impl MCPConfigManager {
     pub fn has_config_files(&self) -> bool {
         self.config_paths.iter().any(|(path, _)| path.exists())
     }
-
-    /// Get statistics about discovered configuration files
-    #[allow(dead_code)]
-    pub fn get_config_stats(&self) -> (usize, usize, HashMap<MCPClient, usize>) {
-        let total_paths = self.config_paths.len();
-        let existing_files = self
-            .config_paths
-            .iter()
-            .filter(|(path, _)| path.exists())
-            .count();
-
-        let mut client_counts = HashMap::new();
-        for (path, client) in &self.config_paths {
-            if path.exists() {
-                *client_counts.entry(client.clone()).or_insert(0) += 1;
-            }
-        }
-
-        (total_paths, existing_files, client_counts)
-    }
 }
 
 #[cfg(test)]
@@ -1760,24 +1706,6 @@ mod tests {
             MCPConfigManager::get_client_from_path("/some/unknown/path.json"),
             None
         );
-    }
-
-    #[test]
-    fn test_client_shorthands_to_paths() {
-        let paths = MCPConfigManager::client_shorthands_to_paths(&["cursor", "claude"]);
-
-        // Should contain paths for both cursor and claude
-        let cursor_paths: Vec<_> = paths
-            .iter()
-            .filter(|(_, client)| *client == MCPClient::Cursor)
-            .collect();
-        let claude_paths: Vec<_> = paths
-            .iter()
-            .filter(|(_, client)| *client == MCPClient::Claude)
-            .collect();
-
-        assert!(!cursor_paths.is_empty());
-        assert!(!claude_paths.is_empty());
     }
 
     #[test]
@@ -1989,14 +1917,6 @@ mod tests {
         assert!(
             !paths.is_empty(),
             "Should discover some configuration paths"
-        );
-
-        // Test that caching works
-        let cached_paths = MCPConfigManager::get_all_config_paths();
-        assert_eq!(
-            paths.len(),
-            cached_paths.len(),
-            "Cached paths should match discovered paths"
         );
     }
 

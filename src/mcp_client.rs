@@ -133,7 +133,6 @@ impl McpClient {
 
         let session = MCPSession {
             server_info: Some(server_info),
-            session_id: None,
             endpoint_url: url.to_string(),
         };
 
@@ -209,7 +208,6 @@ impl McpClient {
 
         let session = MCPSession {
             server_info: Some(server_info),
-            session_id: None,
             endpoint_url: url.to_string(),
         };
 
@@ -312,7 +310,6 @@ impl McpClient {
 
         let session = MCPSession {
             server_info: Some(server_info),
-            session_id: None,
             endpoint_url: endpoint,
         };
 

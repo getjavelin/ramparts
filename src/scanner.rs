@@ -1,4 +1,4 @@
-use crate::config::{MCPConfig, MCPConfigManager, MCPServerConfig, ScannerConfig};
+use crate::config::{self, MCPConfig, MCPConfigManager, MCPServerConfig, ScannerConfig};
 use crate::constants::{messages, protocol};
 use crate::mcp_client::McpClient;
 use crate::security::{
@@ -206,16 +206,12 @@ use std::sync::Arc;
 #[cfg(feature = "yara-x-scanning")]
 pub struct YaraMatchInfo {
     pub rule_name: String,
-    #[allow(dead_code)]
-    pub rule_metadata: Option<crate::types::YaraRuleMetadata>,
 }
 
 /// Enhanced YARA match with rule metadata (non-YARA fallback)
 #[cfg(not(feature = "yara-x-scanning"))]
 pub struct YaraMatchInfo {
     pub rule_name: String,
-    #[allow(dead_code)]
-    pub rule_metadata: Option<crate::types::YaraRuleMetadata>,
 }
 
 /// Threat detection rules engine that loads YARA-X rules from directory structure
@@ -232,7 +228,6 @@ pub struct ThreatRules {
 #[derive(Debug, Clone)]
 pub struct RuleMetadata {
     pub name: String,
-    pub tags: Vec<String>,
 }
 
 impl ThreatRules {
@@ -340,8 +335,6 @@ impl ThreatRules {
             post_scan_count: self.post_scan_rules.len(),
             pre_scan_rules: Vec::new(), // Empty for memory stats - not needed for this use case
             post_scan_rules: Vec::new(), // Empty for memory stats - not needed for this use case
-            pre_scan_tags: HashMap::new(), // Empty for now - could be populated with actual tag counts
-            post_scan_tags: HashMap::new(), // Empty for now - could be populated with actual tag counts
         }
     }
 
@@ -383,7 +376,6 @@ impl ThreatRules {
                         // Create metadata for the rule
                         let metadata = RuleMetadata {
                             name: rule_name.clone(),
-                            tags: vec!["yara-x".to_string(), "security".to_string()],
                         };
                         let metadata_key = format!("{phase}:{rule_name}");
                         self.rule_metadata.insert(metadata_key, metadata);
@@ -403,63 +395,6 @@ impl ThreatRules {
         Ok(rules)
     }
 
-    /// Helper method to extract metadata from YARA-X rule matches
-    #[cfg(feature = "yara-x-scanning")]
-    fn extract_yara_metadata(
-        &self,
-        rule: &yara_x::Rule,
-        phase: &str,
-    ) -> Option<crate::types::YaraRuleMetadata> {
-        let mut raw_metadata = HashMap::new();
-        for (key, value) in rule.metadata() {
-            let value_str = match value {
-                yara_x::MetaValue::Integer(i) => i.to_string(),
-                yara_x::MetaValue::Bool(b) => b.to_string(),
-                yara_x::MetaValue::String(s) => s.to_string(),
-                yara_x::MetaValue::Bytes(b) => format!("{b:?}"),
-                yara_x::MetaValue::Float(f) => f.to_string(),
-            };
-            raw_metadata.insert(key.to_string(), value_str);
-        }
-
-        if raw_metadata.is_empty() {
-            // Fallback to stored metadata if no match metadata available
-            let rule_name = rule.identifier();
-            let metadata_key = format!("{phase}:{rule_name}");
-            self.rule_metadata.get(&metadata_key).map(|stored_meta| {
-                crate::types::YaraRuleMetadata {
-                    name: Some(stored_meta.name.clone()),
-                    author: Some("Ramparts Security Team".to_string()),
-                    date: None,
-                    version: None,
-                    description: Some(stored_meta.name.clone()),
-                    severity: Some("MEDIUM".to_string()),
-                    category: Some(stored_meta.tags.join(",")),
-                    confidence: None,
-                    tags: stored_meta.tags.clone(),
-                }
-            })
-        } else {
-            let tags = if let Some(category) = raw_metadata.get("category") {
-                category.split(',').map(|s| s.trim().to_string()).collect()
-            } else {
-                vec!["yara-x".to_string(), "security".to_string()]
-            };
-
-            Some(crate::types::YaraRuleMetadata {
-                name: raw_metadata.get("name").cloned(),
-                author: raw_metadata.get("author").cloned(),
-                date: raw_metadata.get("date").cloned(),
-                version: raw_metadata.get("version").cloned(),
-                description: raw_metadata.get("description").cloned(),
-                severity: raw_metadata.get("severity").cloned(),
-                category: raw_metadata.get("category").cloned(),
-                confidence: raw_metadata.get("confidence").cloned(),
-                tags,
-            })
-        }
-    }
-
     /// Consolidated method to scan text with rules and return enhanced match information
     #[cfg(feature = "yara-x-scanning")]
     fn scan_with_rules_enhanced_internal(
@@ -476,11 +411,8 @@ impl ThreatRules {
             match scanner.scan(text.as_bytes()) {
                 Ok(scan_results) => {
                     for m in scan_results.matching_rules() {
-                        let rule_metadata = self.extract_yara_metadata(&m, phase);
-
                         all_matches.push(YaraMatchInfo {
                             rule_name: m.identifier().to_string(),
-                            rule_metadata,
                         });
                     }
                 }
@@ -514,28 +446,20 @@ impl ThreatRules {
 
     /// Gets statistics about loaded rules
     pub fn stats(&self) -> RuleStats {
-        let mut pre_scan_tags = HashMap::new();
-        let mut post_scan_tags = HashMap::new();
         let mut pre_scan_rules = Vec::new();
         let mut post_scan_rules = Vec::new();
 
-        // Collect rule names and count tags for pre-scan rules
+        // Collect rule names for pre-scan rules
         for (key, metadata) in &self.rule_metadata {
             if key.starts_with("pre:") {
                 pre_scan_rules.push(metadata.name.clone());
-                for tag in &metadata.tags {
-                    *pre_scan_tags.entry(tag.clone()).or_insert(0) += 1;
-                }
             }
         }
 
-        // Collect rule names and count tags for post-scan rules
+        // Collect rule names for post-scan rules
         for (key, metadata) in &self.rule_metadata {
             if key.starts_with("post:") {
                 post_scan_rules.push(metadata.name.clone());
-                for tag in &metadata.tags {
-                    *post_scan_tags.entry(tag.clone()).or_insert(0) += 1;
-                }
             }
         }
 
@@ -544,8 +468,6 @@ impl ThreatRules {
             post_scan_count: self.post_scan_rules.len(),
             pre_scan_rules,
             post_scan_rules,
-            pre_scan_tags,
-            post_scan_tags,
         }
     }
 
@@ -591,10 +513,6 @@ pub struct RuleStats {
     pub post_scan_count: usize,
     pub pre_scan_rules: Vec<String>,
     pub post_scan_rules: Vec<String>,
-    #[allow(dead_code)]
-    pub pre_scan_tags: HashMap<String, usize>,
-    #[allow(dead_code)]
-    pub post_scan_tags: HashMap<String, usize>,
 }
 
 impl Clone for ThreatRules {
@@ -1116,7 +1034,10 @@ impl MCPScanner {
         // Handle both stdio:command and stdio://command formats
         let command = parts[1].trim_start_matches("//");
         let args: Vec<String> = if parts.len() > 2 && !parts[2].is_empty() {
-            parts[2].split(':').map(|s| s.to_string()).collect()
+            parts[2]
+                .split(':')
+                .map(std::string::ToString::to_string)
+                .collect()
         } else {
             Vec::new()
         };
@@ -1172,15 +1093,84 @@ impl MCPScanner {
             Ok(mut scan_data) => {
                 // Apply the same middleware chain as HTTP scanning
                 self.middleware_chain.run_pre_scan(&mut scan_data);
+
+                // === SECURITY ANALYSIS ===
+                // Load scanner configuration for security analysis
+                let scanner_config = match config::ScannerConfigManager::new().load_config() {
+                    Ok(config) => config,
+                    Err(_) => {
+                        debug!("Failed to load scanner config for STDIO security analysis, using defaults");
+                        ScannerConfig::default()
+                    }
+                };
+
+                // Perform security scanning with configuration - same as HTTP flow
+                let security_scanner = if scanner_config.security.enabled {
+                    SecurityScanner::with_config(scanner_config)
+                } else {
+                    SecurityScanner::default()
+                };
+                let mut security_result = SecurityScanResult::new();
+
+                // Batch scan tools for security issues
+                match security_scanner
+                    .scan_tools_batch(&scan_data.tools, options.detailed)
+                    .await
+                {
+                    Ok((tool_issues, analysis_details)) => {
+                        security_result.add_tool_issues(tool_issues);
+                        // Store the analysis details for each tool
+                        for (tool_name, details) in analysis_details {
+                            security_result.add_tool_analysis_details(tool_name, details);
+                        }
+                    }
+                    Err(e) => warn!(
+                        "Failed to batch scan STDIO tools for security issues: {}",
+                        e
+                    ),
+                }
+
+                // Batch scan prompts for security issues
+                if !scan_data.prompts.is_empty() {
+                    match security_scanner
+                        .scan_prompts_batch(&scan_data.prompts, options.detailed)
+                        .await
+                    {
+                        Ok(prompt_issues) => security_result.add_prompt_issues(prompt_issues),
+                        Err(e) => warn!(
+                            "Failed to batch scan STDIO prompts for security issues: {}",
+                            e
+                        ),
+                    }
+                }
+
+                // Batch scan resources for security issues
+                if !scan_data.resources.is_empty() {
+                    match security_scanner
+                        .scan_resources_batch(&scan_data.resources, options.detailed)
+                        .await
+                    {
+                        Ok(resource_issues) => security_result.add_resource_issues(resource_issues),
+                        Err(e) => {
+                            warn!(
+                                "Failed to batch scan STDIO resources for security issues: {}",
+                                e
+                            );
+                        }
+                    }
+                }
+
+                // === POST-SCAN HOOKS ===
                 self.middleware_chain.run_post_scan(&mut scan_data);
 
                 // Populate result with scan data
                 result.status = ScanStatus::Success;
-                result.server_info = session.server_info.clone();
+                result.server_info.clone_from(&session.server_info);
                 result.tools = scan_data.tools;
                 result.resources = scan_data.resources;
                 result.prompts = scan_data.prompts;
                 result.yara_results = scan_data.yara_results;
+                result.security_issues = Some(security_result);
 
                 info!("Successfully scanned STDIO server: {}", display_url);
             }
