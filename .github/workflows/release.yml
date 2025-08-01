@@ -74,7 +74,15 @@ jobs:
       contents: 'read'
     strategy:
       matrix:
-        target: [ ubuntu-24.04, windows-2022, macOS-15 ]
+        include:
+          - target: ubuntu-24.04
+            arch: x86_64
+          - target: windows-2022
+            arch: x86_64
+          - target: macOS-15
+            arch: x86_64
+          - target: macOS-15
+            arch: aarch64
     runs-on: ${{ matrix.target }}
     steps:
       - name: Checkout code
@@ -96,25 +104,31 @@ jobs:
         id: set_env
         shell: bash
         run: |-
-          if [[ ${{ matrix.target }} == "ubuntu-24.04" ]] ; then
+          if [[ ${{ matrix.target }} == "ubuntu-24.04" && ${{ matrix.arch }} == "x86_64" ]] ; then
             echo "crate_target=x86_64-unknown-linux-gnu" >> ${GITHUB_OUTPUT}
             echo "crate_release=ramparts-linux-x86_64" >> ${GITHUB_OUTPUT}
             echo "crate_ext=" >> ${GITHUB_OUTPUT}
-          elif [[ ${{ matrix.target }} == "windows-2022" ]] ; then
+          elif [[ ${{ matrix.target }} == "windows-2022" && ${{ matrix.arch }} == "x86_64" ]] ; then
             echo "crate_target=x86_64-pc-windows-msvc" >> ${GITHUB_OUTPUT}
-            echo "crate_release=ramparts-windows-x86_64.exe" >> ${GITHUB_OUTPUT}
+            echo "crate_release=ramparts-windows-x86_64" >> ${GITHUB_OUTPUT}
             echo "crate_ext=.exe" >> ${GITHUB_OUTPUT}
-          elif [[ ${{ matrix.target }} == "macOS-15" ]] ; then
+          elif [[ ${{ matrix.target }} == "macOS-15" && ${{ matrix.arch }} == "x86_64" ]] ; then
             echo "crate_target=x86_64-apple-darwin" >> ${GITHUB_OUTPUT}
             echo "crate_release=ramparts-macos-x86_64" >> ${GITHUB_OUTPUT}
             echo "crate_ext=" >> ${GITHUB_OUTPUT}
+          elif [[ ${{ matrix.target }} == "macOS-15" && ${{ matrix.arch }} == "aarch64" ]] ; then
+            echo "crate_target=aarch64-apple-darwin" >> ${GITHUB_OUTPUT}
+            echo "crate_release=ramparts-macos-aarch64" >> ${GITHUB_OUTPUT}
+            echo "crate_ext=" >> ${GITHUB_OUTPUT}
           else
-            echo "Not maching the target...!"
+            echo "Not matching the target...!"
             exit 1
           fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ steps.set_env.outputs.crate_target }}
 
       - name: Install YARA (Ubuntu)
         if: runner.os == 'Linux'
@@ -157,20 +171,20 @@ jobs:
       - name: Build release binaries
         run: |
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            cargo build --release --no-default-features
+            cargo build --release --target ${{ steps.set_env.outputs.crate_target }} --no-default-features
           else
-            cargo build --release
+            cargo build --release --target ${{ steps.set_env.outputs.crate_target }}
           fi
         shell: bash
 
       - name: Create release assets
         run: |
           mkdir -p release
-          cp target/release/ramparts${{ steps.set_env.outputs.crate_ext }} release/${{ steps.set_env.outputs.crate_release }}${{ steps.set_env.outputs.crate_ext }}
+          cp target/${{ steps.set_env.outputs.crate_target }}/release/ramparts${{ steps.set_env.outputs.crate_ext }} release/${{ steps.set_env.outputs.crate_release }}${{ steps.set_env.outputs.crate_ext }}
 
           # Create checksums
           cd release
-          sha256sum * > ${{ matrix.target }}_checksums.txt
+          sha256sum * > ${{ matrix.target }}-${{ matrix.arch }}_checksums.txt
         shell: bash
 
       - name: Upload release assets
@@ -180,7 +194,7 @@ jobs:
         with:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: ./release/${{ steps.set_env.outputs.crate_release }}${{ steps.set_env.outputs.crate_ext }}
-          asset_name: ${{ steps.set_env.outputs.crate_release }}
+          asset_name: ${{ steps.set_env.outputs.crate_release }}${{ steps.set_env.outputs.crate_ext }}
           asset_content_type: application/octet-stream
 
       - name: Upload checksums
@@ -189,8 +203,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.DEVOPS_GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./release/${{ matrix.target }}_checksums.txt
-          asset_name: ${{ matrix.target }}_checksums.txt
+          asset_path: ./release/${{ matrix.target }}-${{ matrix.arch }}_checksums.txt
+          asset_name: ${{ matrix.target }}-${{ matrix.arch }}_checksums.txt
           asset_content_type: text/plain
 
   javelin-crate:
