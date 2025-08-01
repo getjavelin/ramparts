@@ -401,8 +401,6 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
         println!("{resource_table}");
     }
 
-
-
     // Security Assessments Completed
     println!("\n{}", "Security Assessments".bold());
     let mut assessments = Vec::new();
@@ -711,8 +709,6 @@ struct ResourceRow {
     #[tabled(rename = "MIME Type")]
     mime_type: String,
 }
-
-
 
 /// Enhanced security assessment table with per-tool results
 #[allow(clippy::too_many_lines)]
