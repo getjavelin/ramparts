@@ -4,12 +4,15 @@
 /// all available transport types: subprocess, SSE, and streamable HTTP.
 use crate::types::{MCPPrompt, MCPPromptArgument, MCPResource, MCPServerInfo, MCPSession, MCPTool};
 use anyhow::{anyhow, Result};
+use reqwest::{
+    header::{HeaderMap, HeaderName, HeaderValue},
+    Client as HttpClient,
+};
 use rmcp::{
     service::RunningService,
     transport::{SseClientTransport, StreamableHttpClientTransport, TokioChildProcess},
     RoleClient, ServiceExt,
 };
-use reqwest::{Client as HttpClient, header::{HeaderMap, HeaderName, HeaderValue}};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::process::Command;
@@ -79,18 +82,25 @@ impl McpClient {
         let transport = if let Some(headers) = auth_headers {
             debug!("Creating HTTP client with {} auth headers", headers.len());
             let mut header_map = HeaderMap::new();
-            
+
             for (key, value) in headers {
-                if let (Ok(name), Ok(val)) = (HeaderName::from_bytes(key.as_bytes()), HeaderValue::from_str(value)) {
+                if let (Ok(name), Ok(val)) = (
+                    HeaderName::from_bytes(key.as_bytes()),
+                    HeaderValue::from_str(value),
+                ) {
                     header_map.insert(name, val);
                 }
             }
-            
-            let client = HttpClient::builder().default_headers(header_map).build().unwrap();
-            let config = rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig {
-                uri: url.into(),
-                ..Default::default()
-            };
+
+            let client = HttpClient::builder()
+                .default_headers(header_map)
+                .build()
+                .unwrap();
+            let config =
+                rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig {
+                    uri: url.into(),
+                    ..Default::default()
+                };
             StreamableHttpClientTransport::with_client(client, config)
         } else {
             StreamableHttpClientTransport::from_uri(url)
@@ -170,14 +180,20 @@ impl McpClient {
         let transport = if let Some(headers) = auth_headers {
             debug!("Creating SSE client with {} auth headers", headers.len());
             let mut header_map = HeaderMap::new();
-            
+
             for (key, value) in headers {
-                if let (Ok(name), Ok(val)) = (HeaderName::from_bytes(key.as_bytes()), HeaderValue::from_str(value)) {
+                if let (Ok(name), Ok(val)) = (
+                    HeaderName::from_bytes(key.as_bytes()),
+                    HeaderValue::from_str(value),
+                ) {
                     header_map.insert(name, val);
                 }
             }
-            
-            let client = HttpClient::builder().default_headers(header_map).build().unwrap();
+
+            let client = HttpClient::builder()
+                .default_headers(header_map)
+                .build()
+                .unwrap();
             let config = rmcp::transport::sse_client::SseClientConfig {
                 sse_endpoint: url.into(),
                 ..Default::default()
