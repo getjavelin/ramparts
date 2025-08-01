@@ -163,7 +163,7 @@ pub struct MCPServerConfig {
 
 impl MCPServerConfig {
     /// Get display URL for logging and display purposes
-    pub fn as_display_url(&self) -> String {
+    pub fn to_display_url(&self) -> String {
         if let Some(url) = &self.url {
             url.clone()
         } else if let Some(command) = &self.command {
@@ -781,7 +781,7 @@ impl MCPConfigManager {
         ));
 
         // Claude Code workspace configurations
-        paths.push((current_dir.join(".claude.json"), MCPClient::Claude));
+        paths.push((current_dir.join(".claude.json"), MCPClient::ClaudeCode));
         paths.push((
             current_dir.join(".claude").join("mcp.json"),
             MCPClient::Claude,
@@ -820,7 +820,7 @@ impl MCPConfigManager {
                 paths.push((dir.join(".cursor").join("mcp.json"), MCPClient::Cursor));
 
                 // Claude Code project root configurations
-                paths.push((dir.join(".claude.json"), MCPClient::Claude));
+                paths.push((dir.join(".claude.json"), MCPClient::ClaudeCode));
                 paths.push((dir.join(".claude").join("mcp.json"), MCPClient::Claude));
 
                 // Windsurf project root configurations
@@ -1046,7 +1046,7 @@ impl MCPConfigManager {
             ));
 
             // Claude Code - multiple scopes and file formats
-            paths.push((home_dir.join(".claude.json"), MCPClient::Claude)); // User/Global scope
+            paths.push((home_dir.join(".claude.json"), MCPClient::ClaudeCode)); // User/Global scope
             paths.push((home_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
             paths.push((home_dir.join(".claude.json"), MCPClient::ClaudeCode));
             paths.push((
@@ -1133,7 +1133,7 @@ impl MCPConfigManager {
             ));
 
             // Claude Code - multiple scopes and formats
-            paths.push((home_dir.join(".claude.json"), MCPClient::Claude)); // User/Global scope
+            paths.push((home_dir.join(".claude.json"), MCPClient::ClaudeCode)); // User/Global scope
             paths.push((home_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
 
             // Neovim
@@ -1197,7 +1197,7 @@ impl MCPConfigManager {
         // Check specific file names for client detection
         if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
             match filename {
-                "claude_desktop_config.json" | ".claude.json" => return Some(MCPClient::Claude),
+                "claude_desktop_config.json" => return Some(MCPClient::Claude),
                 "settings.json" => {
                     // Check if it's in a VS Code directory
                     if components

@@ -1066,7 +1066,7 @@ impl MCPScanner {
             .ok_or_else(|| anyhow!("STDIO server missing command"))?;
 
         let args = server_config.args.as_deref().unwrap_or(&[]);
-        let display_url = server_config.as_display_url();
+        let display_url = server_config.to_display_url();
 
         info!("Scanning STDIO MCP server: {}", display_url);
 
@@ -1202,7 +1202,7 @@ impl MCPScanner {
                 info!(
                     "Scanning MCP server from IDE config: [\x1b[1m{}\x1b[0m] ({})",
                     server.name.as_deref().unwrap_or("unnamed"),
-                    server.as_display_url()
+                    server.to_display_url()
                 );
 
                 let server_options = Self::build_server_options(&options, &config, server);
@@ -1217,10 +1217,10 @@ impl MCPScanner {
                         Err(e) => {
                             warn!(
                                 "Failed to scan HTTP MCP server [\x1b[1m{}\x1b[0m]: {}",
-                                server.as_display_url(),
+                                server.to_display_url(),
                                 e
                             );
-                            let mut failed_result = ScanResult::new(server.as_display_url());
+                            let mut failed_result = ScanResult::new(server.to_display_url());
                             failed_result.status = ScanStatus::Failed(e.to_string());
                             failed_result.add_error(format!("HTTP scan failed: {e}"));
                             results.push(failed_result);
@@ -1235,10 +1235,10 @@ impl MCPScanner {
                         Err(e) => {
                             warn!(
                                 "Failed to scan STDIO MCP server [\x1b[1m{}\x1b[0m]: {}",
-                                server.as_display_url(),
+                                server.to_display_url(),
                                 e
                             );
-                            let mut failed_result = ScanResult::new(server.as_display_url());
+                            let mut failed_result = ScanResult::new(server.to_display_url());
                             failed_result.status = ScanStatus::Failed(e.to_string());
                             failed_result.add_error(format!("STDIO scan failed: {e}"));
                             results.push(failed_result);
@@ -1367,7 +1367,7 @@ impl MCPScanner {
         // Fetch tools, resources, and prompts using rmcp SDK with proper error handling
         let mut fetch_errors = Vec::new();
 
-        scan_data.tools = match self.mcp_client.get_tools(&session).await {
+        scan_data.tools = match self.mcp_client.list_tools(&session).await {
             Ok(tools) => {
                 debug!("Successfully fetched {} tools via rmcp", tools.len());
                 tools
@@ -1380,7 +1380,7 @@ impl MCPScanner {
             }
         };
 
-        scan_data.resources = match self.mcp_client.get_resources(&session).await {
+        scan_data.resources = match self.mcp_client.list_resources(&session).await {
             Ok(resources) => {
                 debug!(
                     "Successfully fetched {} resources via rmcp",
@@ -1396,7 +1396,7 @@ impl MCPScanner {
             }
         };
 
-        scan_data.prompts = match self.mcp_client.get_prompts(&session).await {
+        scan_data.prompts = match self.mcp_client.list_prompts(&session).await {
             Ok(prompts) => {
                 debug!("Successfully fetched {} prompts via rmcp", prompts.len());
                 prompts
@@ -1436,7 +1436,7 @@ impl MCPScanner {
         // Fetch tools, resources, and prompts using existing session with proper error handling
         let mut fetch_errors = Vec::new();
 
-        scan_data.tools = match self.mcp_client.get_tools(session).await {
+        scan_data.tools = match self.mcp_client.list_tools(session).await {
             Ok(tools) => {
                 debug!("Successfully fetched {} tools from session", tools.len());
                 tools
@@ -1449,7 +1449,7 @@ impl MCPScanner {
             }
         };
 
-        scan_data.resources = match self.mcp_client.get_resources(session).await {
+        scan_data.resources = match self.mcp_client.list_resources(session).await {
             Ok(resources) => {
                 debug!(
                     "Successfully fetched {} resources from session",
@@ -1465,7 +1465,7 @@ impl MCPScanner {
             }
         };
 
-        scan_data.prompts = match self.mcp_client.get_prompts(session).await {
+        scan_data.prompts = match self.mcp_client.list_prompts(session).await {
             Ok(prompts) => {
                 debug!(
                     "Successfully fetched {} prompts from session",

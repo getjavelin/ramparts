@@ -372,7 +372,7 @@ impl McpClient {
     }
 
     /// Fetch tools from the MCP server using the official SDK
-    pub async fn get_tools(&self, session: &MCPSession) -> Result<Vec<MCPTool>> {
+    pub async fn list_tools(&self, session: &MCPSession) -> Result<Vec<MCPTool>> {
         debug!("Fetching tools from MCP server: {}", session.endpoint_url);
 
         let services = self.services.lock().await;
@@ -419,7 +419,7 @@ impl McpClient {
     }
 
     /// Fetch resources from the MCP server
-    pub async fn get_resources(&self, session: &MCPSession) -> Result<Vec<MCPResource>> {
+    pub async fn list_resources(&self, session: &MCPSession) -> Result<Vec<MCPResource>> {
         debug!(
             "Fetching resources from MCP server: {}",
             session.endpoint_url
@@ -468,7 +468,7 @@ impl McpClient {
     }
 
     /// Fetch prompts from the MCP server  
-    pub async fn get_prompts(&self, session: &MCPSession) -> Result<Vec<MCPPrompt>> {
+    pub async fn list_prompts(&self, session: &MCPSession) -> Result<Vec<MCPPrompt>> {
         debug!("Fetching prompts from MCP server: {}", session.endpoint_url);
 
         let services = self.services.lock().await;
