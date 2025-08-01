@@ -69,7 +69,8 @@ pub struct ClaudeDesktopConfig {
     #[serde(rename = "mcpServers")]
     pub mcp_servers: Option<HashMap<String, ClaudeDesktopServerConfig>>,
     /// Global settings
-    pub globalShortcut: Option<String>,
+    #[serde(rename = "globalShortcut")]
+    pub global_shortcut: Option<String>,
     /// Other settings
     #[serde(flatten)]
     pub other_settings: Option<HashMap<String, serde_json::Value>>,
@@ -236,8 +237,6 @@ pub struct MCPServerOptions {
 }
 
 // IDE-specific configuration formats
-
-
 
 /// VS Code MCP configuration format with array of servers
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -757,61 +756,87 @@ impl MCPConfigManager {
     /// Get workspace-level MCP configuration paths (current working directory and workspace)
     fn get_workspace_paths() -> Vec<(PathBuf, MCPClient)> {
         let mut paths = Vec::new();
-        
+
         // Current working directory workspace configurations
         let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        
+
         // VS Code workspace configurations
-        paths.push((current_dir.join(".vscode").join("mcp.json"), MCPClient::VSCode));
-        paths.push((current_dir.join(".vscode").join("settings.json"), MCPClient::VSCode));
-        
-        // Cursor workspace configurations  
-        paths.push((current_dir.join(".cursor").join("mcp.json"), MCPClient::Cursor));
-        paths.push((current_dir.join(".cursor").join("settings.json"), MCPClient::Cursor));
-        
+        paths.push((
+            current_dir.join(".vscode").join("mcp.json"),
+            MCPClient::VSCode,
+        ));
+        paths.push((
+            current_dir.join(".vscode").join("settings.json"),
+            MCPClient::VSCode,
+        ));
+
+        // Cursor workspace configurations
+        paths.push((
+            current_dir.join(".cursor").join("mcp.json"),
+            MCPClient::Cursor,
+        ));
+        paths.push((
+            current_dir.join(".cursor").join("settings.json"),
+            MCPClient::Cursor,
+        ));
+
         // Claude Code workspace configurations
         paths.push((current_dir.join(".claude.json"), MCPClient::Claude));
-        paths.push((current_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
-        
-        // Windsurf workspace configurations  
-        paths.push((current_dir.join(".windsurf").join("mcp.json"), MCPClient::Windsurf));
-        paths.push((current_dir.join(".windsurf").join("mcp_config.json"), MCPClient::Windsurf));
-        
+        paths.push((
+            current_dir.join(".claude").join("mcp.json"),
+            MCPClient::Claude,
+        ));
+
+        // Windsurf workspace configurations
+        paths.push((
+            current_dir.join(".windsurf").join("mcp.json"),
+            MCPClient::Windsurf,
+        ));
+        paths.push((
+            current_dir.join(".windsurf").join("mcp_config.json"),
+            MCPClient::Windsurf,
+        ));
+
         // Also check parent directories up to 3 levels for project root configurations
         let mut parent = current_dir.parent();
         let mut level = 0;
         while let Some(dir) = parent {
-            if level >= 3 { break; }
-            
+            if level >= 3 {
+                break;
+            }
+
             // Look for common project indicators
-            if dir.join(".git").exists() || 
-               dir.join("package.json").exists() || 
-               dir.join("Cargo.toml").exists() ||
-               dir.join("pyproject.toml").exists() ||
-               dir.join("requirements.txt").exists() {
-                
+            if dir.join(".git").exists()
+                || dir.join("package.json").exists()
+                || dir.join("Cargo.toml").exists()
+                || dir.join("pyproject.toml").exists()
+                || dir.join("requirements.txt").exists()
+            {
                 // VS Code project root configurations
                 paths.push((dir.join(".vscode").join("mcp.json"), MCPClient::VSCode));
                 paths.push((dir.join(".vscode").join("settings.json"), MCPClient::VSCode));
-                
+
                 // Cursor project root configurations
                 paths.push((dir.join(".cursor").join("mcp.json"), MCPClient::Cursor));
-                
+
                 // Claude Code project root configurations
                 paths.push((dir.join(".claude.json"), MCPClient::Claude));
                 paths.push((dir.join(".claude").join("mcp.json"), MCPClient::Claude));
-                
+
                 // Windsurf project root configurations
                 paths.push((dir.join(".windsurf").join("mcp.json"), MCPClient::Windsurf));
-                paths.push((dir.join(".windsurf").join("mcp_config.json"), MCPClient::Windsurf));
-                
+                paths.push((
+                    dir.join(".windsurf").join("mcp_config.json"),
+                    MCPClient::Windsurf,
+                ));
+
                 break; // Stop at first project root found
             }
-            
+
             parent = dir.parent();
             level += 1;
         }
-        
+
         paths
     }
 
@@ -910,7 +935,7 @@ impl MCPConfigManager {
                     user_appdata.join("Cursor").join("User").join("mcp.json"),
                     MCPClient::Cursor,
                 ));
-                
+
                 // VS Code
                 paths.push((
                     user_appdata.join("Code").join("User").join("mcp.json"),
@@ -920,20 +945,25 @@ impl MCPConfigManager {
                     user_appdata.join("Code").join("User").join("settings.json"),
                     MCPClient::VSCode,
                 ));
-                
+
                 // Claude Desktop
                 paths.push((
-                    user_appdata.join("Claude").join("claude_desktop_config.json"),
+                    user_appdata
+                        .join("Claude")
+                        .join("claude_desktop_config.json"),
                     MCPClient::Claude,
                 ));
-                
+
                 // Windsurf
                 paths.push((
                     user_appdata.join("Windsurf").join("User").join("mcp.json"),
                     MCPClient::Windsurf,
                 ));
                 paths.push((
-                    user_appdata.join("Codeium").join("Windsurf").join("mcp_config.json"),
+                    user_appdata
+                        .join("Codeium")
+                        .join("Windsurf")
+                        .join("mcp_config.json"),
                     MCPClient::Windsurf,
                 ));
             }
@@ -995,18 +1025,26 @@ impl MCPConfigManager {
                 MCPClient::VSCode,
             ));
             paths.push((home_dir.join(".vscode").join("mcp.json"), MCPClient::VSCode));
-            paths.push((home_dir.join(".vscode").join("settings.json"), MCPClient::VSCode));
+            paths.push((
+                home_dir.join(".vscode").join("settings.json"),
+                MCPClient::VSCode,
+            ));
 
             // Claude Desktop - uses claude_desktop_config.json
             paths.push((
-                app_support.join("Claude").join("claude_desktop_config.json"),
+                app_support
+                    .join("Claude")
+                    .join("claude_desktop_config.json"),
                 MCPClient::Claude,
             ));
             paths.push((
-                app_support.join("Claude").join("User").join("claude_desktop_config.json"),
+                app_support
+                    .join("Claude")
+                    .join("User")
+                    .join("claude_desktop_config.json"),
                 MCPClient::Claude,
             ));
-            
+
             // Claude Code - multiple scopes and file formats
             paths.push((home_dir.join(".claude.json"), MCPClient::Claude)); // User/Global scope
             paths.push((home_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
@@ -1063,7 +1101,10 @@ impl MCPConfigManager {
 
             // VS Code
             paths.push((home_dir.join(".vscode").join("mcp.json"), MCPClient::VSCode));
-            paths.push((home_dir.join(".vscode").join("settings.json"), MCPClient::VSCode));
+            paths.push((
+                home_dir.join(".vscode").join("settings.json"),
+                MCPClient::VSCode,
+            ));
             paths.push((
                 config_dir.join("Code").join("User").join("mcp.json"),
                 MCPClient::VSCode,
@@ -1082,12 +1123,15 @@ impl MCPConfigManager {
             ));
 
             // Claude Desktop - uses claude_desktop_config.json
-            paths.push((home_dir.join(".claude").join("claude_desktop_config.json"), MCPClient::Claude));
+            paths.push((
+                home_dir.join(".claude").join("claude_desktop_config.json"),
+                MCPClient::Claude,
+            ));
             paths.push((
                 config_dir.join("claude").join("claude_desktop_config.json"),
                 MCPClient::Claude,
             ));
-            
+
             // Claude Code - multiple scopes and formats
             paths.push((home_dir.join(".claude.json"), MCPClient::Claude)); // User/Global scope
             paths.push((home_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
@@ -1157,7 +1201,10 @@ impl MCPConfigManager {
                 ".claude.json" => return Some(MCPClient::Claude),
                 "settings.json" => {
                     // Check if it's in a VS Code directory
-                    if components.iter().any(|c| c.contains("code") || c.contains("vscode")) {
+                    if components
+                        .iter()
+                        .any(|c| c.contains("code") || c.contains("vscode"))
+                    {
                         return Some(MCPClient::VSCode);
                     }
                 }
@@ -1252,7 +1299,7 @@ impl MCPConfigManager {
         // Detect IDE type by checking the client type from path
         let client = Self::get_client_from_path(path);
         let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        
+
         // Try parsing based on client type and file name
         match client {
             Some(MCPClient::Cursor) => {
@@ -1264,7 +1311,8 @@ impl MCPConfigManager {
             Some(MCPClient::Claude) => {
                 // Claude Desktop uses claude_desktop_config.json
                 if filename == "claude_desktop_config.json" {
-                    if let Ok(claude_config) = serde_json::from_str::<ClaudeDesktopConfig>(&content) {
+                    if let Ok(claude_config) = serde_json::from_str::<ClaudeDesktopConfig>(&content)
+                    {
                         debug!("Parsed as Claude Desktop configuration format");
                         return Ok(Self::convert_claude_desktop_config(claude_config));
                     }
@@ -1287,7 +1335,8 @@ impl MCPConfigManager {
                 }
                 // VS Code mcp.json uses the new format
                 else if filename == "mcp.json" {
-                    if let Ok(vscode_mcp_config) = serde_json::from_str::<VSCodeMCPConfig>(&content) {
+                    if let Ok(vscode_mcp_config) = serde_json::from_str::<VSCodeMCPConfig>(&content)
+                    {
                         debug!("Parsed as VS Code MCP configuration format");
                         return Ok(Self::convert_vscode_mcp_config(vscode_mcp_config));
                     }
@@ -1304,17 +1353,25 @@ impl MCPConfigManager {
                 if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
                     debug!("Parsed as Cursor MCP configuration format (fallback)");
                     Ok(Self::convert_cursor_config(cursor_config))
-                } else if let Ok(claude_config) = serde_json::from_str::<ClaudeDesktopConfig>(&content) {
+                } else if let Ok(claude_config) =
+                    serde_json::from_str::<ClaudeDesktopConfig>(&content)
+                {
                     debug!("Parsed as Claude Desktop configuration format (fallback)");
                     Ok(Self::convert_claude_desktop_config(claude_config))
                 } else if let Ok(vscode_config) = serde_json::from_str::<VSCodeSettings>(&content) {
                     debug!("Parsed as VS Code settings configuration format (fallback)");
                     Ok(Self::convert_vscode_config(vscode_config))
-                } else if let Ok(vscode_mcp_config) = serde_json::from_str::<VSCodeMCPConfig>(&content) {
+                } else if let Ok(vscode_mcp_config) =
+                    serde_json::from_str::<VSCodeMCPConfig>(&content)
+                {
                     debug!("Parsed as VS Code MCP configuration format (fallback)");
                     Ok(Self::convert_vscode_mcp_config(vscode_mcp_config))
                 } else {
-                    Err(anyhow!("Failed to parse IDE config file {}: {}", path.display(), e))
+                    Err(anyhow!(
+                        "Failed to parse IDE config file {}: {}",
+                        path.display(),
+                        e
+                    ))
                 }
             }
         }
@@ -1322,44 +1379,40 @@ impl MCPConfigManager {
 
     /// Convert Cursor MCP configuration to standard format
     fn convert_cursor_config(cursor_config: CursorMCPConfig) -> MCPConfig {
-        let servers = if let Some(mcp_servers) = cursor_config.mcp_servers {
-            Some(
-                mcp_servers
-                    .into_iter()
-                    .map(|(name, server_config)| {
-                        // Use explicit URL first, then build from transport config
-                        let url = if let Some(url) = server_config.url {
-                            url
-                        } else if let Some(transport) = &server_config.transport {
-                            let host = transport.host.as_deref().unwrap_or("localhost");
-                            let port = transport.port.unwrap_or(8080);
-                            let scheme = match transport.transport_type.as_deref() {
-                                Some("http") | Some("streamable-http") => "http",
-                                Some("https") => "https",
-                                _ => "http",
-                            };
-                            format!("{}://{}:{}", scheme, host, port)
-                        } else {
-                            // Default URL for servers without transport config
-                            "http://localhost:8123".to_string()
+        let servers = cursor_config.mcp_servers.map(|mcp_servers| {
+            mcp_servers
+                .into_iter()
+                .map(|(name, server_config)| {
+                    // Use explicit URL first, then build from transport config
+                    let url = if let Some(url) = server_config.url {
+                        url
+                    } else if let Some(transport) = &server_config.transport {
+                        let host = transport.host.as_deref().unwrap_or("localhost");
+                        let port = transport.port.unwrap_or(8080);
+                        let scheme = match transport.transport_type.as_deref() {
+                            Some("http") | Some("streamable-http") => "http",
+                            Some("https") => "https",
+                            _ => "http",
                         };
+                        format!("{scheme}://{host}:{port}")
+                    } else {
+                        // Default URL for servers without transport config
+                        "http://localhost:8123".to_string()
+                    };
 
-                        MCPServerConfig {
-                            name: Some(name),
-                            url: Some(url),
-                            command: None,
-                            args: None,
-                            env: None,
-                            description: server_config.description,
-                            auth_headers: None, // Cursor format doesn't specify auth headers at server level
-                            options: None, // Could be extended to convert any server-specific options
-                        }
-                    })
-                    .collect(),
-            )
-        } else {
-            None
-        };
+                    MCPServerConfig {
+                        name: Some(name),
+                        url: Some(url),
+                        command: None,
+                        args: None,
+                        env: None,
+                        description: server_config.description,
+                        auth_headers: None, // Cursor format doesn't specify auth headers at server level
+                        options: None, // Could be extended to convert any server-specific options
+                    }
+                })
+                .collect()
+        });
 
         MCPConfig {
             servers,
@@ -1370,44 +1423,40 @@ impl MCPConfigManager {
 
     /// Convert Claude Desktop configuration to standard format
     fn convert_claude_desktop_config(claude_config: ClaudeDesktopConfig) -> MCPConfig {
-        let servers = if let Some(mcp_servers) = claude_config.mcp_servers {
-            Some(
-                mcp_servers
-                    .into_iter()
-                    .filter_map(|(name, server_config)| {
-                        // Skip disabled servers
-                        if server_config.disabled.unwrap_or(false) {
-                            return None;
-                        }
+        let servers = claude_config.mcp_servers.map(|mcp_servers| {
+            mcp_servers
+                .into_iter()
+                .filter_map(|(name, server_config)| {
+                    // Skip disabled servers
+                    if server_config.disabled.unwrap_or(false) {
+                        return None;
+                    }
 
-                        // Use explicit URL if provided, otherwise build from command
-                        let url = if let Some(url) = server_config.url {
-                            url
-                        } else if server_config.command.is_some() {
-                            // For command-based servers, create a placeholder URL
-                            // This represents a local server that will be started by the command
-                            format!("stdio://{}", name)
-                        } else {
-                            // Default URL for servers without explicit configuration
-                            "http://localhost:8123".to_string()
-                        };
+                    // Use explicit URL if provided, otherwise build from command
+                    let url = if let Some(url) = server_config.url {
+                        url
+                    } else if server_config.command.is_some() {
+                        // For command-based servers, create a placeholder URL
+                        // This represents a local server that will be started by the command
+                        format!("stdio://{name}")
+                    } else {
+                        // Default URL for servers without explicit configuration
+                        "http://localhost:8123".to_string()
+                    };
 
-                        Some(MCPServerConfig {
-                            name: Some(name),
-                            url: Some(url),
-                            command: None,
-                            args: None,
-                            env: None,
-                            description: None, // Claude Desktop format doesn't include descriptions
-                            auth_headers: None,
-                            options: None,
-                        })
+                    Some(MCPServerConfig {
+                        name: Some(name),
+                        url: Some(url),
+                        command: None,
+                        args: None,
+                        env: None,
+                        description: None, // Claude Desktop format doesn't include descriptions
+                        auth_headers: None,
+                        options: None,
                     })
-                    .collect(),
-            )
-        } else {
-            None
-        };
+                })
+                .collect()
+        });
 
         MCPConfig {
             servers,
@@ -1418,38 +1467,34 @@ impl MCPConfigManager {
 
     /// Convert VS Code settings configuration to standard format
     fn convert_vscode_config(vscode_config: VSCodeSettings) -> MCPConfig {
-        let servers = if let Some(mcp_servers) = vscode_config.mcp_servers {
-            Some(
-                mcp_servers
-                    .into_iter()
-                    .map(|(name, server_config)| {
-                        // Use explicit URL if provided, otherwise build from command
-                        let url = if let Some(url) = server_config.url {
-                            url
-                        } else if server_config.command.is_some() {
-                            // For command-based servers, create a placeholder URL
-                            format!("stdio://{}", name)
-                        } else {
-                            // Default URL for servers without explicit configuration
-                            "http://localhost:8123".to_string()
-                        };
+        let servers = vscode_config.mcp_servers.map(|mcp_servers| {
+            mcp_servers
+                .into_iter()
+                .map(|(name, server_config)| {
+                    // Use explicit URL if provided, otherwise build from command
+                    let url = if let Some(url) = server_config.url {
+                        url
+                    } else if server_config.command.is_some() {
+                        // For command-based servers, create a placeholder URL
+                        format!("stdio://{name}")
+                    } else {
+                        // Default URL for servers without explicit configuration
+                        "http://localhost:8123".to_string()
+                    };
 
-                        MCPServerConfig {
-                            name: Some(name),
-                            url: Some(url),
-                            command: None,
-                            args: None,
-                            env: None,
-                            description: None, // VS Code settings don't typically include descriptions
-                            auth_headers: None,
-                            options: None,
-                        }
-                    })
-                    .collect(),
-            )
-        } else {
-            None
-        };
+                    MCPServerConfig {
+                        name: Some(name),
+                        url: Some(url),
+                        command: None,
+                        args: None,
+                        env: None,
+                        description: None, // VS Code settings don't typically include descriptions
+                        auth_headers: None,
+                        options: None,
+                    }
+                })
+                .collect()
+        });
 
         MCPConfig {
             servers,
@@ -1460,38 +1505,34 @@ impl MCPConfigManager {
 
     /// Convert VS Code MCP configuration (new mcp.json format) to standard format
     fn convert_vscode_mcp_config(vscode_mcp_config: VSCodeMCPConfig) -> MCPConfig {
-        let servers = if let Some(servers) = vscode_mcp_config.servers {
-            Some(
-                servers
-                    .into_iter()
-                    .map(|(name, server_config)| {
-                        // Use explicit URL if provided, otherwise build from command
-                        let url = if let Some(url) = server_config.url {
-                            url
-                        } else if server_config.command.is_some() {
-                            // For command-based servers, create a placeholder URL
-                            format!("stdio://{}", name)
-                        } else {
-                            // Default URL for servers without explicit configuration
-                            "http://localhost:8123".to_string()
-                        };
+        let servers = vscode_mcp_config.servers.map(|servers| {
+            servers
+                .into_iter()
+                .map(|(name, server_config)| {
+                    // Use explicit URL if provided, otherwise build from command
+                    let url = if let Some(url) = server_config.url {
+                        url
+                    } else if server_config.command.is_some() {
+                        // For command-based servers, create a placeholder URL
+                        format!("stdio://{name}")
+                    } else {
+                        // Default URL for servers without explicit configuration
+                        "http://localhost:8123".to_string()
+                    };
 
-                        MCPServerConfig {
-                            name: Some(name),
-                            url: Some(url),
-                            command: None,
-                            args: None,
-                            env: None,
-                            description: None, // VS Code MCP format doesn't include descriptions
-                            auth_headers: None,
-                            options: None,
-                        }
-                    })
-                    .collect(),
-            )
-        } else {
-            None
-        };
+                    MCPServerConfig {
+                        name: Some(name),
+                        url: Some(url),
+                        command: None,
+                        args: None,
+                        env: None,
+                        description: None, // VS Code MCP format doesn't include descriptions
+                        auth_headers: None,
+                        options: None,
+                    }
+                })
+                .collect()
+        });
 
         MCPConfig {
             servers,
@@ -1501,6 +1542,7 @@ impl MCPConfigManager {
     }
 
     /// Try to parse using IDE-specific format, then fall back to standard format with better error reporting
+    #[allow(dead_code)]
     fn try_parse_with_fallback<F>(
         ide_name: &str,
         content: &str,
@@ -1541,16 +1583,20 @@ impl MCPConfigManager {
     }
 
     /// Parse standard Ramparts MCP config format
+    #[allow(dead_code)]
     fn parse_standard_config(content: &str) -> Result<MCPConfig> {
         serde_json::from_str(content).map_err(|e| anyhow!("Standard format parsing failed: {}", e))
     }
 
     /// Parse VS Code MCP config format
+    #[allow(dead_code)]
     fn parse_vscode_config(content: &str) -> Result<MCPConfig> {
         // Try array format first (more common), then object format with descriptions, then basic object format
         if let Ok(vscode_array_config) = serde_json::from_str::<VSCodeArrayMCPConfig>(content) {
             Ok(vscode_array_config.into())
-        } else if let Ok(vscode_object_config) = serde_json::from_str::<VSCodeObjectMCPConfig>(content) {
+        } else if let Ok(vscode_object_config) =
+            serde_json::from_str::<VSCodeObjectMCPConfig>(content)
+        {
             Ok(vscode_object_config.into())
         } else {
             let vscode_config: VSCodeMCPConfig = serde_json::from_str(content)?;
@@ -1559,36 +1605,42 @@ impl MCPConfigManager {
     }
 
     /// Parse Cursor MCP config format  
+    #[allow(dead_code)]
     fn parse_cursor_config(content: &str) -> Result<MCPConfig> {
         let cursor_config: CursorMCPConfig = serde_json::from_str(content)?;
         Ok(cursor_config.into())
     }
 
     /// Parse Windsurf MCP config format
+    #[allow(dead_code)]
     fn parse_windsurf_config(content: &str) -> Result<MCPConfig> {
         let windsurf_config: WindsurfMCPConfig = serde_json::from_str(content)?;
         Ok(windsurf_config.into())
     }
 
     /// Parse Claude Desktop MCP config format
+    #[allow(dead_code)]
     fn parse_claude_config(content: &str) -> Result<MCPConfig> {
         let claude_config: ClaudeMCPConfig = serde_json::from_str(content)?;
         Ok(claude_config.into())
     }
 
     /// Parse Claude Code MCP config format (from ~/.claude.json)
+    #[allow(dead_code)]
     fn parse_claude_code_config(content: &str) -> Result<MCPConfig> {
         let claude_code_config: ClaudeCodeConfig = serde_json::from_str(content)?;
         Ok(claude_code_config.into())
     }
 
     /// Parse Zed MCP config format
+    #[allow(dead_code)]
     fn parse_zed_config(content: &str) -> Result<MCPConfig> {
         let zed_config: ZedMCPConfig = serde_json::from_str(content)?;
         Ok(zed_config.into())
     }
 
     /// Parse Zencoder MCP config format
+    #[allow(dead_code)]
     fn parse_zencoder_config(content: &str) -> Result<MCPConfig> {
         let zencoder_config: ZencoderMCPConfig = serde_json::from_str(content)?;
         Ok(zencoder_config.into())
