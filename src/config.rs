@@ -240,7 +240,10 @@ impl MCPConfigManager {
     fn discover_config_paths() -> Vec<(PathBuf, MCPClient)> {
         let mut paths = Vec::new();
 
-        // Detect platform
+        // First, add workspace-level configurations (highest priority)
+        paths.extend(Self::get_workspace_paths());
+
+        // Then add platform-specific global configurations
         let platform = env::consts::OS;
 
         match platform {
@@ -256,6 +259,67 @@ impl MCPConfigManager {
             }
         }
 
+        paths
+    }
+
+    /// Get workspace-level MCP configuration paths (current working directory and workspace)
+    fn get_workspace_paths() -> Vec<(PathBuf, MCPClient)> {
+        let mut paths = Vec::new();
+        
+        // Current working directory workspace configurations
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        
+        // VS Code workspace configurations
+        paths.push((current_dir.join(".vscode").join("mcp.json"), MCPClient::VSCode));
+        paths.push((current_dir.join(".vscode").join("settings.json"), MCPClient::VSCode));
+        
+        // Cursor workspace configurations  
+        paths.push((current_dir.join(".cursor").join("mcp.json"), MCPClient::Cursor));
+        paths.push((current_dir.join(".cursor").join("settings.json"), MCPClient::Cursor));
+        
+        // Claude Code workspace configurations
+        paths.push((current_dir.join(".claude.json"), MCPClient::Claude));
+        paths.push((current_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
+        
+        // Windsurf workspace configurations  
+        paths.push((current_dir.join(".windsurf").join("mcp.json"), MCPClient::Windsurf));
+        paths.push((current_dir.join(".windsurf").join("mcp_config.json"), MCPClient::Windsurf));
+        
+        // Also check parent directories up to 3 levels for project root configurations
+        let mut parent = current_dir.parent();
+        let mut level = 0;
+        while let Some(dir) = parent {
+            if level >= 3 { break; }
+            
+            // Look for common project indicators
+            if dir.join(".git").exists() || 
+               dir.join("package.json").exists() || 
+               dir.join("Cargo.toml").exists() ||
+               dir.join("pyproject.toml").exists() ||
+               dir.join("requirements.txt").exists() {
+                
+                // VS Code project root configurations
+                paths.push((dir.join(".vscode").join("mcp.json"), MCPClient::VSCode));
+                paths.push((dir.join(".vscode").join("settings.json"), MCPClient::VSCode));
+                
+                // Cursor project root configurations
+                paths.push((dir.join(".cursor").join("mcp.json"), MCPClient::Cursor));
+                
+                // Claude Code project root configurations
+                paths.push((dir.join(".claude.json"), MCPClient::Claude));
+                paths.push((dir.join(".claude").join("mcp.json"), MCPClient::Claude));
+                
+                // Windsurf project root configurations
+                paths.push((dir.join(".windsurf").join("mcp.json"), MCPClient::Windsurf));
+                paths.push((dir.join(".windsurf").join("mcp_config.json"), MCPClient::Windsurf));
+                
+                break; // Stop at first project root found
+            }
+            
+            parent = dir.parent();
+            level += 1;
+        }
+        
         paths
     }
 
