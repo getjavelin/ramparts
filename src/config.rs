@@ -5,7 +5,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use url::Url;
 
 /// MCP Configuration structure for reading from IDE config files
@@ -1243,7 +1243,7 @@ impl MCPConfigManager {
 
                     Self::merge_config(&mut merged_config, &config);
                     loaded_configs += 1;
-                    info!(
+                    debug!(
                         "Loaded MCP configuration from {} IDE: {}",
                         client.name(),
                         path.display()
@@ -1272,7 +1272,7 @@ impl MCPConfigManager {
         }
 
         if loaded_configs == 0 && failed_configs.is_empty() {
-            info!("No MCP configuration files found in any supported IDE locations");
+            debug!("No MCP configuration files found in any supported IDE locations");
         } else if !failed_configs.is_empty() {
             warn!(
                 "Found {} configuration files with errors",
@@ -3258,7 +3258,7 @@ impl ScannerConfigManager {
     /// Load configuration from config.yaml
     pub fn load_config(&self) -> Result<ScannerConfig> {
         if !self.config_path.exists() {
-            info!("No config.yaml found, using default configuration");
+            debug!("No config.yaml found, using default configuration");
             return Ok(ScannerConfig::default());
         }
 
@@ -3280,7 +3280,7 @@ impl ScannerConfigManager {
         fs::write(&self.config_path, content)
             .map_err(|e| anyhow!("Failed to write config.yaml: {}", e))?;
 
-        info!("Saved configuration to config.yaml");
+        debug!("Saved configuration to config.yaml");
         Ok(())
     }
 

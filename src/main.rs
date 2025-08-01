@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use tracing::{debug, error, info, warn, Level};
+use tracing::{debug, error, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
 use crate::config::ScannerConfig;
@@ -323,7 +323,7 @@ fn handle_init_config_command(force: bool) {
 
 /// Handles the server command
 async fn handle_server_command(port: u16, host: String) -> Result<(), Box<dyn std::error::Error>> {
-    info!("Starting MCP Scanner microservice on {}:{}", host, port);
+    debug!("Starting MCP Scanner microservice on {}:{}", host, port);
 
     match MCPScannerServer::new() {
         Ok(server) => {

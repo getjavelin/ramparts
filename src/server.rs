@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 #[derive(Clone)]
 pub struct ServerState {
@@ -83,7 +83,7 @@ impl MCPScannerServer {
 
         let addr = format!("{}:{}", self.config.host, self.config.port);
         info!("Starting MCP Scanner Server on http://{addr}");
-        info!("Protocol version: 2025-06-18");
+        debug!("Protocol version: 2025-06-18");
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         axum::serve(listener, app).await?;
@@ -232,7 +232,7 @@ async fn scan_endpoint(
         }
     }
 
-    info!("Received scan request for URL: {}", request.url);
+    debug!("Received scan request for URL: {}", request.url);
 
     let response = state.core.scan(request).await;
 
@@ -261,7 +261,7 @@ async fn validate_endpoint(
     State(state): State<ServerState>,
     Json(request): Json<ScanRequest>,
 ) -> Result<Json<ValidationResponse>, (StatusCode, Json<Value>)> {
-    info!("Received validation request");
+    debug!("Received validation request");
 
     let response = state.core.validate_config(&request);
 
@@ -302,7 +302,7 @@ async fn batch_scan_endpoint(
         ));
     }
 
-    info!(
+    debug!(
         "Received batch scan request for {} URLs",
         request.urls.len()
     );

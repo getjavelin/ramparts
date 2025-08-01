@@ -14,7 +14,7 @@ use reqwest::Client;
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::time::{timeout, Duration};
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 #[cfg(feature = "yara-x-scanning")]
 use yara_x::Rules;
@@ -901,7 +901,7 @@ impl MCPScanner {
     pub async fn scan_single(&self, url: &str, options: ScanOptions) -> Result<ScanResult> {
         let mut result = ScanResult::new(url.to_string());
 
-        info!("Scanning {}", url);
+        debug!("Scanning {}", url);
 
         // Check if this is a STDIO URL and route appropriately
         if url.starts_with("stdio:") {
@@ -1068,7 +1068,7 @@ impl MCPScanner {
         let args = server_config.args.as_deref().unwrap_or(&[]);
         let display_url = server_config.to_display_url();
 
-        info!("Scanning STDIO MCP server: {}", display_url);
+        debug!("Scanning STDIO MCP server: {}", display_url);
 
         let mut result = ScanResult::new(display_url.clone());
 
@@ -1169,7 +1169,7 @@ impl MCPScanner {
                 result.yara_results = scan_data.yara_results;
                 result.security_issues = Some(security_result);
 
-                info!("Successfully scanned STDIO server: {}", display_url);
+                debug!("Successfully scanned STDIO server: {}", display_url);
             }
             Err(e) => {
                 result.status = ScanStatus::Failed(e.to_string());
@@ -1193,13 +1193,13 @@ impl MCPScanner {
         let mut results = Vec::new();
 
         if let Some(ref servers) = config.servers {
-            info!(
+            debug!(
                 "Found [\x1b[1m{}\x1b[0m] MCP servers in IDE configuration files",
                 servers.len()
             );
 
             for server in servers {
-                info!(
+                debug!(
                     "Scanning MCP server from IDE config: [\x1b[1m{}\x1b[0m] ({})",
                     server.name.as_deref().unwrap_or("unnamed"),
                     server.to_display_url()
