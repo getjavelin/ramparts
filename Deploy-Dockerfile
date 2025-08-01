@@ -1,0 +1,9 @@
+FROM debian:bookworm-slim
+LABEL maintainer="Akhil Raj"
+
+WORKDIR /app
+COPY target/release/ramparts /app/
+
+EXPOSE 8080
+
+ENTRYPOINT [ "/app/ramparts", "server", "--port", "8080", "--host", "0.0.0.0" ]
