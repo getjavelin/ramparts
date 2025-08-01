@@ -30,7 +30,7 @@ security:
     pii_leakage: true
     jailbreak: true
 logging:
-  level: info
+  level: warn
   colored: true
   timestamps: true
 performance:

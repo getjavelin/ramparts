@@ -35,8 +35,8 @@ impl Timer {
 pub mod error_utils {
     use super::{anyhow, Result};
 
-    /// Create a standardized error message
-    pub fn create_error_msg(operation: &str, details: &str) -> String {
+    /// Format a standardized error message
+    pub fn format_error(operation: &str, details: &str) -> String {
         format!("{operation} failed: {details}")
     }
 
@@ -304,9 +304,7 @@ fn add_errors_info(
 
 #[allow(clippy::too_many_lines)]
 fn print_table_result(result: &ScanResult, detailed: bool) {
-    println!("{}", "=".repeat(80));
     println!("MCP Server Scan Result");
-    println!("{}", "=".repeat(80));
 
     // Server Info
     println!("URL: {}", result.url.blue());
@@ -335,7 +333,6 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
         if detailed {
             // Show detailed tool information
             for tool in &result.tools {
-                println!("{}", "=".repeat(60));
                 println!("Tool: {}", tool.name.bold());
                 if let Some(desc) = &tool.description {
                     println!("Description: {desc}");
@@ -399,20 +396,9 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
             description: r.description.clone().unwrap_or_else(|| "N/A".to_string()),
             mime_type: r.mime_type.clone().unwrap_or_else(|| "N/A".to_string()),
         }))
+        .with(tabled::settings::Style::empty())
         .to_string();
         println!("{resource_table}");
-    }
-
-    // Prompts
-    if !result.prompts.is_empty() {
-        println!("\n{}", "Prompts".bold());
-        let prompt_table = Table::new(result.prompts.iter().map(|p| PromptRow {
-            name: p.name.clone(),
-            description: p.description.clone().unwrap_or_else(|| "N/A".to_string()),
-            arguments: p.arguments.as_ref().map_or(0, Vec::len),
-        }))
-        .to_string();
-        println!("{prompt_table}");
     }
 
     // Security Assessments Completed
@@ -444,12 +430,10 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
     if result.yara_results.is_empty() {
         // Show YARA execution status even when no results at all
         println!("\n{}", "YARA Scan Results".bold());
-        println!("{}", "=".repeat(80));
         println!("❌ YARA scanning not executed or no results available");
         println!();
     } else {
         println!("\n{}", "YARA Scan Results".bold());
-        println!("{}", "=".repeat(80));
 
         // Separate summary results from individual match results
         let summary_results: Vec<_> = result
@@ -572,8 +556,6 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
             println!("- {error}");
         }
     }
-
-    println!("{}", "=".repeat(80));
 }
 
 #[allow(clippy::too_many_lines)]
@@ -728,22 +710,11 @@ struct ResourceRow {
     mime_type: String,
 }
 
-#[derive(Tabled)]
-struct PromptRow {
-    #[tabled(rename = "Name")]
-    name: String,
-    #[tabled(rename = "Description")]
-    description: String,
-    #[tabled(rename = "Arguments")]
-    arguments: usize,
-}
-
 /// Enhanced security assessment table with per-tool results
 #[allow(clippy::too_many_lines)]
 fn print_enhanced_security_table(result: &ScanResult) {
     if let Some(security_issues) = &result.security_issues {
         println!("\n{}", "Security Assessment Results".bold());
-        println!("{}", "=".repeat(80));
 
         // Get server name
         let server_name = if let Some(server_info) = &result.server_info {
@@ -898,8 +869,8 @@ mod tests {
 
     #[test]
     fn test_error_utils() {
-        // Test create_error_msg
-        let error_msg = error_utils::create_error_msg("Test operation", "Something went wrong");
+        // Test format_error
+        let error_msg = error_utils::format_error("Test operation", "Something went wrong");
         assert_eq!(error_msg, "Test operation failed: Something went wrong");
 
         // Test wrap_error with success

@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::Mutex;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// MCP client using the official Rust MCP SDK with full transport support
 pub struct McpClient {
@@ -32,13 +32,13 @@ impl McpClient {
         }
     }
 
-    /// Connect to an MCP server using the appropriate transport
-    pub async fn connect_http(
+    /// Connect to an MCP server using HTTP transport
+    pub async fn connect(
         &self,
         url: &str,
         auth_headers: Option<HashMap<String, String>>,
     ) -> Result<MCPSession> {
-        info!("Connecting to MCP server at: {}", url);
+        debug!("Connecting to MCP server at: {}", url);
 
         // First try streamable HTTP transport
         match self
@@ -46,7 +46,7 @@ impl McpClient {
             .await
         {
             Ok(session) => {
-                info!("Successfully connected via streamable HTTP");
+                debug!("Successfully connected via streamable HTTP");
                 return Ok(session);
             }
             Err(e) => {
@@ -57,7 +57,7 @@ impl McpClient {
         // Fall back to SSE transport
         match self.try_sse_connection(url, auth_headers.as_ref()).await {
             Ok(session) => {
-                info!("Successfully connected via SSE");
+                debug!("Successfully connected via SSE");
                 Ok(session)
             }
             Err(e) => {
@@ -276,7 +276,7 @@ impl McpClient {
         args: &[String],
         env_vars: Option<&HashMap<String, String>>,
     ) -> Result<MCPSession> {
-        info!(
+        debug!(
             "Connecting to MCP server via subprocess: {} {:?}",
             command, args
         );
@@ -372,7 +372,7 @@ impl McpClient {
     }
 
     /// Fetch tools from the MCP server using the official SDK
-    pub async fn fetch_tools(&self, session: &MCPSession) -> Result<Vec<MCPTool>> {
+    pub async fn list_tools(&self, session: &MCPSession) -> Result<Vec<MCPTool>> {
         debug!("Fetching tools from MCP server: {}", session.endpoint_url);
 
         let services = self.services.lock().await;
@@ -401,14 +401,14 @@ impl McpClient {
                         mcp_tools.push(mcp_tool);
                     }
 
-                    info!(
+                    debug!(
                         "Successfully fetched {} tools from MCP server",
                         mcp_tools.len()
                     );
                     Ok(mcp_tools)
                 }
                 Err(e) => {
-                    warn!("Failed to fetch tools from MCP server: {}", e);
+                    debug!("Failed to fetch tools from MCP server: {}", e);
                     Ok(vec![])
                 }
             }
@@ -419,7 +419,7 @@ impl McpClient {
     }
 
     /// Fetch resources from the MCP server
-    pub async fn fetch_resources(&self, session: &MCPSession) -> Result<Vec<MCPResource>> {
+    pub async fn list_resources(&self, session: &MCPSession) -> Result<Vec<MCPResource>> {
         debug!(
             "Fetching resources from MCP server: {}",
             session.endpoint_url
@@ -450,14 +450,14 @@ impl McpClient {
                         mcp_resources.push(mcp_resource);
                     }
 
-                    info!(
+                    debug!(
                         "Successfully fetched {} resources from MCP server",
                         mcp_resources.len()
                     );
                     Ok(mcp_resources)
                 }
                 Err(e) => {
-                    warn!("Failed to fetch resources from MCP server: {}", e);
+                    debug!("Failed to fetch resources from MCP server: {}", e);
                     Ok(vec![])
                 }
             }
@@ -468,7 +468,7 @@ impl McpClient {
     }
 
     /// Fetch prompts from the MCP server  
-    pub async fn fetch_prompts(&self, session: &MCPSession) -> Result<Vec<MCPPrompt>> {
+    pub async fn list_prompts(&self, session: &MCPSession) -> Result<Vec<MCPPrompt>> {
         debug!("Fetching prompts from MCP server: {}", session.endpoint_url);
 
         let services = self.services.lock().await;
@@ -503,14 +503,14 @@ impl McpClient {
                         mcp_prompts.push(mcp_prompt);
                     }
 
-                    info!(
+                    debug!(
                         "Successfully fetched {} prompts from MCP server",
                         mcp_prompts.len()
                     );
                     Ok(mcp_prompts)
                 }
                 Err(e) => {
-                    warn!("Failed to fetch prompts from MCP server: {}", e);
+                    debug!("Failed to fetch prompts from MCP server: {}", e);
                     Ok(vec![])
                 }
             }
@@ -536,7 +536,7 @@ mod tests {
         let client = McpClient::new();
         // This will likely fail in tests since there's no server running
         // but we can at least test that the method exists and can be called
-        let result = client.connect_http("http://localhost:8124", None).await;
+        let result = client.connect("http://localhost:8124", None).await;
         // We expect this to fail in the test environment, but not panic
         assert!(result.is_err() || result.is_ok());
     }

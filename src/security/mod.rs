@@ -896,7 +896,7 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
 
         // If we still can't parse it, try to find any JSON-like structure
         if response.contains("[]") {
-            tracing::info!("Response contains empty array, returning empty result");
+            tracing::debug!("Response contains empty array, returning empty result");
             return Ok(Vec::new());
         }
 
