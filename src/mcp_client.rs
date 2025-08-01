@@ -133,7 +133,6 @@ impl McpClient {
 
         let session = MCPSession {
             server_info: Some(server_info),
-            session_id: None,
             endpoint_url: url.to_string(),
         };
 
@@ -209,7 +208,6 @@ impl McpClient {
 
         let session = MCPSession {
             server_info: Some(server_info),
-            session_id: None,
             endpoint_url: url.to_string(),
         };
 
@@ -217,8 +215,12 @@ impl McpClient {
     }
 
     /// Connect using subprocess (for local MCP servers)
-    #[allow(dead_code)]
-    pub async fn connect_subprocess(&self, command: &str, args: Vec<&str>) -> Result<MCPSession> {
+    pub async fn connect_subprocess(
+        &self,
+        command: &str,
+        args: &[String],
+        env_vars: Option<&HashMap<String, String>>,
+    ) -> Result<MCPSession> {
         info!(
             "Connecting to MCP server via subprocess: {} {:?}",
             command, args
@@ -230,12 +232,32 @@ impl McpClient {
             cmd.arg(arg);
         }
 
+        // Add environment variables if provided
+        if let Some(env) = env_vars {
+            for (key, value) in env {
+                cmd.env(key, value);
+            }
+        }
+
         // Create the service using the subprocess transport
         let transport = TokioChildProcess::new(cmd)?;
         let service = ()
             .serve(transport)
             .await
-            .map_err(|e| anyhow!("Failed to start MCP server subprocess: {}", e))?;
+            .map_err(|e| {
+                // Provide more detailed error information for troubleshooting
+                let error_context = if e.to_string().contains("connection closed") {
+                    format!("MCP server subprocess failed during initialization. This could be due to: \
+                           \n  - Missing required environment variables (check server documentation) \
+                           \n  - Server startup errors (enable debug logging with RUST_LOG=debug) \
+                           \n  - Package installation issues (try: npx {command} manually) \
+                           \n  - Network connectivity issues for remote servers \
+                           \nOriginal error: {e}")
+                } else {
+                    format!("Failed to start MCP server subprocess: {e}")
+                };
+                anyhow!(error_context)
+            })?;
 
         // Get server information
         let peer_info = service.peer().peer_info();
@@ -288,7 +310,6 @@ impl McpClient {
 
         let session = MCPSession {
             server_info: Some(server_info),
-            session_id: None,
             endpoint_url: endpoint,
         };
 

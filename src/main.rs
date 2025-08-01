@@ -18,7 +18,7 @@ mod utils;
 use banner::display_banner;
 use scanner::MCPScanner;
 use server::MCPScannerServer;
-use types::{config_utils, ScanConfigBuilder};
+use types::{config_utils, ScanConfigBuilder, ScanOptions};
 use utils::error_utils;
 
 #[derive(Parser)]
@@ -138,36 +138,35 @@ enum Commands {
 }
 
 #[tokio::main]
-#[allow(clippy::too_many_lines)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-
-    // Display banner
     display_banner();
 
-    // Load configuration and setup logging
+    let scanner_config = load_scanner_config();
+    setup_logging(&cli, &scanner_config);
+    debug!("Starting MCP Scanner");
+
+    let scanner = create_scanner_if_needed(&cli, &scanner_config);
+    execute_command(cli, scanner_config, scanner).await?;
+
+    Ok(())
+}
+
+/// Loads the scanner configuration, using defaults if loading fails
+fn load_scanner_config() -> ScannerConfig {
     let config_manager = config::ScannerConfigManager::new();
-    let scanner_config = match config_manager.load_config() {
+    match config_manager.load_config() {
         Ok(config) => config,
         Err(e) => {
             warn!("Failed to load scanner config, using defaults: {}", e);
             ScannerConfig::default()
         }
-    };
+    }
+}
 
-    // Determine logging level (CLI args take precedence over config)
-    let level = if cli.debug || cli.verbose {
-        Level::DEBUG
-    } else {
-        // Use config level if available, otherwise default to INFO
-        match scanner_config.logging.level.to_lowercase().as_str() {
-            "trace" => Level::TRACE,
-            "debug" => Level::DEBUG,
-            "warn" => Level::WARN,
-            "error" => Level::ERROR,
-            _ => Level::INFO,
-        }
-    };
+/// Sets up logging based on CLI arguments and configuration
+fn setup_logging(cli: &Cli, scanner_config: &ScannerConfig) {
+    let level = determine_log_level(cli, scanner_config);
 
     FmtSubscriber::builder()
         .with_max_level(level)
@@ -175,11 +174,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_thread_ids(false)
         .with_thread_names(false)
         .init();
+}
 
-    debug!("Starting MCP Scanner");
+/// Determines the appropriate log level from CLI args and config
+fn determine_log_level(cli: &Cli, scanner_config: &ScannerConfig) -> Level {
+    if cli.debug || cli.verbose {
+        Level::DEBUG
+    } else {
+        match scanner_config.logging.level.to_lowercase().as_str() {
+            "trace" => Level::TRACE,
+            "debug" => Level::DEBUG,
+            "warn" => Level::WARN,
+            "error" => Level::ERROR,
+            _ => Level::INFO,
+        }
+    }
+}
 
-    // Create MCPScanner only if needed
-    let scanner = match &cli.command {
+/// Creates an MCP scanner instance if needed for the given command
+fn create_scanner_if_needed(cli: &Cli, scanner_config: &ScannerConfig) -> Option<MCPScanner> {
+    match &cli.command {
         Commands::Scan { .. } | Commands::ScanConfig { .. } => {
             match MCPScanner::with_timeout(scanner_config.scanner.http_timeout) {
                 Ok(scanner) => Some(scanner),
@@ -190,135 +204,162 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         _ => None,
-    };
+    }
+}
 
+/// Executes the specified command with the given configuration and scanner
+async fn execute_command(
+    cli: Cli,
+    scanner_config: ScannerConfig,
+    scanner: Option<MCPScanner>,
+) -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Scan {
             url,
             auth_headers,
             format,
-        } => {
-            let auth_headers_map = parse_auth_headers(&auth_headers);
-            let output_format = format.unwrap_or(scanner_config.scanner.format.clone());
-            let options = ScanConfigBuilder::new()
-                .timeout(scanner_config.scanner.scan_timeout)
-                .http_timeout(scanner_config.scanner.http_timeout)
-                .detailed(scanner_config.scanner.detailed)
-                .format(output_format.clone())
-                .auth_headers(auth_headers_map)
-                .build();
-
-            // Validate configuration
-            if let Err(e) = config_utils::validate_scan_config(&options) {
-                error!("Invalid configuration: {}", e);
-                std::process::exit(1);
-            }
-
-            let options_clone = options.clone();
-            let scanner = scanner
-                .as_ref()
-                .expect("Scanner should be initialized for scan command");
-
-            match scanner.scan_single(&url, options).await {
-                Ok(result) => {
-                    utils::print_result(&result, &output_format, options_clone.detailed);
-                }
-                Err(e) => {
-                    error!(
-                        "{}",
-                        error_utils::create_error_msg("Scan operation", &e.to_string())
-                    );
-                    std::process::exit(1);
-                }
-            }
-        }
+        } => handle_scan_command(url, auth_headers, format, &scanner_config, scanner).await,
         Commands::ScanConfig {
             auth_headers,
             format,
-        } => {
-            let auth_headers_map = parse_auth_headers(&auth_headers);
-            let output_format = format.unwrap_or(scanner_config.scanner.format.clone());
-            let options = ScanConfigBuilder::new()
-                .timeout(scanner_config.scanner.scan_timeout)
-                .http_timeout(scanner_config.scanner.http_timeout)
-                .detailed(scanner_config.scanner.detailed)
-                .format(output_format.clone())
-                .auth_headers(auth_headers_map)
-                .build();
+        } => handle_scan_config_command(auth_headers, format, &scanner_config, scanner).await,
+        Commands::InitConfig { force } => handle_init_config_command(force),
+        Commands::Server { port, host } => handle_server_command(port, host).await,
+    }
+}
 
-            // Validate configuration
-            if let Err(e) = config_utils::validate_scan_config(&options) {
-                error!("Invalid configuration: {}", e);
-                std::process::exit(1);
-            }
+/// Handles the scan command for a single URL
+async fn handle_scan_command(
+    url: String,
+    auth_headers: Vec<String>,
+    format: Option<String>,
+    scanner_config: &ScannerConfig,
+    scanner: Option<MCPScanner>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let auth_headers_map = parse_auth_headers(&auth_headers);
+    let output_format = format.unwrap_or(scanner_config.scanner.format.clone());
+    let options = build_scan_options(scanner_config, &output_format, auth_headers_map);
 
-            let scanner = scanner
-                .as_ref()
-                .expect("Scanner should be initialized for scan-config command");
+    validate_scan_config(&options);
 
-            match scanner.scan_config(options).await {
-                Ok(results) => {
-                    for result in results {
-                        utils::print_result(
-                            &result,
-                            &output_format,
-                            scanner_config.scanner.detailed,
-                        );
-                    }
-                }
-                Err(e) => {
-                    error!(
-                        "{}",
-                        error_utils::create_error_msg(
-                            "IDE configuration scan operation",
-                            &e.to_string()
-                        )
-                    );
-                    std::process::exit(1);
-                }
-            }
+    let scanner = scanner
+        .as_ref()
+        .expect("Scanner should be initialized for scan command");
+
+    match scanner.scan_single(&url, options.clone()).await {
+        Ok(result) => {
+            utils::print_result(&result, &output_format, options.detailed);
+            Ok(())
         }
-
-        Commands::InitConfig { force } => {
-            let config_manager = config::ScannerConfigManager::new();
-
-            if config_manager.has_config_file() && !force {
-                println!("config.yaml already exists. Use --force to overwrite.");
-                std::process::exit(1);
-            }
-
-            match config_manager.save_config(&config::ScannerConfig::default()) {
-                Ok(()) => {
-                    println!("Created config.yaml with default settings");
-                    println!("📝 Edit the file to customize LLM settings, security checks, and other options");
-                }
-                Err(e) => {
-                    error!("Failed to create config.yaml: {}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-
-        Commands::Server { port, host } => {
-            info!("Starting MCP Scanner microservice on {}:{}", host, port);
-
-            match MCPScannerServer::new() {
-                Ok(server) => {
-                    let server = server.with_port(port).with_host(host);
-                    if let Err(e) = server.start().await {
-                        error!("Server failed: {}", e);
-                        std::process::exit(1);
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to create server: {}", e);
-                    std::process::exit(1);
-                }
-            }
+        Err(e) => {
+            error!(
+                "{}",
+                error_utils::create_error_msg("Scan operation", &e.to_string())
+            );
+            std::process::exit(1);
         }
     }
+}
 
-    Ok(())
+/// Handles the scan-config command for IDE configurations
+async fn handle_scan_config_command(
+    auth_headers: Vec<String>,
+    format: Option<String>,
+    scanner_config: &ScannerConfig,
+    scanner: Option<MCPScanner>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let auth_headers_map = parse_auth_headers(&auth_headers);
+    let output_format = format.unwrap_or(scanner_config.scanner.format.clone());
+    let options = build_scan_options(scanner_config, &output_format, auth_headers_map);
+
+    validate_scan_config(&options);
+
+    let scanner = scanner
+        .as_ref()
+        .expect("Scanner should be initialized for scan-config command");
+
+    match scanner.scan_config(options).await {
+        Ok(results) => {
+            for result in results {
+                utils::print_result(&result, &output_format, scanner_config.scanner.detailed);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            error!(
+                "{}",
+                error_utils::create_error_msg("IDE configuration scan operation", &e.to_string())
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Handles the init-config command
+fn handle_init_config_command(force: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let config_manager = config::ScannerConfigManager::new();
+
+    if config_manager.has_config_file() && !force {
+        println!("config.yaml already exists. Use --force to overwrite.");
+        std::process::exit(1);
+    }
+
+    match config_manager.save_config(&config::ScannerConfig::default()) {
+        Ok(()) => {
+            println!("Created config.yaml with default settings");
+            println!(
+                "📝 Edit the file to customize LLM settings, security checks, and other options"
+            );
+            Ok(())
+        }
+        Err(e) => {
+            error!("Failed to create config.yaml: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Handles the server command
+async fn handle_server_command(port: u16, host: String) -> Result<(), Box<dyn std::error::Error>> {
+    info!("Starting MCP Scanner microservice on {}:{}", host, port);
+
+    match MCPScannerServer::new() {
+        Ok(server) => {
+            let server = server.with_port(port).with_host(host);
+            if let Err(e) = server.start().await {
+                error!("Server failed: {}", e);
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            error!("Failed to create server: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Builds scan options from configuration and parameters
+fn build_scan_options(
+    scanner_config: &ScannerConfig,
+    output_format: &str,
+    auth_headers_map: Option<std::collections::HashMap<String, String>>,
+) -> ScanOptions {
+    ScanConfigBuilder::new()
+        .timeout(scanner_config.scanner.scan_timeout)
+        .http_timeout(scanner_config.scanner.http_timeout)
+        .detailed(scanner_config.scanner.detailed)
+        .format(output_format.to_string())
+        .auth_headers(auth_headers_map)
+        .build()
+}
+
+/// Validates scan configuration and exits on error
+fn validate_scan_config(options: &ScanOptions) {
+    if let Err(e) = config_utils::validate_scan_config(options) {
+        error!("Invalid configuration: {}", e);
+        std::process::exit(1);
+    }
 }
 
 fn parse_auth_headers(headers: &[String]) -> Option<std::collections::HashMap<String, String>> {

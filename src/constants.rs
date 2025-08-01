@@ -14,16 +14,7 @@ pub mod messages {
     pub const YARA_POST_SCAN_FAILED: &str = "Failed to load YARA post-scan scanner";
 }
 
-/// Common JSON-RPC and MCP protocol constants
+/// Common HTTP and protocol constants
 pub mod protocol {
-    #[allow(dead_code)]
-    pub const JSONRPC_VERSION: &str = "2.0";
-    #[allow(dead_code)]
-    pub const MCP_PROTOCOL_VERSIONS: &[&str] =
-        &["2025-06-18", "2024-11-05", "2024-11-01", "2024-10-01"];
-    #[allow(dead_code)]
-    pub const CLIENT_NAME: &str = "ramparts";
-    #[allow(dead_code)]
-    pub const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
     pub const USER_AGENT: &str = concat!("ramparts/", env!("CARGO_PKG_VERSION"));
 }
