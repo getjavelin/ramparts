@@ -116,6 +116,18 @@ pub struct VSCodeMCPServerConfig {
     pub cwd: Option<String>,
     /// Server URL
     pub url: Option<String>,
+    /// Transport type (e.g., "http", "stdio")
+    #[serde(rename = "type")]
+    pub transport_type: Option<String>,
+}
+
+/// New VS Code MCP configuration structure (for mcp.json files)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VSCodeMCPConfig {
+    /// MCP servers configuration in new VS Code format
+    pub servers: Option<HashMap<String, VSCodeMCPServerConfig>>,
+    /// Inputs configuration
+    pub inputs: Option<Vec<serde_json::Value>>,
 }
 
 /// Individual MCP server configuration
@@ -792,6 +804,13 @@ impl MCPConfigManager {
                         return Ok(Self::convert_vscode_config(vscode_config));
                     }
                 }
+                // VS Code mcp.json uses the new format
+                else if filename == "mcp.json" {
+                    if let Ok(vscode_mcp_config) = serde_json::from_str::<VSCodeMCPConfig>(&content) {
+                        debug!("Parsed as VS Code MCP configuration format");
+                        return Ok(Self::convert_vscode_mcp_config(vscode_mcp_config));
+                    }
+                }
             }
             _ => {}
         }
@@ -810,6 +829,9 @@ impl MCPConfigManager {
                 } else if let Ok(vscode_config) = serde_json::from_str::<VSCodeSettings>(&content) {
                     debug!("Parsed as VS Code settings configuration format (fallback)");
                     Ok(Self::convert_vscode_config(vscode_config))
+                } else if let Ok(vscode_mcp_config) = serde_json::from_str::<VSCodeMCPConfig>(&content) {
+                    debug!("Parsed as VS Code MCP configuration format (fallback)");
+                    Ok(Self::convert_vscode_mcp_config(vscode_mcp_config))
                 } else {
                     Err(anyhow!("Failed to parse IDE config file {}: {}", path.display(), e))
                 }
@@ -929,6 +951,45 @@ impl MCPConfigManager {
                             name: Some(name),
                             url,
                             description: None, // VS Code settings don't typically include descriptions
+                            auth_headers: None,
+                            options: None,
+                        }
+                    })
+                    .collect(),
+            )
+        } else {
+            None
+        };
+
+        MCPConfig {
+            servers,
+            options: None,
+            auth_headers: None,
+        }
+    }
+
+    /// Convert VS Code MCP configuration (new mcp.json format) to standard format
+    fn convert_vscode_mcp_config(vscode_mcp_config: VSCodeMCPConfig) -> MCPConfig {
+        let servers = if let Some(servers) = vscode_mcp_config.servers {
+            Some(
+                servers
+                    .into_iter()
+                    .map(|(name, server_config)| {
+                        // Use explicit URL if provided, otherwise build from command
+                        let url = if let Some(url) = server_config.url {
+                            url
+                        } else if server_config.command.is_some() {
+                            // For command-based servers, create a placeholder URL
+                            format!("stdio://{}", name)
+                        } else {
+                            // Default URL for servers without explicit configuration
+                            "http://localhost:8123".to_string()
+                        };
+
+                        MCPServerConfig {
+                            name: Some(name),
+                            url,
+                            description: None, // VS Code MCP format doesn't include descriptions
                             auth_headers: None,
                             options: None,
                         }
