@@ -131,7 +131,7 @@ pub struct VSCodeMCPConfig {
     pub inputs: Option<Vec<serde_json::Value>>,
 }
 
-/// VS Code MCP configuration with VSCodeServerConfig (for configs with description field)
+/// VS Code MCP configuration with `VSCodeServerConfig` (for configs with description field)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VSCodeObjectMCPConfig {
     /// MCP servers configuration in VS Code format with descriptions
@@ -163,7 +163,7 @@ pub struct MCPServerConfig {
 
 impl MCPServerConfig {
     /// Get display URL for logging and display purposes
-    pub fn display_url(&self) -> String {
+    pub fn as_display_url(&self) -> String {
         if let Some(url) = &self.url {
             url.clone()
         } else if let Some(command) = &self.command {
@@ -1157,7 +1157,7 @@ impl MCPConfigManager {
 
     /// Get client type from a configuration file path using component-based matching
     /// Determines the MCP client type based on the configuration file path
-    pub fn get_client_from_path<P: AsRef<Path>>(path: P) -> Option<MCPClient> {
+    pub fn detect_client<P: AsRef<Path>>(path: P) -> Option<MCPClient> {
         let path = path.as_ref();
         let components: Vec<_> = path
             .components()
@@ -1197,8 +1197,7 @@ impl MCPConfigManager {
         // Check specific file names for client detection
         if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
             match filename {
-                "claude_desktop_config.json" => return Some(MCPClient::Claude),
-                ".claude.json" => return Some(MCPClient::Claude),
+                "claude_desktop_config.json" | ".claude.json" => return Some(MCPClient::Claude),
                 "settings.json" => {
                     // Check if it's in a VS Code directory
                     if components
@@ -1297,7 +1296,7 @@ impl MCPConfigManager {
             .map_err(|e| anyhow!("Failed to read IDE config file {}: {}", path.display(), e))?;
 
         // Detect IDE type by checking the client type from path
-        let client = Self::get_client_from_path(path);
+        let client = Self::detect_client(path);
         let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
         // Try parsing based on client type and file name
@@ -1389,8 +1388,9 @@ impl MCPConfigManager {
                     } else if let Some(transport) = &server_config.transport {
                         let host = transport.host.as_deref().unwrap_or("localhost");
                         let port = transport.port.unwrap_or(8080);
+                        #[allow(clippy::match_same_arms)]
                         let scheme = match transport.transport_type.as_deref() {
-                            Some("http") | Some("streamable-http") => "http",
+                            Some("http" | "streamable-http") => "http",
                             Some("https") => "https",
                             _ => "http",
                         };
@@ -2194,29 +2194,29 @@ mod tests {
     }
 
     #[test]
-    fn test_get_client_from_path() {
+    fn test_detect_client() {
         assert_eq!(
-            MCPConfigManager::get_client_from_path("/home/user/.cursor/mcp.json"),
+            MCPConfigManager::detect_client("/home/user/.cursor/mcp.json"),
             Some(MCPClient::Cursor)
         );
         assert_eq!(
-            MCPConfigManager::get_client_from_path("/home/user/.codium/windsurf/mcp_config.json"),
+            MCPConfigManager::detect_client("/home/user/.codium/windsurf/mcp_config.json"),
             Some(MCPClient::Windsurf)
         );
         assert_eq!(
-            MCPConfigManager::get_client_from_path("/home/user/.vscode/mcp.json"),
+            MCPConfigManager::detect_client("/home/user/.vscode/mcp.json"),
             Some(MCPClient::VSCode)
         );
         assert_eq!(
-            MCPConfigManager::get_client_from_path("/home/user/.claude/mcp.json"),
+            MCPConfigManager::detect_client("/home/user/.claude/mcp.json"),
             Some(MCPClient::Claude)
         );
         assert_eq!(
-            MCPConfigManager::get_client_from_path("/home/user/.config/nvim/mcp.json"),
+            MCPConfigManager::detect_client("/home/user/.config/nvim/mcp.json"),
             Some(MCPClient::Neovim)
         );
         assert_eq!(
-            MCPConfigManager::get_client_from_path("/some/unknown/path.json"),
+            MCPConfigManager::detect_client("/some/unknown/path.json"),
             None
         );
     }
@@ -2314,7 +2314,7 @@ mod tests {
 
         // Test exact component matches
         assert_eq!(
-            MCPConfigManager::get_client_from_path(PathBuf::from(
+            MCPConfigManager::detect_client(PathBuf::from(
                 "/Applications/Cursor.app/Contents/mcp.json"
             )),
             Some(MCPClient::Cursor)
@@ -2322,7 +2322,7 @@ mod tests {
 
         // Test Windows paths - use forward slashes for cross-platform compatibility
         assert_eq!(
-            MCPConfigManager::get_client_from_path(PathBuf::from(
+            MCPConfigManager::detect_client(PathBuf::from(
                 "C:/Users/test/AppData/Roaming/Code/User/mcp.json"
             )),
             Some(MCPClient::VSCode)
@@ -2330,7 +2330,7 @@ mod tests {
 
         // Test extension ID path
         assert_eq!(
-            MCPConfigManager::get_client_from_path(PathBuf::from(
+            MCPConfigManager::detect_client(PathBuf::from(
                 "/home/user/.config/rooveterinaryinc.cursor-mcp/config.json"
             )),
             Some(MCPClient::Cursor)
@@ -2338,7 +2338,7 @@ mod tests {
 
         // Test disambiguation - should not match generic "code" in paths
         assert_eq!(
-            MCPConfigManager::get_client_from_path(PathBuf::from(
+            MCPConfigManager::detect_client(PathBuf::from(
                 "/home/user/my-code-project/config.json"
             )),
             None
@@ -2926,17 +2926,17 @@ mod tests {
     fn test_client_path_detection_claude_code() {
         // Test Claude Code vs Claude Desktop path detection
         assert_eq!(
-            MCPConfigManager::get_client_from_path("/home/user/.claude.json"),
+            MCPConfigManager::detect_client("/home/user/.claude.json"),
             Some(MCPClient::ClaudeCode)
         );
         assert_eq!(
-            MCPConfigManager::get_client_from_path("/home/user/.claude/mcp.json"),
+            MCPConfigManager::detect_client("/home/user/.claude/mcp.json"),
             Some(MCPClient::Claude)
         );
 
         // Test Windsurf path detection (corrected path)
         assert_eq!(
-            MCPConfigManager::get_client_from_path("/home/user/.codeium/windsurf/mcp_config.json"),
+            MCPConfigManager::detect_client("/home/user/.codeium/windsurf/mcp_config.json"),
             Some(MCPClient::Windsurf)
         );
     }
@@ -3054,21 +3054,21 @@ mod tests {
     fn test_client_path_detection_gemini() {
         // Test Gemini path detection
         assert_eq!(
-            MCPConfigManager::get_client_from_path("/home/user/.gemini/settings.json"),
+            MCPConfigManager::detect_client("/home/user/.gemini/settings.json"),
             Some(MCPClient::Gemini)
         );
         assert_eq!(
-            MCPConfigManager::get_client_from_path("/Users/user/.gemini/settings.json"),
+            MCPConfigManager::detect_client("/Users/user/.gemini/settings.json"),
             Some(MCPClient::Gemini)
         );
 
         // Test combined with other path detections
         assert_eq!(
-            MCPConfigManager::get_client_from_path("/home/user/.claude.json"),
+            MCPConfigManager::detect_client("/home/user/.claude.json"),
             Some(MCPClient::ClaudeCode)
         );
         assert_eq!(
-            MCPConfigManager::get_client_from_path("/home/user/.codeium/windsurf/mcp_config.json"),
+            MCPConfigManager::detect_client("/home/user/.codeium/windsurf/mcp_config.json"),
             Some(MCPClient::Windsurf)
         );
     }

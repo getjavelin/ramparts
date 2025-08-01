@@ -35,8 +35,8 @@ impl Timer {
 pub mod error_utils {
     use super::{anyhow, Result};
 
-    /// Create a standardized error message
-    pub fn create_error_msg(operation: &str, details: &str) -> String {
+    /// Format a standardized error message
+    pub fn format_error(operation: &str, details: &str) -> String {
         format!("{operation} failed: {details}")
     }
 
@@ -898,8 +898,8 @@ mod tests {
 
     #[test]
     fn test_error_utils() {
-        // Test create_error_msg
-        let error_msg = error_utils::create_error_msg("Test operation", "Something went wrong");
+        // Test format_error
+        let error_msg = error_utils::format_error("Test operation", "Something went wrong");
         assert_eq!(error_msg, "Test operation failed: Something went wrong");
 
         // Test wrap_error with success

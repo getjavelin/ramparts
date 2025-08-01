@@ -110,7 +110,7 @@ jobs:
             echo "crate_ext=" >> ${GITHUB_OUTPUT}
           elif [[ ${{ matrix.target }} == "windows-2022" && ${{ matrix.arch }} == "x86_64" ]] ; then
             echo "crate_target=x86_64-pc-windows-msvc" >> ${GITHUB_OUTPUT}
-            echo "crate_release=ramparts-windows-x86_64" >> ${GITHUB_OUTPUT}
+            echo "crate_release=ramparts-windows-x86_64.exe" >> ${GITHUB_OUTPUT}
             echo "crate_ext=.exe" >> ${GITHUB_OUTPUT}
           elif [[ ${{ matrix.target }} == "macOS-15" && ${{ matrix.arch }} == "x86_64" ]] ; then
             echo "crate_target=x86_64-apple-darwin" >> ${GITHUB_OUTPUT}
@@ -180,7 +180,7 @@ jobs:
       - name: Create release assets
         run: |
           mkdir -p release
-          cp target/${{ steps.set_env.outputs.crate_target }}/release/ramparts${{ steps.set_env.outputs.crate_ext }} release/${{ steps.set_env.outputs.crate_release }}${{ steps.set_env.outputs.crate_ext }}
+          cp target/${{ steps.set_env.outputs.crate_target }}/release/ramparts${{ steps.set_env.outputs.crate_ext }} release/${{ steps.set_env.outputs.crate_release }}
 
           # Create checksums
           cd release
@@ -193,8 +193,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.DEVOPS_GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./release/${{ steps.set_env.outputs.crate_release }}${{ steps.set_env.outputs.crate_ext }}
-          asset_name: ${{ steps.set_env.outputs.crate_release }}${{ steps.set_env.outputs.crate_ext }}
+          asset_path: ./release/${{ steps.set_env.outputs.crate_release }}
+          asset_name: ${{ steps.set_env.outputs.crate_release }}
           asset_content_type: application/octet-stream
 
       - name: Upload checksums

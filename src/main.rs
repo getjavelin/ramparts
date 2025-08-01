@@ -223,7 +223,10 @@ async fn execute_command(
             auth_headers,
             format,
         } => handle_scan_config_command(auth_headers, format, &scanner_config, scanner).await,
-        Commands::InitConfig { force } => handle_init_config_command(force),
+        Commands::InitConfig { force } => {
+            handle_init_config_command(force);
+            Ok(())
+        }
         Commands::Server { port, host } => handle_server_command(port, host).await,
     }
 }
@@ -254,7 +257,7 @@ async fn handle_scan_command(
         Err(e) => {
             error!(
                 "{}",
-                error_utils::create_error_msg("Scan operation", &e.to_string())
+                error_utils::format_error("Scan operation", &e.to_string())
             );
             std::process::exit(1);
         }
@@ -288,7 +291,7 @@ async fn handle_scan_config_command(
         Err(e) => {
             error!(
                 "{}",
-                error_utils::create_error_msg("IDE configuration scan operation", &e.to_string())
+                error_utils::format_error("IDE configuration scan operation", &e.to_string())
             );
             std::process::exit(1);
         }
@@ -296,7 +299,7 @@ async fn handle_scan_config_command(
 }
 
 /// Handles the init-config command
-fn handle_init_config_command(force: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_init_config_command(force: bool) {
     let config_manager = config::ScannerConfigManager::new();
 
     if config_manager.has_config_file() && !force {
@@ -310,7 +313,6 @@ fn handle_init_config_command(force: bool) -> Result<(), Box<dyn std::error::Err
             println!(
                 "📝 Edit the file to customize LLM settings, security checks, and other options"
             );
-            Ok(())
         }
         Err(e) => {
             error!("Failed to create config.yaml: {}", e);

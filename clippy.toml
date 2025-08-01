@@ -1,0 +1,6 @@
+# Clippy configuration for ramparts
+
+# Allow longer functions for complex configuration parsing
+too-many-lines-threshold = 150
+
+# Other clippy configurations can be added here as needed

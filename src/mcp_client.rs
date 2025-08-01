@@ -32,8 +32,8 @@ impl McpClient {
         }
     }
 
-    /// Connect to an MCP server using the appropriate transport
-    pub async fn connect_http(
+    /// Connect to an MCP server using HTTP transport
+    pub async fn connect(
         &self,
         url: &str,
         auth_headers: Option<HashMap<String, String>>,
@@ -372,7 +372,7 @@ impl McpClient {
     }
 
     /// Fetch tools from the MCP server using the official SDK
-    pub async fn fetch_tools(&self, session: &MCPSession) -> Result<Vec<MCPTool>> {
+    pub async fn get_tools(&self, session: &MCPSession) -> Result<Vec<MCPTool>> {
         debug!("Fetching tools from MCP server: {}", session.endpoint_url);
 
         let services = self.services.lock().await;
@@ -419,7 +419,7 @@ impl McpClient {
     }
 
     /// Fetch resources from the MCP server
-    pub async fn fetch_resources(&self, session: &MCPSession) -> Result<Vec<MCPResource>> {
+    pub async fn get_resources(&self, session: &MCPSession) -> Result<Vec<MCPResource>> {
         debug!(
             "Fetching resources from MCP server: {}",
             session.endpoint_url
@@ -468,7 +468,7 @@ impl McpClient {
     }
 
     /// Fetch prompts from the MCP server  
-    pub async fn fetch_prompts(&self, session: &MCPSession) -> Result<Vec<MCPPrompt>> {
+    pub async fn get_prompts(&self, session: &MCPSession) -> Result<Vec<MCPPrompt>> {
         debug!("Fetching prompts from MCP server: {}", session.endpoint_url);
 
         let services = self.services.lock().await;
@@ -536,7 +536,7 @@ mod tests {
         let client = McpClient::new();
         // This will likely fail in tests since there's no server running
         // but we can at least test that the method exists and can be called
-        let result = client.connect_http("http://localhost:8124", None).await;
+        let result = client.connect("http://localhost:8124", None).await;
         // We expect this to fail in the test environment, but not panic
         assert!(result.is_err() || result.is_ok());
     }
