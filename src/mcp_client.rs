@@ -9,6 +9,7 @@ use rmcp::{
     transport::{SseClientTransport, StreamableHttpClientTransport, TokioChildProcess},
     RoleClient, ServiceExt,
 };
+use reqwest::{Client as HttpClient, header::{HeaderMap, HeaderName, HeaderValue}};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::process::Command;
@@ -70,12 +71,30 @@ impl McpClient {
     async fn try_streamable_http_connection(
         &self,
         url: &str,
-        _auth_headers: Option<&HashMap<String, String>>,
+        auth_headers: Option<&HashMap<String, String>>,
     ) -> Result<MCPSession> {
         debug!("Attempting streamable HTTP connection to: {}", url);
 
-        // Create streamable HTTP transport
-        let transport = StreamableHttpClientTransport::from_uri(url);
+        // Create streamable HTTP transport with auth headers if provided
+        let transport = if let Some(headers) = auth_headers {
+            debug!("Creating HTTP client with {} auth headers", headers.len());
+            let mut header_map = HeaderMap::new();
+            
+            for (key, value) in headers {
+                if let (Ok(name), Ok(val)) = (HeaderName::from_bytes(key.as_bytes()), HeaderValue::from_str(value)) {
+                    header_map.insert(name, val);
+                }
+            }
+            
+            let client = HttpClient::builder().default_headers(header_map).build().unwrap();
+            let config = rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig {
+                uri: url.into(),
+                ..Default::default()
+            };
+            StreamableHttpClientTransport::with_client(client, config)
+        } else {
+            StreamableHttpClientTransport::from_uri(url)
+        };
 
         // Create the MCP service
         let service = ()
@@ -143,14 +162,34 @@ impl McpClient {
     async fn try_sse_connection(
         &self,
         url: &str,
-        _auth_headers: Option<&HashMap<String, String>>,
+        auth_headers: Option<&HashMap<String, String>>,
     ) -> Result<MCPSession> {
         debug!("Attempting SSE connection to: {}", url);
 
-        // Create SSE transport
-        let transport = SseClientTransport::start(url)
-            .await
-            .map_err(|e| anyhow!("Failed to create SSE transport: {}", e))?;
+        // Create SSE transport with auth headers if provided
+        let transport = if let Some(headers) = auth_headers {
+            debug!("Creating SSE client with {} auth headers", headers.len());
+            let mut header_map = HeaderMap::new();
+            
+            for (key, value) in headers {
+                if let (Ok(name), Ok(val)) = (HeaderName::from_bytes(key.as_bytes()), HeaderValue::from_str(value)) {
+                    header_map.insert(name, val);
+                }
+            }
+            
+            let client = HttpClient::builder().default_headers(header_map).build().unwrap();
+            let config = rmcp::transport::sse_client::SseClientConfig {
+                sse_endpoint: url.into(),
+                ..Default::default()
+            };
+            SseClientTransport::start_with_client(client, config)
+                .await
+                .map_err(|e| anyhow!("Failed to create SSE transport with auth: {}", e))?
+        } else {
+            SseClientTransport::start(url)
+                .await
+                .map_err(|e| anyhow!("Failed to create SSE transport: {}", e))?
+        };
 
         // Create the MCP service
         let service = ()
