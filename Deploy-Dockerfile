@@ -2,7 +2,7 @@ FROM debian:bookworm-slim
 LABEL maintainer="Akhil Raj"
 
 WORKDIR /app
-COPY ramparts /app/
+COPY target/release/ramparts /app/
 
 EXPOSE 8080
 
