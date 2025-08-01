@@ -84,8 +84,8 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 jsonrpc-core = "18.0"
 yara-x = { version = "1.4", optional = true }
 
-# Official Rust MCP SDK  
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = ["client", "reqwest", "transport-child-process", "transport-streamable-http-client", "transport-sse-client", "transport-worker"] }
+# Official Rust MCP SDK
+rmcp = { version = "0.3.2", features = ["client", "reqwest", "transport-child-process", "transport-streamable-http-client", "transport-sse-client", "transport-worker"] }
 
 [build-dependencies]
 chrono = "0.4"
