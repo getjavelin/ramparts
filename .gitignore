@@ -5,7 +5,6 @@
 *.pdb
 
 # Cargo
-Cargo.lock
 .cargo
 
 # IDE files
