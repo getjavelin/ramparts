@@ -1,0 +1,31 @@
+{
+    "context_servers": [
+        {
+            "mcp-server-git": {
+                "command": {
+                    "path": "uvx",
+                    "args": ["mcp-server-git"]
+                }
+            }
+        },
+        {
+            "filesystem": {
+                "command": {
+                    "path": "node",
+                    "args": ["/path/to/filesystem-server.js", "/tmp"]
+                },
+                "env": {
+                    "NODE_ENV": "production"
+                }
+            }
+        },
+        {
+            "web-search": {
+                "url": "http://localhost:9000",
+                "env": {
+                    "API_KEY": "test-key"
+                }
+            }
+        }
+    ]
+} 

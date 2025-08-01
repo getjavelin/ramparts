@@ -246,8 +246,6 @@ pub struct MCPTool {
 #[derive(Debug, Clone)]
 pub struct MCPSession {
     pub server_info: Option<MCPServerInfo>,
-    #[allow(dead_code)]
-    pub session_id: Option<String>,
     pub endpoint_url: String, // Store the successful endpoint URL for reuse
 }
 

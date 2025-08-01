@@ -41,7 +41,8 @@ pub mod error_utils {
     }
 
     /// Wrap an error with context
-    #[allow(dead_code)]
+    /// Wraps an error with additional context information
+    #[allow(dead_code)] // Used in tests and for error context enhancement
     pub fn wrap_error<T>(result: Result<T>, context: &str) -> Result<T> {
         result.map_err(|e| anyhow!("{context}: {e}"))
     }
@@ -117,12 +118,35 @@ fn print_json_result(result: &ScanResult) {
     }
 }
 
-#[allow(clippy::too_many_lines)]
 fn print_raw_json_result(result: &ScanResult) {
-    // Create a raw JSON structure that preserves the original MCP server schema
+    let raw_result = build_raw_json_result(result);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&raw_result)
+            .unwrap_or_else(|e| { format!("{{\"error\": \"Failed to serialize result: {e}\"}}") })
+    );
+}
+
+/// Builds a raw JSON structure that preserves the original MCP server schema
+fn build_raw_json_result(result: &ScanResult) -> serde_json::Map<String, serde_json::Value> {
     let mut raw_result = serde_json::Map::new();
 
-    // Add basic scan info
+    add_basic_scan_info(&mut raw_result, result);
+    add_server_info(&mut raw_result, result);
+    add_tools_info(&mut raw_result, result);
+    add_resources_info(&mut raw_result, result);
+    add_prompts_info(&mut raw_result, result);
+    add_yara_results_info(&mut raw_result, result);
+    add_errors_info(&mut raw_result, result);
+
+    raw_result
+}
+
+/// Adds basic scan information to the raw JSON result
+fn add_basic_scan_info(
+    raw_result: &mut serde_json::Map<String, serde_json::Value>,
+    result: &ScanResult,
+) {
     raw_result.insert(
         "url".to_string(),
         serde_json::Value::String(result.url.clone()),
@@ -139,8 +163,13 @@ fn print_raw_json_result(result: &ScanResult) {
         "timestamp".to_string(),
         serde_json::Value::String(result.timestamp.to_rfc3339()),
     );
+}
 
-    // Add server info if available
+/// Adds server information to the raw JSON result
+fn add_server_info(
+    raw_result: &mut serde_json::Map<String, serde_json::Value>,
+    result: &ScanResult,
+) {
     if let Some(server_info) = &result.server_info {
         let mut server_info_obj = serde_json::Map::new();
         server_info_obj.insert(
@@ -151,12 +180,14 @@ fn print_raw_json_result(result: &ScanResult) {
             "version".to_string(),
             serde_json::Value::String(server_info.version.clone()),
         );
+
         if let Some(desc) = &server_info.description {
             server_info_obj.insert(
                 "description".to_string(),
                 serde_json::Value::String(desc.clone()),
             );
         }
+
         server_info_obj.insert(
             "capabilities".to_string(),
             serde_json::Value::Array(
@@ -167,41 +198,46 @@ fn print_raw_json_result(result: &ScanResult) {
                     .collect(),
             ),
         );
+
         raw_result.insert(
             "server_info".to_string(),
             serde_json::Value::Object(server_info_obj),
         );
     }
+}
 
-    // Add tools with their raw JSON schema
+/// Adds tools information to the raw JSON result
+fn add_tools_info(
+    raw_result: &mut serde_json::Map<String, serde_json::Value>,
+    result: &ScanResult,
+) {
     if !result.tools.is_empty() {
         let tools_array = result
             .tools
             .iter()
             .map(|tool| {
-                if let Some(ref raw_json) = tool.raw_json {
-                    raw_json.clone()
-                } else {
-                    // Fallback to our parsed structure if raw JSON is not available
+                tool.raw_json.clone().unwrap_or_else(|| {
                     serde_json::to_value(tool).unwrap_or(serde_json::Value::Null)
-                }
+                })
             })
             .collect();
         raw_result.insert("tools".to_string(), serde_json::Value::Array(tools_array));
     }
+}
 
-    // Add resources with their raw JSON schema
+/// Adds resources information to the raw JSON result
+fn add_resources_info(
+    raw_result: &mut serde_json::Map<String, serde_json::Value>,
+    result: &ScanResult,
+) {
     if !result.resources.is_empty() {
         let resources_array = result
             .resources
             .iter()
             .map(|resource| {
-                if let Some(ref raw_json) = resource.raw_json {
-                    raw_json.clone()
-                } else {
-                    // Fallback to our parsed structure if raw JSON is not available
+                resource.raw_json.clone().unwrap_or_else(|| {
                     serde_json::to_value(resource).unwrap_or(serde_json::Value::Null)
-                }
+                })
             })
             .collect();
         raw_result.insert(
@@ -209,19 +245,21 @@ fn print_raw_json_result(result: &ScanResult) {
             serde_json::Value::Array(resources_array),
         );
     }
+}
 
-    // Add prompts with their raw JSON schema
+/// Adds prompts information to the raw JSON result
+fn add_prompts_info(
+    raw_result: &mut serde_json::Map<String, serde_json::Value>,
+    result: &ScanResult,
+) {
     if !result.prompts.is_empty() {
         let prompts_array = result
             .prompts
             .iter()
             .map(|prompt| {
-                if let Some(ref raw_json) = prompt.raw_json {
-                    raw_json.clone()
-                } else {
-                    // Fallback to our parsed structure if raw JSON is not available
+                prompt.raw_json.clone().unwrap_or_else(|| {
                     serde_json::to_value(prompt).unwrap_or(serde_json::Value::Null)
-                }
+                })
             })
             .collect();
         raw_result.insert(
@@ -229,8 +267,13 @@ fn print_raw_json_result(result: &ScanResult) {
             serde_json::Value::Array(prompts_array),
         );
     }
+}
 
-    // Add YARA scan results if any
+/// Adds YARA scan results to the raw JSON result
+fn add_yara_results_info(
+    raw_result: &mut serde_json::Map<String, serde_json::Value>,
+    result: &ScanResult,
+) {
     if !result.yara_results.is_empty() {
         let yara_results_array = result
             .yara_results
@@ -242,8 +285,13 @@ fn print_raw_json_result(result: &ScanResult) {
             serde_json::Value::Array(yara_results_array),
         );
     }
+}
 
-    // Add errors if any
+/// Adds error information to the raw JSON result
+fn add_errors_info(
+    raw_result: &mut serde_json::Map<String, serde_json::Value>,
+    result: &ScanResult,
+) {
     if !result.errors.is_empty() {
         let errors_array = result
             .errors
@@ -251,14 +299,6 @@ fn print_raw_json_result(result: &ScanResult) {
             .map(|e| serde_json::Value::String(e.clone()))
             .collect();
         raw_result.insert("errors".to_string(), serde_json::Value::Array(errors_array));
-    }
-
-    match serde_json::to_string_pretty(&serde_json::Value::Object(raw_result)) {
-        Ok(json) => println!("{json}"),
-        Err(e) => {
-            eprintln!("Error serializing raw result to JSON: {e}");
-            println!("{{\"error\": \"Failed to serialize raw scan result\"}}");
-        }
     }
 }
 

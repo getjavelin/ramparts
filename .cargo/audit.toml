@@ -1,0 +1,31 @@
+# Example audit config file
+#
+# It may be located in the user home (`~/.cargo/audit.toml`) or in the project
+# root (`.cargo/audit.toml`).
+#
+# All of the options which can be passed via CLI arguments can also be
+# permanently specified in this file.
+
+[advisories]
+# Advisory IDs to ignore - we ignore these specific advisories based on our risk assessment
+ignore = [
+    "RUSTSEC-2023-0071",  # rsa: Marvin Attack timing side-channel - no fix available, medium severity
+    "RUSTSEC-2024-0436",  # paste: unmaintained but stable proc-macro crate
+]
+
+# Warn for categories of informational advisories
+informational_warnings = []  # We handle unmaintained dependencies via ignore list above
+
+# CVSS severity threshold ("none", "low", "medium", "high", "critical")
+severity_threshold = "low"
+
+# Advisory Database Configuration
+[database]
+# Path where advisory git repo will be cloned/fetched into
+path = "~/.cargo/advisory-db"
+# URL to git repo
+url = "https://github.com/RustSec/advisory-db.git"
+# Perform a `git fetch` before auditing (default: true)
+fetch = true
+# Allow stale advisory DB (i.e. no commits for 90 days, default: false)
+stale = false 

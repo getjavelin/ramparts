@@ -1,4 +1,4 @@
-use crate::config::{MCPConfigManager, ScannerConfig};
+use crate::config::{self, MCPConfig, MCPConfigManager, MCPServerConfig, ScannerConfig};
 use crate::constants::{messages, protocol};
 use crate::mcp_client::McpClient;
 use crate::security::{
@@ -206,16 +206,12 @@ use std::sync::Arc;
 #[cfg(feature = "yara-x-scanning")]
 pub struct YaraMatchInfo {
     pub rule_name: String,
-    #[allow(dead_code)]
-    pub rule_metadata: Option<crate::types::YaraRuleMetadata>,
 }
 
 /// Enhanced YARA match with rule metadata (non-YARA fallback)
 #[cfg(not(feature = "yara-x-scanning"))]
 pub struct YaraMatchInfo {
     pub rule_name: String,
-    #[allow(dead_code)]
-    pub rule_metadata: Option<crate::types::YaraRuleMetadata>,
 }
 
 /// Threat detection rules engine that loads YARA-X rules from directory structure
@@ -232,7 +228,6 @@ pub struct ThreatRules {
 #[derive(Debug, Clone)]
 pub struct RuleMetadata {
     pub name: String,
-    pub tags: Vec<String>,
 }
 
 impl ThreatRules {
@@ -340,8 +335,6 @@ impl ThreatRules {
             post_scan_count: self.post_scan_rules.len(),
             pre_scan_rules: Vec::new(), // Empty for memory stats - not needed for this use case
             post_scan_rules: Vec::new(), // Empty for memory stats - not needed for this use case
-            pre_scan_tags: HashMap::new(), // Empty for now - could be populated with actual tag counts
-            post_scan_tags: HashMap::new(), // Empty for now - could be populated with actual tag counts
         }
     }
 
@@ -383,7 +376,6 @@ impl ThreatRules {
                         // Create metadata for the rule
                         let metadata = RuleMetadata {
                             name: rule_name.clone(),
-                            tags: vec!["yara-x".to_string(), "security".to_string()],
                         };
                         let metadata_key = format!("{phase}:{rule_name}");
                         self.rule_metadata.insert(metadata_key, metadata);
@@ -403,63 +395,6 @@ impl ThreatRules {
         Ok(rules)
     }
 
-    /// Helper method to extract metadata from YARA-X rule matches
-    #[cfg(feature = "yara-x-scanning")]
-    fn extract_yara_metadata(
-        &self,
-        rule: &yara_x::Rule,
-        phase: &str,
-    ) -> Option<crate::types::YaraRuleMetadata> {
-        let mut raw_metadata = HashMap::new();
-        for (key, value) in rule.metadata() {
-            let value_str = match value {
-                yara_x::MetaValue::Integer(i) => i.to_string(),
-                yara_x::MetaValue::Bool(b) => b.to_string(),
-                yara_x::MetaValue::String(s) => s.to_string(),
-                yara_x::MetaValue::Bytes(b) => format!("{b:?}"),
-                yara_x::MetaValue::Float(f) => f.to_string(),
-            };
-            raw_metadata.insert(key.to_string(), value_str);
-        }
-
-        if raw_metadata.is_empty() {
-            // Fallback to stored metadata if no match metadata available
-            let rule_name = rule.identifier();
-            let metadata_key = format!("{phase}:{rule_name}");
-            self.rule_metadata.get(&metadata_key).map(|stored_meta| {
-                crate::types::YaraRuleMetadata {
-                    name: Some(stored_meta.name.clone()),
-                    author: Some("Ramparts Security Team".to_string()),
-                    date: None,
-                    version: None,
-                    description: Some(stored_meta.name.clone()),
-                    severity: Some("MEDIUM".to_string()),
-                    category: Some(stored_meta.tags.join(",")),
-                    confidence: None,
-                    tags: stored_meta.tags.clone(),
-                }
-            })
-        } else {
-            let tags = if let Some(category) = raw_metadata.get("category") {
-                category.split(',').map(|s| s.trim().to_string()).collect()
-            } else {
-                vec!["yara-x".to_string(), "security".to_string()]
-            };
-
-            Some(crate::types::YaraRuleMetadata {
-                name: raw_metadata.get("name").cloned(),
-                author: raw_metadata.get("author").cloned(),
-                date: raw_metadata.get("date").cloned(),
-                version: raw_metadata.get("version").cloned(),
-                description: raw_metadata.get("description").cloned(),
-                severity: raw_metadata.get("severity").cloned(),
-                category: raw_metadata.get("category").cloned(),
-                confidence: raw_metadata.get("confidence").cloned(),
-                tags,
-            })
-        }
-    }
-
     /// Consolidated method to scan text with rules and return enhanced match information
     #[cfg(feature = "yara-x-scanning")]
     fn scan_with_rules_enhanced_internal(
@@ -476,11 +411,8 @@ impl ThreatRules {
             match scanner.scan(text.as_bytes()) {
                 Ok(scan_results) => {
                     for m in scan_results.matching_rules() {
-                        let rule_metadata = self.extract_yara_metadata(&m, phase);
-
                         all_matches.push(YaraMatchInfo {
                             rule_name: m.identifier().to_string(),
-                            rule_metadata,
                         });
                     }
                 }
@@ -514,28 +446,20 @@ impl ThreatRules {
 
     /// Gets statistics about loaded rules
     pub fn stats(&self) -> RuleStats {
-        let mut pre_scan_tags = HashMap::new();
-        let mut post_scan_tags = HashMap::new();
         let mut pre_scan_rules = Vec::new();
         let mut post_scan_rules = Vec::new();
 
-        // Collect rule names and count tags for pre-scan rules
+        // Collect rule names for pre-scan rules
         for (key, metadata) in &self.rule_metadata {
             if key.starts_with("pre:") {
                 pre_scan_rules.push(metadata.name.clone());
-                for tag in &metadata.tags {
-                    *pre_scan_tags.entry(tag.clone()).or_insert(0) += 1;
-                }
             }
         }
 
-        // Collect rule names and count tags for post-scan rules
+        // Collect rule names for post-scan rules
         for (key, metadata) in &self.rule_metadata {
             if key.starts_with("post:") {
                 post_scan_rules.push(metadata.name.clone());
-                for tag in &metadata.tags {
-                    *post_scan_tags.entry(tag.clone()).or_insert(0) += 1;
-                }
             }
         }
 
@@ -544,8 +468,6 @@ impl ThreatRules {
             post_scan_count: self.post_scan_rules.len(),
             pre_scan_rules,
             post_scan_rules,
-            pre_scan_tags,
-            post_scan_tags,
         }
     }
 
@@ -591,10 +513,6 @@ pub struct RuleStats {
     pub post_scan_count: usize,
     pub pre_scan_rules: Vec<String>,
     pub post_scan_rules: Vec<String>,
-    #[allow(dead_code)]
-    pub pre_scan_tags: HashMap<String, usize>,
-    #[allow(dead_code)]
-    pub post_scan_tags: HashMap<String, usize>,
 }
 
 impl Clone for ThreatRules {
@@ -986,7 +904,12 @@ impl MCPScanner {
 
         info!("Scanning {}", url);
 
-        // Normalize URL with error context
+        // Check if this is a STDIO URL and route appropriately
+        if url.starts_with("stdio:") {
+            return self.scan_stdio_url(url, options).await;
+        }
+
+        // Normalize URL with error context for HTTP URLs
         let normalized_url = Self::normalize_url(url);
         result.url.clone_from(&normalized_url);
 
@@ -1098,6 +1021,169 @@ impl MCPScanner {
         Ok(result)
     }
 
+    /// Parse and scan a STDIO URL (format: stdio:command:arg1:arg2... or stdio://command:arg1:arg2...)
+    async fn scan_stdio_url(&self, stdio_url: &str, options: ScanOptions) -> Result<ScanResult> {
+        // Parse the STDIO URL format: stdio:command:arg1:arg2:... or stdio://command:arg1:arg2:...
+        let parts: Vec<&str> = stdio_url.splitn(3, ':').collect();
+        if parts.len() < 2 {
+            return Err(anyhow!(
+                "Invalid STDIO URL format. Expected: stdio:command or stdio:command:args"
+            ));
+        }
+
+        // Handle both stdio:command and stdio://command formats
+        let command = parts[1].trim_start_matches("//");
+        let args: Vec<String> = if parts.len() > 2 && !parts[2].is_empty() {
+            parts[2]
+                .split(':')
+                .map(std::string::ToString::to_string)
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // Create a temporary server config for the STDIO URL
+        let server_config = MCPServerConfig {
+            name: Some(format!("STDIO-{command}")),
+            url: None,
+            command: Some(command.to_string()),
+            args: Some(args),
+            env: None,
+            description: Some(format!("STDIO server from URL: {stdio_url}")),
+            auth_headers: None,
+            options: None,
+        };
+
+        // Use the existing STDIO server scanning method
+        self.scan_stdio_server(&server_config, options).await
+    }
+
+    /// Scan a STDIO MCP server using subprocess transport
+    async fn scan_stdio_server(
+        &self,
+        server_config: &MCPServerConfig,
+        options: ScanOptions,
+    ) -> Result<ScanResult> {
+        let command = server_config
+            .command
+            .as_ref()
+            .ok_or_else(|| anyhow!("STDIO server missing command"))?;
+
+        let args = server_config.args.as_deref().unwrap_or(&[]);
+        let display_url = server_config.display_url();
+
+        info!("Scanning STDIO MCP server: {}", display_url);
+
+        let mut result = ScanResult::new(display_url.clone());
+
+        // Connect to the STDIO server using the MCP client
+        let session = self
+            .mcp_client
+            .connect_subprocess(command, args, server_config.env.as_ref())
+            .await
+            .map_err(|e| anyhow!("Failed to connect to STDIO server {}: {}", command, e))?;
+
+        // Perform the same MCP scanning pattern as HTTP servers
+        let scan_result = track_performance("STDIO MCP server scan", || async {
+            self.perform_scan_with_session(&session, &options).await
+        })
+        .await;
+
+        match scan_result {
+            Ok(mut scan_data) => {
+                // Apply the same middleware chain as HTTP scanning
+                self.middleware_chain.run_pre_scan(&mut scan_data);
+
+                // === SECURITY ANALYSIS ===
+                // Load scanner configuration for security analysis
+                let scanner_config = match config::ScannerConfigManager::new().load_config() {
+                    Ok(config) => config,
+                    Err(_) => {
+                        debug!("Failed to load scanner config for STDIO security analysis, using defaults");
+                        ScannerConfig::default()
+                    }
+                };
+
+                // Perform security scanning with configuration - same as HTTP flow
+                let security_scanner = if scanner_config.security.enabled {
+                    SecurityScanner::with_config(scanner_config)
+                } else {
+                    SecurityScanner::default()
+                };
+                let mut security_result = SecurityScanResult::new();
+
+                // Batch scan tools for security issues
+                match security_scanner
+                    .scan_tools_batch(&scan_data.tools, options.detailed)
+                    .await
+                {
+                    Ok((tool_issues, analysis_details)) => {
+                        security_result.add_tool_issues(tool_issues);
+                        // Store the analysis details for each tool
+                        for (tool_name, details) in analysis_details {
+                            security_result.add_tool_analysis_details(tool_name, details);
+                        }
+                    }
+                    Err(e) => warn!(
+                        "Failed to batch scan STDIO tools for security issues: {}",
+                        e
+                    ),
+                }
+
+                // Batch scan prompts for security issues
+                if !scan_data.prompts.is_empty() {
+                    match security_scanner
+                        .scan_prompts_batch(&scan_data.prompts, options.detailed)
+                        .await
+                    {
+                        Ok(prompt_issues) => security_result.add_prompt_issues(prompt_issues),
+                        Err(e) => warn!(
+                            "Failed to batch scan STDIO prompts for security issues: {}",
+                            e
+                        ),
+                    }
+                }
+
+                // Batch scan resources for security issues
+                if !scan_data.resources.is_empty() {
+                    match security_scanner
+                        .scan_resources_batch(&scan_data.resources, options.detailed)
+                        .await
+                    {
+                        Ok(resource_issues) => security_result.add_resource_issues(resource_issues),
+                        Err(e) => {
+                            warn!(
+                                "Failed to batch scan STDIO resources for security issues: {}",
+                                e
+                            );
+                        }
+                    }
+                }
+
+                // === POST-SCAN HOOKS ===
+                self.middleware_chain.run_post_scan(&mut scan_data);
+
+                // Populate result with scan data
+                result.status = ScanStatus::Success;
+                result.server_info.clone_from(&session.server_info);
+                result.tools = scan_data.tools;
+                result.resources = scan_data.resources;
+                result.prompts = scan_data.prompts;
+                result.yara_results = scan_data.yara_results;
+                result.security_issues = Some(security_result);
+
+                info!("Successfully scanned STDIO server: {}", display_url);
+            }
+            Err(e) => {
+                result.status = ScanStatus::Failed(e.to_string());
+                result.add_error(format!("STDIO scan failed: {e}"));
+                warn!("STDIO scan failed for {}: {}", display_url, e);
+            }
+        }
+
+        Ok(result)
+    }
+
     /// Scan MCP servers from IDE configuration files
     pub async fn scan_config(&self, options: ScanOptions) -> Result<Vec<ScanResult>> {
         let config_manager = MCPConfigManager::new();
@@ -1109,7 +1195,7 @@ impl MCPScanner {
         let config = config_manager.load_config();
         let mut results = Vec::new();
 
-        if let Some(servers) = config.servers {
+        if let Some(ref servers) = config.servers {
             info!(
                 "Found [\x1b[1m{}\x1b[0m] MCP servers in IDE configuration files",
                 servers.len()
@@ -1119,92 +1205,54 @@ impl MCPScanner {
                 info!(
                     "Scanning MCP server from IDE config: [\x1b[1m{}\x1b[0m] ({})",
                     server.name.as_deref().unwrap_or("unnamed"),
-                    server.url
+                    server.display_url()
                 );
 
-                // Merge server-specific options with global options
-                let mut server_options = options.clone();
+                let server_options = Self::build_server_options(&options, &config, server);
 
-                // Apply global options from config
-                if let Some(global_options) = &config.options {
-                    if let Some(timeout) = global_options.timeout {
-                        server_options.timeout = timeout;
-                    }
-                    if let Some(http_timeout) = global_options.http_timeout {
-                        server_options.http_timeout = http_timeout;
-                    }
-                    if let Some(format) = &global_options.format {
-                        server_options.format.clone_from(format);
-                    }
-                    if let Some(detailed) = global_options.detailed {
-                        server_options.detailed = detailed;
-                    }
-                }
-
-                // Apply server-specific options
-                if let Some(server_specific_options) = &server.options {
-                    if let Some(timeout) = server_specific_options.timeout {
-                        server_options.timeout = timeout;
-                    }
-                    if let Some(http_timeout) = server_specific_options.http_timeout {
-                        server_options.http_timeout = http_timeout;
-                    }
-                    if let Some(format) = &server_specific_options.format {
-                        server_options.format.clone_from(format);
-                    }
-                    if let Some(detailed) = server_specific_options.detailed {
-                        server_options.detailed = detailed;
-                    }
-                }
-
-                // Merge authentication headers
-                let mut auth_headers = options.auth_headers.clone();
-
-                // Add global auth headers
-                if let Some(global_auth_headers) = &config.auth_headers {
-                    match &mut auth_headers {
-                        Some(headers) => {
-                            for (key, value) in global_auth_headers {
-                                headers.insert(key.clone(), value.clone());
-                            }
+                // Scan the MCP server - HTTP or STDIO
+                if let Some(url) = server.scan_url() {
+                    // HTTP server scanning
+                    match self.scan_single(url, server_options).await {
+                        Ok(result) => {
+                            results.push(result);
                         }
-                        None => {
-                            auth_headers = Some(global_auth_headers.clone());
+                        Err(e) => {
+                            warn!(
+                                "Failed to scan HTTP MCP server [\x1b[1m{}\x1b[0m]: {}",
+                                server.display_url(),
+                                e
+                            );
+                            let mut failed_result = ScanResult::new(server.display_url());
+                            failed_result.status = ScanStatus::Failed(e.to_string());
+                            failed_result.add_error(format!("HTTP scan failed: {e}"));
+                            results.push(failed_result);
                         }
                     }
-                }
-
-                // Add server-specific auth headers
-                if let Some(server_auth_headers) = &server.auth_headers {
-                    match &mut auth_headers {
-                        Some(headers) => {
-                            for (key, value) in server_auth_headers {
-                                headers.insert(key.clone(), value.clone());
-                            }
+                } else if server.command.is_some() {
+                    // STDIO server scanning
+                    match self.scan_stdio_server(server, server_options).await {
+                        Ok(result) => {
+                            results.push(result);
                         }
-                        None => {
-                            auth_headers = Some(server_auth_headers.clone());
+                        Err(e) => {
+                            warn!(
+                                "Failed to scan STDIO MCP server [\x1b[1m{}\x1b[0m]: {}",
+                                server.display_url(),
+                                e
+                            );
+                            let mut failed_result = ScanResult::new(server.display_url());
+                            failed_result.status = ScanStatus::Failed(e.to_string());
+                            failed_result.add_error(format!("STDIO scan failed: {e}"));
+                            results.push(failed_result);
                         }
                     }
-                }
-
-                server_options.auth_headers = auth_headers;
-
-                // Scan the MCP server
-                match self.scan_single(&server.url, server_options).await {
-                    Ok(result) => {
-                        results.push(result);
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to scan MCP server [\x1b[1m{}\x1b[0m]: {}",
-                            server.url, e
-                        );
-                        let mut failed_result = ScanResult::new(server.url.clone());
-                        failed_result.status = ScanStatus::Failed(e.to_string());
-                        failed_result.add_error(format!("IDE config scan failed: {e}"));
-                        results.push(failed_result);
-                    }
+                } else {
+                    // Server has neither URL nor command - this should be caught by validation
+                    warn!(
+                        "Skipping invalid server [\x1b[1m{}\x1b[0m] - no URL or command specified",
+                        server.name.as_deref().unwrap_or("unnamed")
+                    );
                 }
             }
         } else {
@@ -1212,6 +1260,89 @@ impl MCPScanner {
         }
 
         Ok(results)
+    }
+
+    fn build_server_options(
+        options: &ScanOptions,
+        config: &MCPConfig,
+        server: &MCPServerConfig,
+    ) -> ScanOptions {
+        let mut server_options = options.clone();
+
+        // Apply global options from config
+        if let Some(global_options) = &config.options {
+            if let Some(timeout) = global_options.timeout {
+                server_options.timeout = timeout;
+            }
+            if let Some(http_timeout) = global_options.http_timeout {
+                server_options.http_timeout = http_timeout;
+            }
+            if let Some(format) = &global_options.format {
+                server_options.format.clone_from(format);
+            }
+            if let Some(detailed) = global_options.detailed {
+                server_options.detailed = detailed;
+            }
+        }
+
+        // Apply server-specific options
+        if let Some(server_specific_options) = &server.options {
+            if let Some(timeout) = server_specific_options.timeout {
+                server_options.timeout = timeout;
+            }
+            if let Some(http_timeout) = server_specific_options.http_timeout {
+                server_options.http_timeout = http_timeout;
+            }
+            if let Some(format) = &server_specific_options.format {
+                server_options.format.clone_from(format);
+            }
+            if let Some(detailed) = server_specific_options.detailed {
+                server_options.detailed = detailed;
+            }
+        }
+
+        // Merge authentication headers
+        server_options.auth_headers = Self::build_auth_headers(options, config, server);
+
+        server_options
+    }
+
+    fn build_auth_headers(
+        options: &ScanOptions,
+        config: &MCPConfig,
+        server: &MCPServerConfig,
+    ) -> Option<HashMap<String, String>> {
+        let mut auth_headers = options.auth_headers.clone();
+
+        // Add global auth headers
+        if let Some(global_auth_headers) = &config.auth_headers {
+            match &mut auth_headers {
+                Some(headers) => {
+                    for (key, value) in global_auth_headers {
+                        headers.insert(key.clone(), value.clone());
+                    }
+                }
+                None => {
+                    auth_headers = Some(global_auth_headers.clone());
+                }
+            }
+        }
+
+        // Add server-specific auth headers
+        if let Some(server_auth_headers) = &server.auth_headers {
+            match &mut auth_headers {
+                Some(headers) => {
+                    for (key, value) in server_auth_headers {
+                        headers.insert(key.clone(), value.clone());
+                    }
+                }
+                None => {
+                    auth_headers = Some(server_auth_headers.clone());
+                }
+            }
+        }
+
+        auth_headers
     }
 
     /// Perform the scan
@@ -1275,6 +1406,78 @@ impl MCPScanner {
             }
             Err(e) => {
                 let error_msg = format!("Failed to fetch prompts via rmcp: {e}");
+                warn!("{}", error_msg);
+                fetch_errors.push(error_msg);
+                Vec::new()
+            }
+        };
+
+        // Store fetch errors in scan_data for later inclusion in final result
+        scan_data.fetch_errors = fetch_errors;
+
+        Ok(scan_data)
+    }
+
+    /// Perform scan with an existing MCP session (for STDIO transport)
+    async fn perform_scan_with_session(
+        &self,
+        session: &crate::types::MCPSession,
+        _options: &ScanOptions,
+    ) -> Result<ScanData> {
+        let mut scan_data = ScanData::new();
+
+        // Add a small delay for initialization
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        debug!("Starting to fetch tools, resources, and prompts from existing session");
+
+        // Get server info from session
+        if let Some(ref server_info) = session.server_info {
+            scan_data.server_info = Some(server_info.clone());
+        }
+
+        // Fetch tools, resources, and prompts using existing session with proper error handling
+        let mut fetch_errors = Vec::new();
+
+        scan_data.tools = match self.mcp_client.fetch_tools(session).await {
+            Ok(tools) => {
+                debug!("Successfully fetched {} tools from session", tools.len());
+                tools
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to fetch tools from session: {e}");
+                warn!("{}", error_msg);
+                fetch_errors.push(error_msg);
+                Vec::new()
+            }
+        };
+
+        scan_data.resources = match self.mcp_client.fetch_resources(session).await {
+            Ok(resources) => {
+                debug!(
+                    "Successfully fetched {} resources from session",
+                    resources.len()
+                );
+                resources
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to fetch resources from session: {e}");
+                warn!("{}", error_msg);
+                fetch_errors.push(error_msg);
+                Vec::new()
+            }
+        };
+
+        scan_data.prompts = match self.mcp_client.fetch_prompts(session).await {
+            Ok(prompts) => {
+                debug!(
+                    "Successfully fetched {} prompts from session",
+                    prompts.len()
+                );
+                prompts
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to fetch prompts from session: {e}");
                 warn!("{}", error_msg);
                 fetch_errors.push(error_msg);
                 Vec::new()
