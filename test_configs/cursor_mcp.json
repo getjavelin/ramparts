@@ -1,0 +1,26 @@
+{
+    "mcpServers": {
+        "airbnb": {
+            "command": "npx",
+            "args": ["-y", "@openbnb/mcp-server-airbnb"],
+            "env": {
+                "DEBUG": "1"
+            }
+        },
+        "playwright": {
+            "command": "npx",
+            "args": ["-y", "@executeautomation/playwright-mcp-server"],
+            "description": "Playwright automation server"
+        },
+        "time": {
+            "command": "uvx",
+            "args": ["mcp-server-time"],
+            "env": {
+                "TZ": "UTC"
+            }
+        }
+    },
+    "settings": {
+        "enableLogging": true
+    }
+} 

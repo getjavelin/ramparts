@@ -1,0 +1,22 @@
+{
+    "mcpServers": {
+        "brave-search": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+            "env": {
+                "BRAVE_API_KEY": "your-api-key"
+            }
+        },
+        "filesystem": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/username/Desktop"],
+            "type": "stdio"
+        },
+        "disabled-server": {
+            "command": "npx",
+            "args": ["-y", "@disabled/server"],
+            "disabled": true
+        }
+    },
+    "globalShortcut": "Cmd+Shift+M"
+} 

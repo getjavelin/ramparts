@@ -130,6 +130,15 @@ pub struct VSCodeMCPConfig {
     pub inputs: Option<Vec<serde_json::Value>>,
 }
 
+/// VS Code MCP configuration with VSCodeServerConfig (for configs with description field)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VSCodeObjectMCPConfig {
+    /// MCP servers configuration in VS Code format with descriptions
+    pub servers: Option<HashMap<String, VSCodeServerConfig>>,
+    /// Inputs configuration
+    pub inputs: Option<Vec<serde_json::Value>>,
+}
+
 /// Individual MCP server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MCPServerConfig {
@@ -399,6 +408,32 @@ impl From<VSCodeMCPConfig> for MCPConfig {
                     args: server_config.args,
                     env: server_config.env,
                     description: None, // VSCodeMCPServerConfig doesn't have a description field
+                    auth_headers: None,
+                    options: None,
+                })
+                .collect()
+        });
+
+        MCPConfig {
+            servers,
+            options: None,
+            auth_headers: None,
+        }
+    }
+}
+
+impl From<VSCodeObjectMCPConfig> for MCPConfig {
+    fn from(vscode_config: VSCodeObjectMCPConfig) -> Self {
+        let servers = vscode_config.servers.map(|servers_map| {
+            servers_map
+                .into_iter()
+                .map(|(name, server_config)| MCPServerConfig {
+                    name: Some(name),
+                    url: server_config.url,
+                    command: server_config.command,
+                    args: server_config.args,
+                    env: server_config.env,
+                    description: server_config.description, // VSCodeServerConfig has a description field
                     auth_headers: None,
                     options: None,
                 })
@@ -1512,9 +1547,11 @@ impl MCPConfigManager {
 
     /// Parse VS Code MCP config format
     fn parse_vscode_config(content: &str) -> Result<MCPConfig> {
-        // Try array format first (more common), then object format
+        // Try array format first (more common), then object format with descriptions, then basic object format
         if let Ok(vscode_array_config) = serde_json::from_str::<VSCodeArrayMCPConfig>(content) {
             Ok(vscode_array_config.into())
+        } else if let Ok(vscode_object_config) = serde_json::from_str::<VSCodeObjectMCPConfig>(content) {
+            Ok(vscode_object_config.into())
         } else {
             let vscode_config: VSCodeMCPConfig = serde_json::from_str(content)?;
             Ok(vscode_config.into())

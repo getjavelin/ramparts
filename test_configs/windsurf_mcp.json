@@ -1,0 +1,27 @@
+{
+    "servers": {
+        "git": {
+            "command": "uvx",
+            "args": ["mcp-server-git"],
+            "type": "stdio",
+            "description": "Git operations server"
+        },
+        "filesystem": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+            "description": "File system access",
+            "env": {
+                "NODE_ENV": "development"
+            }
+        },
+        "weather": {
+            "url": "http://localhost:8080",
+            "type": "http",
+            "description": "Weather information service"
+        }
+    },
+    "global": {
+        "timeout": 30,
+        "format": "json"
+    }
+} 
