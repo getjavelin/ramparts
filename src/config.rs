@@ -228,14 +228,7 @@ pub struct MCPServerOptions {
 
 // IDE-specific configuration formats
 
-/// VS Code MCP configuration format
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VSCodeMCPConfig {
-    /// Servers as object/map (VS Code format)
-    pub servers: Option<HashMap<String, VSCodeServerConfig>>,
-    /// Inputs array
-    pub inputs: Option<Vec<serde_json::Value>>,
-}
+
 
 /// VS Code MCP configuration format with array of servers
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -284,14 +277,6 @@ pub struct VSCodeServerConfig {
     pub gallery: Option<bool>,
     /// Description
     pub description: Option<String>,
-}
-
-/// Cursor MCP configuration format
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CursorMCPConfig {
-    /// MCP servers as object (Cursor format)
-    #[serde(rename = "mcpServers")]
-    pub mcp_servers: Option<HashMap<String, CursorServerConfig>>,
 }
 
 /// Cursor server configuration
@@ -413,7 +398,7 @@ impl From<VSCodeMCPConfig> for MCPConfig {
                     command: server_config.command,
                     args: server_config.args,
                     env: server_config.env,
-                    description: server_config.description,
+                    description: None, // VSCodeMCPServerConfig doesn't have a description field
                     auth_headers: None,
                     options: None,
                 })
@@ -461,11 +446,11 @@ impl From<CursorMCPConfig> for MCPConfig {
                 .into_iter()
                 .map(|(name, server_config)| MCPServerConfig {
                     name: Some(name),
-                    url: None,
-                    command: Some(server_config.command),
-                    args: Some(server_config.args),
+                    url: server_config.url,
+                    command: server_config.command,
+                    args: server_config.args,
                     env: server_config.env,
-                    description: None,
+                    description: server_config.description,
                     auth_headers: None,
                     options: None,
                 })
@@ -1229,7 +1214,6 @@ impl MCPConfigManager {
         let content = fs::read_to_string(path)
             .map_err(|e| anyhow!("Failed to read IDE config file {}: {}", path.display(), e))?;
 
-<<<<<<< HEAD
         // Detect IDE type by checking the client type from path
         let client = Self::get_client_from_path(path);
         let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -1276,53 +1260,6 @@ impl MCPConfigManager {
             }
             _ => {}
         }
-=======
-        // Detect the IDE client type from the path
-        let client_type = Self::get_client_from_path(path);
-
-        // Try to parse using IDE-specific format first, then fall back to standard format
-        let config = match client_type {
-            Some(MCPClient::VSCode) => {
-                Self::try_parse_with_fallback("VSCode", &content, Self::parse_vscode_config, path)?
-            }
-            Some(MCPClient::Cursor) => {
-                Self::try_parse_with_fallback("Cursor", &content, Self::parse_cursor_config, path)?
-            }
-            Some(MCPClient::Windsurf) => Self::try_parse_with_fallback(
-                "Windsurf",
-                &content,
-                Self::parse_windsurf_config,
-                path,
-            )?,
-            Some(MCPClient::Claude) => {
-                Self::try_parse_with_fallback("Claude", &content, Self::parse_claude_config, path)?
-            }
-            Some(MCPClient::ClaudeCode) => Self::try_parse_with_fallback(
-                "ClaudeCode",
-                &content,
-                Self::parse_claude_code_config,
-                path,
-            )?,
-            Some(MCPClient::Gemini) => {
-                Self::try_parse_with_fallback("Gemini", &content, Self::parse_cursor_config, path)?
-            }
-            Some(MCPClient::Zed) => {
-                Self::try_parse_with_fallback("Zed", &content, Self::parse_zed_config, path)?
-            }
-            Some(MCPClient::Zencoder) => Self::try_parse_with_fallback(
-                "Zencoder",
-                &content,
-                Self::parse_zencoder_config,
-                path,
-            )?,
-            _ => {
-                // For unknown or other IDEs, try standard format first
-                Self::parse_standard_config(&content).map_err(|e| {
-                    anyhow!("Failed to parse IDE config file {}: {}", path.display(), e)
-                })?
-            }
-        };
->>>>>>> scanconfig
 
         // Try parsing as standard format
         match serde_json::from_str::<MCPConfig>(&content) {
@@ -1374,7 +1311,10 @@ impl MCPConfigManager {
 
                         MCPServerConfig {
                             name: Some(name),
-                            url,
+                            url: Some(url),
+                            command: None,
+                            args: None,
+                            env: None,
                             description: server_config.description,
                             auth_headers: None, // Cursor format doesn't specify auth headers at server level
                             options: None, // Could be extended to convert any server-specific options
@@ -1419,7 +1359,10 @@ impl MCPConfigManager {
 
                         Some(MCPServerConfig {
                             name: Some(name),
-                            url,
+                            url: Some(url),
+                            command: None,
+                            args: None,
+                            env: None,
                             description: None, // Claude Desktop format doesn't include descriptions
                             auth_headers: None,
                             options: None,
@@ -1458,7 +1401,10 @@ impl MCPConfigManager {
 
                         MCPServerConfig {
                             name: Some(name),
-                            url,
+                            url: Some(url),
+                            command: None,
+                            args: None,
+                            env: None,
                             description: None, // VS Code settings don't typically include descriptions
                             auth_headers: None,
                             options: None,
@@ -1497,7 +1443,10 @@ impl MCPConfigManager {
 
                         MCPServerConfig {
                             name: Some(name),
-                            url,
+                            url: Some(url),
+                            command: None,
+                            args: None,
+                            env: None,
                             description: None, // VS Code MCP format doesn't include descriptions
                             auth_headers: None,
                             options: None,
