@@ -144,7 +144,6 @@ We welcome contributions to Ramparts mcp scan. If you have suggestions, bug repo
 - 🔍 **[Troubleshooting Guide](docs/troubleshooting.md)** - Solutions to common issues
 - ⚙️ **[Configuration Reference](docs/configuration.md)** - Complete configuration file documentation
 - 📖 **[CLI Reference](docs/cli.md)** - All commands, options, and usage examples
-- 🔧 **[Integration Patterns](docs/integration.md)** - CI/CD, Docker, Kubernetes, and monitoring examples
 
 ## Additional Resources
 - [Need Support?](https://github.com/getjavelin/ramparts/issues)
