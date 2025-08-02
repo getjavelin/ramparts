@@ -324,7 +324,8 @@ impl MCPConfigManager {
             (".vscode/settings.json", MCPClient::VSCode),
             (".cursor/mcp.json", MCPClient::Cursor),
             (".cursor/settings.json", MCPClient::Cursor),
-            (".claude.json", MCPClient::ClaudeCode),
+            (".mcp.json", MCPClient::ClaudeCode),  // Project-scoped Claude Code config
+            (".claude/settings.local.json", MCPClient::ClaudeCode),  // Project-specific Claude Code config
             (".claude/mcp.json", MCPClient::Claude),
             (".windsurf/mcp.json", MCPClient::Windsurf),
             (".windsurf/mcp_config.json", MCPClient::Windsurf),
@@ -370,7 +371,8 @@ impl MCPConfigManager {
                 (".vscode/mcp.json", MCPClient::VSCode),
                 (".vscode/settings.json", MCPClient::VSCode),
                 (".claude/mcp.json", MCPClient::Claude),
-                (".claude.json", MCPClient::ClaudeCode),
+                (".claude.json", MCPClient::ClaudeCode),  // Global Claude Code config
+                (".claude/settings.local.json", MCPClient::ClaudeCode),  // User-specific Claude Code config
                 (".windsurf/mcp.json", MCPClient::Windsurf),
                 (".gemini/settings.json", MCPClient::Gemini),
             ];
@@ -403,7 +405,17 @@ impl MCPConfigManager {
     /// Windows-specific paths
     #[cfg(target_os = "windows")]
     fn get_windows_paths() -> Vec<(PathBuf, MCPClient)> {
-        Self::get_platform_paths()
+        let mut paths = Self::get_platform_paths();
+
+        // Windows-specific Claude Desktop path
+        if let Some(app_data) = dirs::data_dir() {
+            paths.push((
+                app_data.join("Claude/claude_desktop_config.json"),
+                MCPClient::Claude,
+            ));
+        }
+
+        paths
     }
 
     /// macOS-specific paths
@@ -427,7 +439,17 @@ impl MCPConfigManager {
     /// Unix/Linux-specific paths
     #[cfg(target_os = "linux")]
     fn get_unix_paths() -> Vec<(PathBuf, MCPClient)> {
-        Self::get_platform_paths()
+        let mut paths = Self::get_platform_paths();
+
+        // Linux-specific Claude Desktop path
+        if let Some(config_dir) = dirs::config_dir() {
+            paths.push((
+                config_dir.join("Claude/claude_desktop_config.json"),
+                MCPClient::Claude,
+            ));
+        }
+
+        paths
     }
 
     /// Detect client type from path
