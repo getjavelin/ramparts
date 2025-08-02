@@ -1182,6 +1182,72 @@ impl MCPScanner {
     }
 
     /// Scan MCP servers from IDE configuration files
+    /// Scan configuration files grouped by IDE  
+    pub async fn scan_config_by_ide(&self, options: ScanOptions) -> Result<Vec<ScanResult>> {
+        let config_manager = MCPConfigManager::new();
+
+        if !config_manager.has_config_files() {
+            return Err(anyhow!("No MCP IDE configuration files found"));
+        }
+
+        let configs_by_ide = config_manager.load_config_by_ide();
+        let mut results = Vec::new();
+
+        for (ide_name, config) in configs_by_ide {
+            if let Some(ref servers) = config.servers {
+                debug!(
+                    "Found [\x1b[1m{}\x1b[0m] MCP servers from {} IDE",
+                    servers.len(),
+                    ide_name
+                );
+
+                for server in servers {
+                    debug!(
+                        "Scanning MCP server from {} IDE: [\x1b[1m{}\x1b[0m] ({})",
+                        ide_name,
+                        server.name.as_deref().unwrap_or("unnamed"),
+                        server.to_display_url()
+                    );
+
+                    let server_options = Self::build_server_options(&options, &config, server);
+
+                    // Scan the MCP server - HTTP or STDIO
+                    if let Some(url) = server.scan_url() {
+                        // HTTP server scanning
+                        match self.scan_single(&url, server_options).await {
+                            Ok(mut result) => {
+                                result.ide_source = Some(ide_name.clone());
+                                results.push(result);
+                            }
+                            Err(e) => {
+                                let mut failed_result = ScanResult::new(url.to_string());
+                                failed_result.ide_source = Some(ide_name.clone());
+                                failed_result.status = ScanStatus::Failed(e.to_string());
+                                results.push(failed_result);
+                            }
+                        }
+                    } else if server.command.is_some() {
+                        // STDIO server scanning
+                        match self.scan_stdio_server(server, server_options).await {
+                            Ok(mut result) => {
+                                result.ide_source = Some(ide_name.clone());
+                                results.push(result);
+                            }
+                            Err(e) => {
+                                let mut failed_result = ScanResult::new(server.to_display_url());
+                                failed_result.ide_source = Some(ide_name.clone());
+                                failed_result.status = ScanStatus::Failed(e.to_string());
+                                results.push(failed_result);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
     pub async fn scan_config(&self, options: ScanOptions) -> Result<Vec<ScanResult>> {
         let config_manager = MCPConfigManager::new();
 
@@ -1210,7 +1276,7 @@ impl MCPScanner {
                 // Scan the MCP server - HTTP or STDIO
                 if let Some(url) = server.scan_url() {
                     // HTTP server scanning
-                    match self.scan_single(url, server_options).await {
+                    match self.scan_single(&url, server_options).await {
                         Ok(result) => {
                             results.push(result);
                         }

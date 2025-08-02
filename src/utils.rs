@@ -695,6 +695,9 @@ fn format_status(status: &ScanStatus) -> String {
         ScanStatus::Failed(msg) => format!("FAILED: {msg}").red().to_string(),
         ScanStatus::Timeout => "TIMEOUT".yellow().to_string(),
         ScanStatus::ConnectionError(msg) => format!("CONNECTION ERROR: {msg}").red().to_string(),
+        ScanStatus::AuthenticationError(msg) => {
+            format!("AUTHENTICATION ERROR: {msg}").red().to_string()
+        }
     }
 }
 
@@ -909,5 +912,325 @@ mod tests {
         ));
         assert!(connection_error.contains("CONNECTION ERROR"));
         assert!(connection_error.contains("Connection failed"));
+
+        let auth_error = format_status(&ScanStatus::AuthenticationError("Auth failed".to_string()));
+        assert!(auth_error.contains("AUTHENTICATION ERROR"));
+        assert!(auth_error.contains("Auth failed"));
+    }
+}
+
+// ============================================================================
+// MULTI-SERVER PRINTING FUNCTIONS
+// ============================================================================
+
+/// Print results from multiple MCP servers
+pub fn print_multi_server_results(results: &[ScanResult], format: &str, detailed: bool) {
+    match format.to_lowercase().as_str() {
+        "json" => print_multi_server_json(results),
+        "table" => print_multi_server_tree(results, detailed),
+        "text" => print_multi_server_text(results),
+        "raw" => print_multi_server_raw_json(results),
+        _ => {
+            eprintln!("Unknown format: {format}. Using tree view format.");
+            print_multi_server_tree(results, detailed);
+        }
+    }
+}
+
+/// Enhanced tree view for multiple MCP servers grouped by IDE
+fn print_multi_server_tree(results: &[ScanResult], _detailed: bool) {
+    // Group results by IDE source
+    let mut results_by_ide: std::collections::HashMap<String, Vec<&ScanResult>> =
+        std::collections::HashMap::new();
+
+    for result in results {
+        let ide_name = result
+            .ide_source
+            .as_deref()
+            .unwrap_or("UNKNOWN IDE")
+            .to_string();
+        results_by_ide
+            .entry(ide_name)
+            .or_insert_with(Vec::new)
+            .push(result);
+    }
+
+    // Print overall summary header
+    println!("\n{}", "🌍 MCP Servers Security Scan Summary".bold());
+    println!("{}", "─".repeat(60));
+
+    let total_servers = results.len();
+    let mut successful_servers = 0;
+    let mut failed_servers = 0;
+    let mut total_tools = 0;
+    let mut total_resources = 0;
+    let mut total_prompts = 0;
+    let mut total_warnings = 0;
+    let mut servers_with_warnings = 0;
+
+    // Calculate summary statistics
+    for result in results {
+        match &result.status {
+            crate::types::ScanStatus::Success => successful_servers += 1,
+            _ => failed_servers += 1,
+        }
+
+        total_tools += result.tools.len();
+        total_resources += result.resources.len();
+        total_prompts += result.prompts.len();
+
+        if let Some(security_issues) = &result.security_issues {
+            let server_warnings = security_issues.tool_issues.len()
+                + security_issues.prompt_issues.len()
+                + security_issues.resource_issues.len();
+            if server_warnings > 0 {
+                servers_with_warnings += 1;
+                total_warnings += server_warnings;
+            }
+        }
+    }
+
+    // Print scan summary statistics
+    println!("📊 Scan Summary:");
+    println!(
+        "  • Servers: {} total ({} ✅ successful, {} ❌ failed)",
+        total_servers, successful_servers, failed_servers
+    );
+    println!(
+        "  • Resources: {} tools, {} resources, {} prompts",
+        total_tools, total_resources, total_prompts
+    );
+    if total_warnings > 0 {
+        println!(
+            "  • Security: ⚠️  {} servers with {} total warnings",
+            servers_with_warnings, total_warnings
+        );
+    } else {
+        println!("  • Security: ✅ All servers passed security checks");
+    }
+
+    println!("\n{}", "📋 Results by IDE:".bold());
+
+    // Sort IDE names for consistent output
+    let mut ide_names: Vec<&String> = results_by_ide.keys().collect();
+    ide_names.sort();
+
+    // Print results grouped by IDE
+    for (ide_index, ide_name) in ide_names.iter().enumerate() {
+        let ide_results = &results_by_ide[*ide_name];
+        let is_last_ide = ide_index == ide_names.len() - 1;
+        let ide_prefix = if is_last_ide {
+            "└── "
+        } else {
+            "├── "
+        };
+        let ide_continuation = if is_last_ide { "    " } else { "│   " };
+
+        println!("\n{}{} {}", ide_prefix, "🏢".bold(), ide_name.bold());
+
+        // Print each server within this IDE
+        for (i, result) in ide_results.iter().enumerate() {
+            let is_last = i == ide_results.len() - 1;
+            let prefix = if is_last { "└── " } else { "├── " };
+            let continuation = if is_last { "    " } else { "│   " };
+
+            // Server name and status
+            let server_name = result
+                .server_info
+                .as_ref()
+                .map(|info| info.name.clone())
+                .unwrap_or_else(|| "Unknown Server".to_string());
+
+            let status_emoji = match &result.status {
+                crate::types::ScanStatus::Success => "✅",
+                crate::types::ScanStatus::Failed(_) => "❌",
+                crate::types::ScanStatus::Timeout => "⏱️ ",
+                crate::types::ScanStatus::ConnectionError(_) => "🔌",
+                crate::types::ScanStatus::AuthenticationError(_) => "🔐",
+            };
+
+            println!(
+                "{}{}{} {} ({})",
+                ide_continuation,
+                prefix,
+                status_emoji,
+                server_name.bold(),
+                result.url
+            );
+
+            // Show basic stats and detailed results for successful scans
+            if matches!(result.status, crate::types::ScanStatus::Success) {
+                println!(
+                    "{}{}📋 {} tools, {} resources, {} prompts",
+                    ide_continuation,
+                    continuation,
+                    result.tools.len(),
+                    result.resources.len(),
+                    result.prompts.len()
+                );
+
+                // Show individual tool results with security status
+                if !result.tools.is_empty() {
+                    println!("{}{}🔧 Tools:", ide_continuation, continuation);
+                    if let Some(security_issues) = &result.security_issues {
+                        for tool in &result.tools {
+                            let tool_issues: Vec<&crate::security::SecurityIssue> = security_issues
+                                .tool_issues
+                                .iter()
+                                .filter(|issue| issue.tool_name.as_ref() == Some(&tool.name))
+                                .collect();
+
+                            if !tool_issues.is_empty() {
+                                println!(
+                                    "{}{}    ├── {} ⚠️  {} warning{}",
+                                    ide_continuation,
+                                    continuation,
+                                    tool.name.bold(),
+                                    tool_issues.len(),
+                                    if tool_issues.len() == 1 { "" } else { "s" }
+                                );
+                                for (i, issue) in tool_issues.iter().enumerate() {
+                                    let severity = issue.issue_type.default_severity();
+                                    let severity_color = match severity {
+                                        "CRITICAL" => "🔴 CRITICAL".red(),
+                                        "HIGH" => "🟠 HIGH".red(),
+                                        "MEDIUM" => "🟡 MEDIUM".yellow(),
+                                        _ => "🟢 LOW".green(),
+                                    };
+                                    let item_prefix = if i == tool_issues.len() - 1 {
+                                        "└──"
+                                    } else {
+                                        "├──"
+                                    };
+                                    println!(
+                                        "{}{}    │   {} {}: {}",
+                                        ide_continuation,
+                                        continuation,
+                                        item_prefix,
+                                        severity_color,
+                                        issue.description
+                                    );
+                                }
+                            } else {
+                                println!(
+                                    "{}{}    ├── {} ✅",
+                                    ide_continuation, continuation, tool.name
+                                );
+                            }
+                        }
+                    } else {
+                        // No security analysis available
+                        for tool in &result.tools {
+                            println!(
+                                "{}{}    ├── {} ✅",
+                                ide_continuation, continuation, tool.name
+                            );
+                        }
+                    }
+                }
+
+                // Show resources if any
+                if !result.resources.is_empty() {
+                    println!("{}{}📄 Resources:", ide_continuation, continuation);
+                    for resource in &result.resources {
+                        println!(
+                            "{}{}    ├── {} ✅",
+                            ide_continuation, continuation, resource.name
+                        );
+                    }
+                }
+
+                // Show prompts if any
+                if !result.prompts.is_empty() {
+                    println!("{}{}💬 Prompts:", ide_continuation, continuation);
+                    for prompt in &result.prompts {
+                        println!(
+                            "{}{}    ├── {} ✅",
+                            ide_continuation, continuation, prompt.name
+                        );
+                    }
+                }
+
+                // YARA scan results summary
+                if !result.yara_results.is_empty() {
+                    let yara_matches: usize = result
+                        .yara_results
+                        .iter()
+                        .map(|r| r.total_matches.unwrap_or(0))
+                        .sum();
+                    if yara_matches > 0 {
+                        println!(
+                            "{}{}⚠️  YARA: {} security issues detected",
+                            ide_continuation, continuation, yara_matches
+                        );
+                    } else {
+                        println!(
+                            "{}{}✅ YARA: No security issues detected",
+                            ide_continuation, continuation
+                        );
+                    }
+                }
+            } else {
+                // Show error details for failed scans
+                match &result.status {
+                    crate::types::ScanStatus::Failed(err) => {
+                        println!("{}{}❌ Error: {}", ide_continuation, continuation, err);
+                    }
+                    crate::types::ScanStatus::ConnectionError(err) => {
+                        println!(
+                            "{}{}🔌 Connection Error: {}",
+                            ide_continuation, continuation, err
+                        );
+                    }
+                    crate::types::ScanStatus::AuthenticationError(err) => {
+                        println!(
+                            "{}{}🔐 Authentication Error: {}",
+                            ide_continuation, continuation, err
+                        );
+                    }
+                    crate::types::ScanStatus::Timeout => {
+                        println!("{}{}⏱️  Timeout occurred", ide_continuation, continuation);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    println!(); // Final newline
+}
+
+/// JSON format for multiple servers
+fn print_multi_server_json(results: &[ScanResult]) {
+    let json_output = serde_json::json!({
+        "scan_type": "multi_server",
+        "total_servers": results.len(),
+        "results": results
+    });
+
+    match serde_json::to_string_pretty(&json_output) {
+        Ok(json) => println!("{json}"),
+        Err(e) => eprintln!("Error serializing multi-server results to JSON: {e}"),
+    }
+}
+
+/// Raw JSON format for multiple servers
+fn print_multi_server_raw_json(results: &[ScanResult]) {
+    for result in results {
+        print_raw_json_result(result);
+    }
+}
+
+/// Text format for multiple servers
+fn print_multi_server_text(results: &[ScanResult]) {
+    println!("Multi-Server Scan Results");
+    println!("========================");
+    println!("Total servers scanned: {}", results.len());
+    println!();
+
+    for (i, result) in results.iter().enumerate() {
+        println!("Server {}: {}", i + 1, result.url);
+        print_text_result(result);
+        println!();
     }
 }

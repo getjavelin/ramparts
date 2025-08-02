@@ -6,645 +6,101 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use tracing::{debug, warn};
-use url::Url;
 
-/// MCP Configuration structure for reading from IDE config files
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct MCPConfig {
-    /// List of MCP server configurations from IDE config files
-    pub servers: Option<Vec<MCPServerConfig>>,
-    /// Global configuration options
-    pub options: Option<MCPGlobalOptions>,
-    /// Authentication headers for all servers
-    pub auth_headers: Option<HashMap<String, String>>,
-}
-
-/// Cursor-specific MCP Configuration structure
+/// Unified MCP server configuration that handles all IDE formats
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CursorMCPConfig {
-    /// List of MCP server configurations using Cursor's format
-    #[serde(rename = "mcpServers")]
-    pub mcp_servers: Option<HashMap<String, CursorMCPServerConfig>>,
-    /// Cursor's settings (if any)
-    pub settings: Option<HashMap<String, serde_json::Value>>,
-}
-
-/// Cursor-specific MCP server configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CursorMCPServerConfig {
-    /// Server command
+pub struct UnifiedServerConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
-    /// Server arguments
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub args: Option<Vec<String>>,
-    /// Working directory
-    pub cwd: Option<String>,
-    /// Environment variables
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub env: Option<HashMap<String, String>>,
-    /// Transport configuration
-    pub transport: Option<CursorTransportConfig>,
-    /// Server description
-    pub description: Option<String>,
-    /// Available tools
-    pub tools: Option<Vec<String>>,
-    /// Server URL (for HTTP transport)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disabled: Option<bool>,
+    // Transport-specific fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transport: Option<TransportConfig>,
 }
 
-/// Cursor transport configuration
+/// Transport configuration for HTTP-based servers
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CursorTransportConfig {
-    /// Transport type
+pub struct TransportConfig {
     #[serde(rename = "type")]
     pub transport_type: Option<String>,
-    /// Host for HTTP transport
     pub host: Option<String>,
-    /// Port for HTTP transport
     pub port: Option<u16>,
 }
 
-/// Claude Desktop configuration structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClaudeDesktopConfig {
-    /// List of MCP server configurations using Claude Desktop's format
-    #[serde(rename = "mcpServers")]
-    pub mcp_servers: Option<HashMap<String, ClaudeDesktopServerConfig>>,
-    /// Global settings
-    #[serde(rename = "globalShortcut")]
-    pub global_shortcut: Option<String>,
-    /// Other settings
-    #[serde(flatten)]
-    pub other_settings: Option<HashMap<String, serde_json::Value>>,
+/// Main MCP Configuration structure
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MCPConfig {
+    pub servers: Option<Vec<MCPServerConfig>>,
+    pub options: Option<MCPGlobalOptions>,
+    pub auth_headers: Option<HashMap<String, String>>,
 }
 
-/// Claude Desktop MCP server configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClaudeDesktopServerConfig {
-    /// Server command
-    pub command: Option<String>,
-    /// Server arguments
-    pub args: Option<Vec<String>>,
-    /// Environment variables
-    pub env: Option<HashMap<String, String>>,
-    /// Working directory
-    pub cwd: Option<String>,
-    /// Disabled flag
-    pub disabled: Option<bool>,
-    /// Server URL (for HTTP servers)
-    pub url: Option<String>,
-}
-
-/// VS Code settings structure (can contain MCP configuration)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VSCodeSettings {
-    /// MCP servers configuration in VS Code settings
-    #[serde(rename = "mcp.servers")]
-    pub mcp_servers: Option<HashMap<String, VSCodeMCPServerConfig>>,
-    /// Other VS Code settings
-    #[serde(flatten)]
-    pub other_settings: Option<HashMap<String, serde_json::Value>>,
-}
-
-/// VS Code MCP server configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VSCodeMCPServerConfig {
-    /// Server command
-    pub command: Option<String>,
-    /// Server arguments
-    pub args: Option<Vec<String>>,
-    /// Environment variables
-    pub env: Option<HashMap<String, String>>,
-    /// Working directory
-    pub cwd: Option<String>,
-    /// Server URL
-    pub url: Option<String>,
-    /// Transport type (e.g., "http", "stdio")
-    #[serde(rename = "type")]
-    pub transport_type: Option<String>,
-}
-
-/// New VS Code MCP configuration structure (for mcp.json files)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VSCodeMCPConfig {
-    /// MCP servers configuration in new VS Code format
-    pub servers: Option<HashMap<String, VSCodeMCPServerConfig>>,
-    /// Inputs configuration
-    pub inputs: Option<Vec<serde_json::Value>>,
-}
-
-/// VS Code MCP configuration with `VSCodeServerConfig` (for configs with description field)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VSCodeObjectMCPConfig {
-    /// MCP servers configuration in VS Code format with descriptions
-    pub servers: Option<HashMap<String, VSCodeServerConfig>>,
-    /// Inputs configuration
-    pub inputs: Option<Vec<serde_json::Value>>,
-}
-
-/// Individual MCP server configuration
+/// Individual MCP server configuration (normalized format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MCPServerConfig {
-    /// Server name or identifier
     pub name: Option<String>,
-    /// Server URL (optional for STDIO servers)
     pub url: Option<String>,
-    /// Server command (for STDIO servers)
     pub command: Option<String>,
-    /// Command arguments (for STDIO servers)
     pub args: Option<Vec<String>>,
-    /// Environment variables
     pub env: Option<HashMap<String, String>>,
-    /// Server description
     pub description: Option<String>,
-    /// Authentication headers specific to this server
     pub auth_headers: Option<HashMap<String, String>>,
-    /// Server-specific options
     pub options: Option<MCPServerOptions>,
 }
 
 impl MCPServerConfig {
-    /// Get display URL for logging and display purposes
+    /// Get the URL to display for this server
     pub fn to_display_url(&self) -> String {
         if let Some(url) = &self.url {
             url.clone()
         } else if let Some(command) = &self.command {
-            // For STDIO servers, create a more descriptive URL
-            if let Some(name) = &self.name {
-                // Include the server name if available: stdio:npx[server-name]
-                format!("stdio:{command}[{name}]")
-            } else if let Some(args) = &self.args {
-                // If no name but has args, show the main package/argument
-                if let Some(main_arg) = args.first() {
-                    format!("stdio:{command}[{main_arg}]")
-                } else {
-                    format!("stdio:{command}[unknown]")
-                }
-            } else {
-                format!("stdio:{command}")
-            }
+            format!("stdio://{}", command)
         } else {
             "unknown".to_string()
         }
     }
 
-    /// Get actual URL for scanning (returns None for STDIO servers)
-    pub fn scan_url(&self) -> Option<&str> {
-        self.url.as_deref()
-    }
-
-    /// Generate a unique key for deduplication
-    pub fn dedup_key(&self) -> String {
-        if let Some(url) = &self.url {
-            // For HTTP servers, use normalized URL with explicit prefix to prevent collisions
-            format!("http:{}", MCPConfigManager::normalize_url(url))
-        } else {
-            // For STDIO servers, use name + command + args to create unique key with explicit prefix
-            let name = self.name.as_deref().unwrap_or("unnamed");
-            let command = self.command.as_deref().unwrap_or("unknown");
-            let args = if let Some(args) = &self.args {
-                args.join(" ")
-            } else {
-                String::new()
-            };
-            format!("stdio:{name}:{command}:{args}")
-        }
+    /// Get the URL to scan for this server (only for HTTP servers)
+    pub fn scan_url(&self) -> Option<String> {
+        self.url.clone()
     }
 }
 
-/// Global configuration options
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Global MCP options
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MCPGlobalOptions {
-    /// Default timeout in seconds
     pub timeout: Option<u64>,
-    /// Default HTTP timeout in seconds
-    pub http_timeout: Option<u64>,
-    /// Default output format
     pub format: Option<String>,
-    /// Whether to include detailed output by default
+    pub max_connections: Option<u32>,
+    pub retry_attempts: Option<u32>,
+    pub retry_delay: Option<u64>,
+    pub http_timeout: Option<u64>,
     pub detailed: Option<bool>,
 }
 
 /// Server-specific options
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MCPServerOptions {
-    /// Server-specific timeout
     pub timeout: Option<u64>,
-    /// Server-specific HTTP timeout
+    pub retry_attempts: Option<u32>,
+    pub retry_delay: Option<u64>,
+    pub max_response_size: Option<u64>,
     pub http_timeout: Option<u64>,
-    /// Server-specific output format
     pub format: Option<String>,
-    /// Whether to include detailed output for this server
     pub detailed: Option<bool>,
 }
 
-// IDE-specific configuration formats
-
-/// VS Code MCP configuration format with array of servers
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VSCodeArrayMCPConfig {
-    /// Servers as array (alternative VS Code format)
-    pub servers: Option<Vec<VSCodeArrayServerConfig>>,
-    /// Inputs array
-    pub inputs: Option<Vec<serde_json::Value>>,
-}
-
-/// VS Code server configuration in array format
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VSCodeArrayServerConfig {
-    /// Server name
-    pub name: Option<String>,
-    /// Server URL (for HTTP servers)
-    pub url: Option<String>,
-    /// Command to run (for STDIO servers)
-    pub command: Option<String>,
-    /// Arguments for the command
-    pub args: Option<Vec<String>>,
-    /// Environment variables
-    pub env: Option<HashMap<String, String>>,
-    /// Server type (http, stdio, etc.)
-    #[serde(rename = "type")]
-    pub server_type: Option<String>,
-    /// Description
-    pub description: Option<String>,
-}
-
-/// VS Code server configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VSCodeServerConfig {
-    /// Server type (http, stdio, etc.)
-    #[serde(rename = "type")]
-    pub server_type: Option<String>,
-    /// Server URL
-    pub url: Option<String>,
-    /// Command to run (for stdio servers)
-    pub command: Option<String>,
-    /// Arguments for the command
-    pub args: Option<Vec<String>>,
-    /// Environment variables
-    pub env: Option<HashMap<String, String>>,
-    /// Gallery flag
-    pub gallery: Option<bool>,
-    /// Description
-    pub description: Option<String>,
-}
-
-/// Cursor server configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CursorServerConfig {
-    pub command: String,
-    pub args: Vec<String>,
-    pub env: Option<HashMap<String, String>>,
-}
-
-/// Windsurf MCP configuration format
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WindsurfMCPConfig {
-    /// Servers configuration
-    pub servers: Option<HashMap<String, WindsurfServerConfig>>,
-    /// Global configuration
-    pub global: Option<MCPGlobalOptions>,
-}
-
-/// Windsurf server configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WindsurfServerConfig {
-    pub url: Option<String>,
-    pub command: Option<String>,
-    pub args: Option<Vec<String>>,
-    pub env: Option<HashMap<String, String>>,
-    #[serde(rename = "type")]
-    pub server_type: Option<String>,
-    pub description: Option<String>,
-}
-
-/// Claude Desktop MCP configuration format
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClaudeMCPConfig {
-    /// MCP servers configuration
-    #[serde(rename = "mcpServers")]
-    pub mcp_servers: Option<HashMap<String, ClaudeServerConfig>>,
-    /// Alternative naming
-    pub servers: Option<HashMap<String, ClaudeServerConfig>>,
-}
-
-/// Claude Desktop server configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClaudeServerConfig {
-    pub command: Option<String>,
-    pub args: Option<Vec<String>>,
-    pub env: Option<HashMap<String, String>>,
-    pub url: Option<String>,
-    #[serde(rename = "type")]
-    pub server_type: Option<String>,
-}
-
-/// Claude Code MCP configuration format (extracted from ~/.claude.json)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClaudeCodeConfig {
-    /// MCP servers configuration
-    #[serde(rename = "mcpServers")]
-    pub mcp_servers: Option<HashMap<String, ClaudeCodeServerConfig>>,
-}
-
-/// Claude Code server configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClaudeCodeServerConfig {
-    #[serde(rename = "type")]
-    pub server_type: String,
-    pub command: String,
-    pub args: Vec<String>,
-    pub env: Option<HashMap<String, String>>,
-}
-
-/// Zed MCP configuration format
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ZedMCPConfig {
-    /// Context servers as array of objects
-    pub context_servers: Option<Vec<HashMap<String, ZedServerConfig>>>,
-}
-
-/// Zed server configuration with command object
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ZedServerConfig {
-    /// Command configuration
-    pub command: Option<ZedCommandConfig>,
-    /// Direct URL (for HTTP servers)
-    pub url: Option<String>,
-    /// Environment variables
-    pub env: Option<HashMap<String, String>>,
-}
-
-/// Zed command configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ZedCommandConfig {
-    /// Path to executable
-    pub path: String,
-    /// Command arguments
-    pub args: Option<Vec<String>>,
-}
-
-/// Zencoder MCP configuration format (simple command-based)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ZencoderMCPConfig {
-    /// Command to run
-    pub command: String,
-    /// Command arguments
-    pub args: Option<Vec<String>>,
-    /// Environment variables
-    pub env: Option<HashMap<String, String>>,
-}
-
-// Conversion implementations
-
-impl From<VSCodeMCPConfig> for MCPConfig {
-    fn from(vscode_config: VSCodeMCPConfig) -> Self {
-        let servers = vscode_config.servers.map(|servers_map| {
-            servers_map
-                .into_iter()
-                .map(|(name, server_config)| MCPServerConfig {
-                    name: Some(name),
-                    url: server_config.url,
-                    command: server_config.command,
-                    args: server_config.args,
-                    env: server_config.env,
-                    description: None, // VSCodeMCPServerConfig doesn't have a description field
-                    auth_headers: None,
-                    options: None,
-                })
-                .collect()
-        });
-
-        MCPConfig {
-            servers,
-            options: None,
-            auth_headers: None,
-        }
-    }
-}
-
-impl From<VSCodeObjectMCPConfig> for MCPConfig {
-    fn from(vscode_config: VSCodeObjectMCPConfig) -> Self {
-        let servers = vscode_config.servers.map(|servers_map| {
-            servers_map
-                .into_iter()
-                .map(|(name, server_config)| MCPServerConfig {
-                    name: Some(name),
-                    url: server_config.url,
-                    command: server_config.command,
-                    args: server_config.args,
-                    env: server_config.env,
-                    description: server_config.description, // VSCodeServerConfig has a description field
-                    auth_headers: None,
-                    options: None,
-                })
-                .collect()
-        });
-
-        MCPConfig {
-            servers,
-            options: None,
-            auth_headers: None,
-        }
-    }
-}
-
-impl From<VSCodeArrayMCPConfig> for MCPConfig {
-    fn from(vscode_config: VSCodeArrayMCPConfig) -> Self {
-        let servers = vscode_config.servers.map(|servers_vec| {
-            servers_vec
-                .into_iter()
-                .map(|server_config| MCPServerConfig {
-                    name: server_config.name,
-                    url: server_config.url,
-                    command: server_config.command,
-                    args: server_config.args,
-                    env: server_config.env,
-                    description: server_config.description,
-                    auth_headers: None,
-                    options: None,
-                })
-                .collect()
-        });
-
-        MCPConfig {
-            servers,
-            options: None,
-            auth_headers: None,
-        }
-    }
-}
-
-impl From<CursorMCPConfig> for MCPConfig {
-    fn from(cursor_config: CursorMCPConfig) -> Self {
-        let servers = cursor_config.mcp_servers.map(|servers_map| {
-            servers_map
-                .into_iter()
-                .map(|(name, server_config)| MCPServerConfig {
-                    name: Some(name),
-                    url: server_config.url,
-                    command: server_config.command,
-                    args: server_config.args,
-                    env: server_config.env,
-                    description: server_config.description,
-                    auth_headers: None,
-                    options: None,
-                })
-                .collect()
-        });
-
-        MCPConfig {
-            servers,
-            options: None,
-            auth_headers: None,
-        }
-    }
-}
-
-impl From<WindsurfMCPConfig> for MCPConfig {
-    fn from(windsurf_config: WindsurfMCPConfig) -> Self {
-        let servers = windsurf_config.servers.map(|servers_map| {
-            servers_map
-                .into_iter()
-                .map(|(name, server_config)| MCPServerConfig {
-                    name: Some(name),
-                    url: server_config.url,
-                    command: server_config.command,
-                    args: server_config.args,
-                    env: server_config.env,
-                    description: server_config.description,
-                    auth_headers: None,
-                    options: None,
-                })
-                .collect()
-        });
-
-        MCPConfig {
-            servers,
-            options: windsurf_config.global,
-            auth_headers: None,
-        }
-    }
-}
-
-impl From<ClaudeMCPConfig> for MCPConfig {
-    fn from(claude_config: ClaudeMCPConfig) -> Self {
-        // Try mcp_servers first, then servers
-        let servers_map = claude_config.mcp_servers.or(claude_config.servers);
-
-        let servers = servers_map.map(|servers_map| {
-            servers_map
-                .into_iter()
-                .map(|(name, server_config)| MCPServerConfig {
-                    name: Some(name),
-                    url: server_config.url,
-                    command: server_config.command,
-                    args: server_config.args,
-                    env: server_config.env,
-                    description: None,
-                    auth_headers: None,
-                    options: None,
-                })
-                .collect()
-        });
-
-        MCPConfig {
-            servers,
-            options: None,
-            auth_headers: None,
-        }
-    }
-}
-
-impl From<ClaudeCodeConfig> for MCPConfig {
-    fn from(claude_code_config: ClaudeCodeConfig) -> Self {
-        let servers = claude_code_config.mcp_servers.map(|servers_map| {
-            servers_map
-                .into_iter()
-                .map(|(name, server_config)| MCPServerConfig {
-                    name: Some(name),
-                    url: None,
-                    command: Some(server_config.command),
-                    args: Some(server_config.args),
-                    env: server_config.env,
-                    description: None,
-                    auth_headers: None,
-                    options: None,
-                })
-                .collect()
-        });
-
-        MCPConfig {
-            servers,
-            options: None,
-            auth_headers: None,
-        }
-    }
-}
-
-impl From<ZedMCPConfig> for MCPConfig {
-    fn from(zed_config: ZedMCPConfig) -> Self {
-        let servers = zed_config.context_servers.map(|context_servers| {
-            context_servers
-                .into_iter()
-                .flat_map(|server_map| {
-                    server_map
-                        .into_iter()
-                        .map(|(name, server_config)| MCPServerConfig {
-                            name: Some(name),
-                            url: server_config.url,
-                            command: server_config.command.as_ref().map(|cmd| cmd.path.clone()),
-                            args: server_config
-                                .command
-                                .as_ref()
-                                .and_then(|cmd| cmd.args.clone()),
-                            env: server_config.env,
-                            description: server_config.command.as_ref().map(|cmd| {
-                                format!(
-                                    "Command: {} {}",
-                                    cmd.path,
-                                    cmd.args
-                                        .as_ref()
-                                        .map(|args| args.join(" "))
-                                        .unwrap_or_default()
-                                )
-                            }),
-                            auth_headers: None,
-                            options: None,
-                        })
-                })
-                .collect()
-        });
-
-        MCPConfig {
-            servers,
-            options: None,
-            auth_headers: None,
-        }
-    }
-}
-
-impl From<ZencoderMCPConfig> for MCPConfig {
-    fn from(zencoder_config: ZencoderMCPConfig) -> Self {
-        let servers = Some(vec![MCPServerConfig {
-            name: Some("zencoder".to_string()),
-            url: None,
-            command: Some(zencoder_config.command),
-            args: zencoder_config.args,
-            env: zencoder_config.env,
-            description: Some("Zencoder MCP server".to_string()),
-            auth_headers: None,
-            options: None,
-        }]);
-
-        MCPConfig {
-            servers,
-            options: None,
-            auth_headers: None,
-        }
-    }
-}
-
 /// Supported MCP client types
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MCPClient {
     Cursor,
     Windsurf,
@@ -659,7 +115,7 @@ pub enum MCPClient {
 }
 
 impl MCPClient {
-    pub fn name(&self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             MCPClient::Cursor => "cursor",
             MCPClient::Windsurf => "windsurf",
@@ -673,9 +129,148 @@ impl MCPClient {
             MCPClient::Zencoder => "zencoder",
         }
     }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            MCPClient::Cursor => "CURSOR",
+            MCPClient::Windsurf => "WINDSURF",
+            MCPClient::VSCode => "VS CODE",
+            MCPClient::Claude => "CLAUDE DESKTOP",
+            MCPClient::ClaudeCode => "CLAUDE CODE",
+            MCPClient::Gemini => "GEMINI",
+            MCPClient::Neovim => "NEOVIM",
+            MCPClient::Helix => "HELIX",
+            MCPClient::Zed => "ZED",
+            MCPClient::Zencoder => "ZENCODER",
+        }
+    }
 }
 
-/// Cache for discovered configuration paths to avoid repeated filesystem operations
+/// IDE-specific configuration formats
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IDEConfigFormat<T> {
+    #[serde(rename = "mcpServers", skip_serializing_if = "Option::is_none")]
+    pub mcp_servers: Option<HashMap<String, T>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub servers: Option<HashMap<String, T>>,
+    #[serde(flatten)]
+    pub other_fields: HashMap<String, serde_json::Value>,
+}
+
+/// VS Code specific configuration (for settings.json)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VSCodeSettings {
+    #[serde(rename = "mcp.servers")]
+    pub mcp_servers: Option<HashMap<String, UnifiedServerConfig>>,
+    #[serde(flatten)]
+    pub other_settings: HashMap<String, serde_json::Value>,
+}
+
+/// Trait for converting IDE-specific configurations to MCP format
+pub trait ToMCPConfig {
+    fn to_mcp_config(self) -> Result<MCPConfig>;
+}
+
+impl ToMCPConfig for IDEConfigFormat<UnifiedServerConfig> {
+    fn to_mcp_config(self) -> Result<MCPConfig> {
+        let servers_map = self.mcp_servers.or(self.servers);
+
+        let servers = servers_map.map(|map| {
+            map.into_iter()
+                .filter_map(|(name, config)| {
+                    // Skip disabled servers
+                    if config.disabled.unwrap_or(false) {
+                        return None;
+                    }
+
+                    Some(convert_unified_server_config(name, config))
+                })
+                .collect()
+        });
+
+        Ok(MCPConfig {
+            servers,
+            options: None,
+            auth_headers: None,
+        })
+    }
+}
+
+impl ToMCPConfig for VSCodeSettings {
+    fn to_mcp_config(self) -> Result<MCPConfig> {
+        let servers = self.mcp_servers.map(|servers_map| {
+            servers_map
+                .into_iter()
+                .map(|(name, config)| convert_unified_server_config(name, config))
+                .collect()
+        });
+
+        Ok(MCPConfig {
+            servers,
+            options: None,
+            auth_headers: None,
+        })
+    }
+}
+
+/// Convert unified server config to normalized MCP server config
+fn convert_unified_server_config(name: String, config: UnifiedServerConfig) -> MCPServerConfig {
+    let url = determine_server_url(&name, &config);
+
+    MCPServerConfig {
+        name: Some(name),
+        url,
+        command: config.command,
+        args: config.args,
+        env: config.env,
+        description: config.description,
+        auth_headers: None,
+        options: None,
+    }
+}
+
+/// Determine the correct URL for a server configuration
+fn determine_server_url(name: &str, config: &UnifiedServerConfig) -> Option<String> {
+    // If explicit URL is provided, use it
+    if let Some(url) = &config.url {
+        return Some(normalize_url(url));
+    }
+
+    // If transport config is provided, build URL from it
+    if let Some(transport) = &config.transport {
+        let host = transport.host.as_deref().unwrap_or("localhost");
+        let port = transport.port.unwrap_or(8080);
+        let scheme = match transport.transport_type.as_deref() {
+            Some("http" | "streamable-http") => "http",
+            Some("https") => "https",
+            _ => "http",
+        };
+        return Some(format!("{}://{}:{}", scheme, host, port));
+    }
+
+    // If command is provided, this is a STDIO server - no URL needed
+    if config.command.is_some() {
+        return None;
+    }
+
+    // Default fallback for HTTP servers
+    Some(format!("http://localhost:8080/{}", name))
+}
+
+/// Normalize URL format
+fn normalize_url(url: &str) -> String {
+    if url.starts_with("localhost:") {
+        format!("http://{}", url)
+    } else if url.starts_with("127.0.0.1:") {
+        format!("http://{}", url)
+    } else if !url.starts_with("http://") && !url.starts_with("https://") {
+        format!("http://{}", url)
+    } else {
+        url.to_string()
+    }
+}
+
+/// Configuration path cache
 static CONFIG_PATHS_CACHE: LazyLock<Vec<(PathBuf, MCPClient)>> =
     LazyLock::new(MCPConfigManager::discover_config_paths);
 
@@ -684,552 +279,215 @@ pub struct MCPConfigManager {
     config_paths: Vec<(PathBuf, MCPClient)>,
 }
 
-impl MCPConfigManager {
-    /// Normalize URL for consistent deduplication
-    /// Removes trailing slashes, converts to lowercase, and handles localhost aliases
-    fn normalize_url(url: &str) -> String {
-        let mut normalized = url.trim().to_lowercase();
-
-        // Remove trailing slashes
-        if normalized.ends_with('/') && normalized != "http://" && normalized != "https://" {
-            normalized = normalized.trim_end_matches('/').to_string();
-        }
-
-        // Normalize localhost variants
-        normalized = normalized
-            .replace("127.0.0.1", "localhost")
-            .replace("0.0.0.0", "localhost");
-
-        // Normalize port defaults - currently no-op, but placeholder for future enhancement
-        if (normalized.starts_with("http://localhost")
-            || normalized.starts_with("https://localhost"))
-            && !normalized.contains(':')
-        {
-            // Don't add default port, keep as-is for now
-        }
-
-        normalized
+impl Default for MCPConfigManager {
+    fn default() -> Self {
+        Self::new()
     }
-    /// Create a new configuration manager with platform-specific IDE config paths
+}
+
+impl MCPConfigManager {
+    /// Creates a new MCPConfigManager using the cached configuration paths
     pub fn new() -> Self {
         Self {
             config_paths: CONFIG_PATHS_CACHE.clone(),
         }
     }
 
-    /// Create a new configuration manager with fresh path discovery (bypasses cache)
-    /// Creates a new `MCPConfigManager` without using the cache
-    #[allow(dead_code)] // Used in tests and for bypassing cache when needed
+    /// Creates a new MCPConfigManager without using the cache (for testing)
     pub fn new_uncached() -> Self {
-        let paths = Self::discover_config_paths();
         Self {
-            config_paths: paths,
+            config_paths: Self::discover_config_paths(),
         }
+    }
+
+    /// Check if any configuration files exist
+    pub fn has_config_files(&self) -> bool {
+        self.config_paths.iter().any(|(path, _)| path.exists())
     }
 
     /// Discover MCP configuration paths based on platform and IDE
     fn discover_config_paths() -> Vec<(PathBuf, MCPClient)> {
         let mut paths = Vec::new();
 
-        // First, add workspace-level configurations (highest priority)
+        // Add workspace-level paths first (highest priority)
         paths.extend(Self::get_workspace_paths());
 
-        // Then add platform-specific global configurations
-        let platform = env::consts::OS;
+        // Add platform-specific paths
+        #[cfg(target_os = "windows")]
+        paths.extend(Self::get_windows_paths());
 
-        match platform {
-            "windows" => {
-                paths.extend(Self::get_windows_paths());
-            }
-            "macos" | "darwin" => {
-                paths.extend(Self::get_macos_paths());
-            }
-            _ => {
-                // Linux and other Unix-like systems
-                paths.extend(Self::get_unix_paths());
-            }
-        }
+        #[cfg(target_os = "macos")]
+        paths.extend(Self::get_macos_paths());
+
+        #[cfg(target_os = "linux")]
+        paths.extend(Self::get_unix_paths());
 
         paths
     }
 
-    /// Get workspace-level MCP configuration paths (current working directory and workspace)
+    /// Get workspace-level MCP configuration paths
     fn get_workspace_paths() -> Vec<(PathBuf, MCPClient)> {
         let mut paths = Vec::new();
+        let current_dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
-        // Current working directory workspace configurations
-        let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        // Workspace configurations (highest priority)
+        let workspace_configs = [
+            (".vscode/mcp.json", MCPClient::VSCode),
+            (".vscode/settings.json", MCPClient::VSCode),
+            (".cursor/mcp.json", MCPClient::Cursor),
+            (".cursor/settings.json", MCPClient::Cursor),
+            (".claude.json", MCPClient::ClaudeCode),
+            (".claude/mcp.json", MCPClient::Claude),
+            (".windsurf/mcp.json", MCPClient::Windsurf),
+            (".windsurf/mcp_config.json", MCPClient::Windsurf),
+        ];
 
-        // VS Code workspace configurations
-        paths.push((
-            current_dir.join(".vscode").join("mcp.json"),
-            MCPClient::VSCode,
-        ));
-        paths.push((
-            current_dir.join(".vscode").join("settings.json"),
-            MCPClient::VSCode,
-        ));
+        for (path, client) in workspace_configs {
+            paths.push((current_dir.join(path), client));
+        }
 
-        // Cursor workspace configurations
-        paths.push((
-            current_dir.join(".cursor").join("mcp.json"),
-            MCPClient::Cursor,
-        ));
-        paths.push((
-            current_dir.join(".cursor").join("settings.json"),
-            MCPClient::Cursor,
-        ));
-
-        // Claude Code workspace configurations
-        paths.push((current_dir.join(".claude.json"), MCPClient::ClaudeCode));
-        paths.push((
-            current_dir.join(".claude").join("mcp.json"),
-            MCPClient::Claude,
-        ));
-
-        // Windsurf workspace configurations
-        paths.push((
-            current_dir.join(".windsurf").join("mcp.json"),
-            MCPClient::Windsurf,
-        ));
-        paths.push((
-            current_dir.join(".windsurf").join("mcp_config.json"),
-            MCPClient::Windsurf,
-        ));
-
-        // Also check parent directories up to 3 levels for project root configurations
-        let mut parent = current_dir.parent();
-        let mut level = 0;
-        while let Some(dir) = parent {
-            if level >= 3 {
+        // Check parent directories up to git root or home
+        let mut dir = current_dir.as_path();
+        while let Some(parent) = dir.parent() {
+            if parent == dir || Self::is_project_root(parent) {
                 break;
             }
 
-            // Look for common project indicators
-            if dir.join(".git").exists()
-                || dir.join("package.json").exists()
-                || dir.join("Cargo.toml").exists()
-                || dir.join("pyproject.toml").exists()
-                || dir.join("requirements.txt").exists()
-            {
-                // VS Code project root configurations
-                paths.push((dir.join(".vscode").join("mcp.json"), MCPClient::VSCode));
-                paths.push((dir.join(".vscode").join("settings.json"), MCPClient::VSCode));
-
-                // Cursor project root configurations
-                paths.push((dir.join(".cursor").join("mcp.json"), MCPClient::Cursor));
-
-                // Claude Code project root configurations
-                paths.push((dir.join(".claude.json"), MCPClient::ClaudeCode));
-                paths.push((dir.join(".claude").join("mcp.json"), MCPClient::Claude));
-
-                // Windsurf project root configurations
-                paths.push((dir.join(".windsurf").join("mcp.json"), MCPClient::Windsurf));
-                paths.push((
-                    dir.join(".windsurf").join("mcp_config.json"),
-                    MCPClient::Windsurf,
-                ));
-
-                break; // Stop at first project root found
+            for (path, client) in workspace_configs {
+                paths.push((parent.join(path), client));
             }
 
-            parent = dir.parent();
-            level += 1;
+            dir = parent;
         }
 
         paths
     }
 
-    /// Get Windows-specific MCP configuration paths
+    /// Check if directory is a project root
+    fn is_project_root(dir: &Path) -> bool {
+        dir.join(".git").exists()
+            || dir.join("package.json").exists()
+            || dir.join("Cargo.toml").exists()
+            || dir.join("pyproject.toml").exists()
+    }
+
+    /// Get platform-specific paths using a unified approach
+    fn get_platform_paths() -> Vec<(PathBuf, MCPClient)> {
+        let mut paths = Vec::new();
+
+        if let Some(home_dir) = dirs::home_dir() {
+            // User-level configs
+            let user_configs = [
+                (".cursor/mcp.json", MCPClient::Cursor),
+                (".vscode/mcp.json", MCPClient::VSCode),
+                (".vscode/settings.json", MCPClient::VSCode),
+                (".claude/mcp.json", MCPClient::Claude),
+                (".claude.json", MCPClient::ClaudeCode),
+                (".windsurf/mcp.json", MCPClient::Windsurf),
+                (".gemini/settings.json", MCPClient::Gemini),
+            ];
+
+            for (path, client) in user_configs {
+                paths.push((home_dir.join(path), client));
+            }
+        }
+
+        if let Some(config_dir) = dirs::config_dir() {
+            // Application-specific configs
+            let app_configs = [
+                ("Code/User/mcp.json", MCPClient::VSCode),
+                ("Code/User/settings.json", MCPClient::VSCode),
+                ("Cursor/User/mcp.json", MCPClient::Cursor),
+                ("Windsurf/User/mcp.json", MCPClient::Windsurf),
+                ("nvim/mcp.json", MCPClient::Neovim),
+                ("helix/mcp.json", MCPClient::Helix),
+                ("zed/mcp.json", MCPClient::Zed),
+            ];
+
+            for (path, client) in app_configs {
+                paths.push((config_dir.join(path), client));
+            }
+        }
+
+        paths
+    }
+
+    /// Windows-specific paths
+    #[cfg(target_os = "windows")]
     fn get_windows_paths() -> Vec<(PathBuf, MCPClient)> {
-        let mut paths = Vec::new();
-
-        // Try APPDATA first, then fallback to home directory
-        if let Ok(appdata) = env::var("APPDATA") {
-            let appdata_path = PathBuf::from(appdata);
-
-            // Cursor
-            paths.push((
-                appdata_path
-                    .join("Cursor")
-                    .join("User")
-                    .join("globalStorage")
-                    .join("rooveterinaryinc.cursor-mcp")
-                    .join("mcp.json"),
-                MCPClient::Cursor,
-            ));
-            paths.push((
-                appdata_path.join("Cursor").join("User").join("mcp.json"),
-                MCPClient::Cursor,
-            ));
-
-            // Windsurf
-            paths.push((
-                appdata_path.join("Windsurf").join("User").join("mcp.json"),
-                MCPClient::Windsurf,
-            ));
-            paths.push((
-                appdata_path
-                    .join("Codeium")
-                    .join("Windsurf")
-                    .join("mcp_config.json"),
-                MCPClient::Windsurf,
-            ));
-
-            // VS Code
-            paths.push((
-                appdata_path.join("Code").join("User").join("mcp.json"),
-                MCPClient::VSCode,
-            ));
-
-            // Claude Desktop
-            paths.push((
-                appdata_path.join("Claude").join("mcp.json"),
-                MCPClient::Claude,
-            ));
-        } else {
-            // Fallback: try LOCALAPPDATA if APPDATA is missing
-            if let Ok(localappdata) = env::var("LOCALAPPDATA") {
-                let localappdata_path = PathBuf::from(localappdata);
-
-                paths.push((
-                    localappdata_path
-                        .join("Cursor")
-                        .join("User")
-                        .join("mcp.json"),
-                    MCPClient::Cursor,
-                ));
-                paths.push((
-                    localappdata_path
-                        .join("Programs")
-                        .join("Windsurf")
-                        .join("mcp.json"),
-                    MCPClient::Windsurf,
-                ));
-                paths.push((
-                    localappdata_path
-                        .join("Programs")
-                        .join("Microsoft VS Code")
-                        .join("mcp.json"),
-                    MCPClient::VSCode,
-                ));
-            }
-        }
-
-        // User home directory configs (Unix-style on Windows)
-        if let Some(home_dir) = dirs::home_dir() {
-            paths.push((home_dir.join(".cursor").join("mcp.json"), MCPClient::Cursor));
-            paths.push((home_dir.join(".vscode").join("mcp.json"), MCPClient::VSCode));
-            paths.push((home_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
-            paths.push((home_dir.join(".claude.json"), MCPClient::ClaudeCode));
-            paths.push((
-                home_dir.join(".gemini").join("settings.json"),
-                MCPClient::Gemini,
-            ));
-
-            // Windows-specific AppData fallback in user profile
-            let user_appdata = home_dir.join("AppData").join("Roaming");
-            if user_appdata.exists() {
-                // Cursor
-                paths.push((
-                    user_appdata.join("Cursor").join("User").join("mcp.json"),
-                    MCPClient::Cursor,
-                ));
-
-                // VS Code
-                paths.push((
-                    user_appdata.join("Code").join("User").join("mcp.json"),
-                    MCPClient::VSCode,
-                ));
-                paths.push((
-                    user_appdata.join("Code").join("User").join("settings.json"),
-                    MCPClient::VSCode,
-                ));
-
-                // Claude Desktop
-                paths.push((
-                    user_appdata
-                        .join("Claude")
-                        .join("claude_desktop_config.json"),
-                    MCPClient::Claude,
-                ));
-
-                // Windsurf
-                paths.push((
-                    user_appdata.join("Windsurf").join("User").join("mcp.json"),
-                    MCPClient::Windsurf,
-                ));
-                paths.push((
-                    user_appdata
-                        .join("Codeium")
-                        .join("Windsurf")
-                        .join("mcp_config.json"),
-                    MCPClient::Windsurf,
-                ));
-            }
-        }
-
-        paths
+        Self::get_platform_paths()
     }
 
-    /// Get macOS-specific MCP configuration paths
+    /// macOS-specific paths
+    #[cfg(target_os = "macos")]
     fn get_macos_paths() -> Vec<(PathBuf, MCPClient)> {
-        let mut paths = Vec::new();
+        let mut paths = Self::get_platform_paths();
 
         if let Some(home_dir) = dirs::home_dir() {
-            let app_support = home_dir.join("Library").join("Application Support");
+            let app_support = home_dir.join("Library/Application Support");
 
-            // Cursor
+            // macOS-specific Claude Desktop path
             paths.push((
-                app_support
-                    .join("Cursor")
-                    .join("User")
-                    .join("globalStorage")
-                    .join("rooveterinaryinc.cursor-mcp")
-                    .join("mcp.json"),
-                MCPClient::Cursor,
-            ));
-            paths.push((
-                app_support.join("Cursor").join("User").join("mcp.json"),
-                MCPClient::Cursor,
-            ));
-            paths.push((home_dir.join(".cursor").join("mcp.json"), MCPClient::Cursor));
-
-            // Windsurf
-            paths.push((
-                app_support.join("Windsurf").join("User").join("mcp.json"),
-                MCPClient::Windsurf,
-            ));
-            paths.push((
-                app_support
-                    .join("Codeium")
-                    .join("Windsurf")
-                    .join("mcp_config.json"),
-                MCPClient::Windsurf,
-            ));
-            paths.push((
-                home_dir
-                    .join(".codeium")
-                    .join("windsurf")
-                    .join("mcp_config.json"),
-                MCPClient::Windsurf,
-            ));
-
-            // VS Code - multiple configuration locations
-            paths.push((
-                app_support.join("Code").join("User").join("mcp.json"),
-                MCPClient::VSCode,
-            ));
-            paths.push((
-                app_support.join("Code").join("User").join("settings.json"),
-                MCPClient::VSCode,
-            ));
-            paths.push((home_dir.join(".vscode").join("mcp.json"), MCPClient::VSCode));
-            paths.push((
-                home_dir.join(".vscode").join("settings.json"),
-                MCPClient::VSCode,
-            ));
-
-            // Claude Desktop - uses claude_desktop_config.json
-            paths.push((
-                app_support
-                    .join("Claude")
-                    .join("claude_desktop_config.json"),
+                app_support.join("Claude/claude_desktop_config.json"),
                 MCPClient::Claude,
             ));
-            paths.push((
-                app_support
-                    .join("Claude")
-                    .join("User")
-                    .join("claude_desktop_config.json"),
-                MCPClient::Claude,
-            ));
-
-            // Claude Code - multiple scopes and file formats
-            paths.push((home_dir.join(".claude.json"), MCPClient::ClaudeCode)); // User/Global scope
-            paths.push((home_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
-            paths.push((home_dir.join(".claude.json"), MCPClient::ClaudeCode));
-            paths.push((
-                home_dir.join(".gemini").join("settings.json"),
-                MCPClient::Gemini,
-            ));
-
-            // Zed
-            paths.push((app_support.join("Zed").join("mcp.json"), MCPClient::Zed));
-
-            // Zencoder
-            paths.push((
-                app_support.join("Zencoder").join("mcp.json"),
-                MCPClient::Zencoder,
-            ));
-
-            // Unix-style configs in home directory
-            let config_dir = home_dir.join(".config");
-            paths.push((config_dir.join("nvim").join("mcp.json"), MCPClient::Neovim));
-            paths.push((config_dir.join("helix").join("mcp.json"), MCPClient::Helix));
         }
 
         paths
     }
 
-    /// Get Unix/Linux-specific MCP configuration paths
+    /// Unix/Linux-specific paths
+    #[cfg(target_os = "linux")]
     fn get_unix_paths() -> Vec<(PathBuf, MCPClient)> {
-        let mut paths = Vec::new();
-
-        if let Some(home_dir) = dirs::home_dir() {
-            let config_dir = home_dir.join(".config");
-
-            // Cursor
-            paths.push((home_dir.join(".cursor").join("mcp.json"), MCPClient::Cursor));
-            paths.push((
-                config_dir.join("Cursor").join("User").join("mcp.json"),
-                MCPClient::Cursor,
-            ));
-
-            // Windsurf
-            paths.push((
-                home_dir
-                    .join(".codeium")
-                    .join("windsurf")
-                    .join("mcp_config.json"),
-                MCPClient::Windsurf,
-            ));
-            paths.push((
-                config_dir.join("Windsurf").join("User").join("mcp.json"),
-                MCPClient::Windsurf,
-            ));
-
-            // VS Code
-            paths.push((home_dir.join(".vscode").join("mcp.json"), MCPClient::VSCode));
-            paths.push((
-                home_dir.join(".vscode").join("settings.json"),
-                MCPClient::VSCode,
-            ));
-            paths.push((
-                config_dir.join("Code").join("User").join("mcp.json"),
-                MCPClient::VSCode,
-            ));
-
-            // Claude Desktop
-            paths.push((home_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
-            paths.push((home_dir.join(".claude.json"), MCPClient::ClaudeCode));
-            paths.push((
-                home_dir.join(".gemini").join("settings.json"),
-                MCPClient::Gemini,
-            ));
-            paths.push((
-                config_dir.join("Code").join("User").join("settings.json"),
-                MCPClient::VSCode,
-            ));
-
-            // Claude Desktop - uses claude_desktop_config.json
-            paths.push((
-                home_dir.join(".claude").join("claude_desktop_config.json"),
-                MCPClient::Claude,
-            ));
-            paths.push((
-                config_dir.join("claude").join("claude_desktop_config.json"),
-                MCPClient::Claude,
-            ));
-
-            // Claude Code - multiple scopes and formats
-            paths.push((home_dir.join(".claude.json"), MCPClient::ClaudeCode)); // User/Global scope
-            paths.push((home_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
-
-            // Neovim
-            paths.push((config_dir.join("nvim").join("mcp.json"), MCPClient::Neovim));
-
-            // Helix
-            paths.push((config_dir.join("helix").join("mcp.json"), MCPClient::Helix));
-
-            // Zed
-            paths.push((config_dir.join("zed").join("mcp.json"), MCPClient::Zed));
-
-            // Zencoder
-            paths.push((
-                config_dir.join("zencoder").join("mcp.json"),
-                MCPClient::Zencoder,
-            ));
-        }
-
-        paths
+        Self::get_platform_paths()
     }
 
-    /// Get client type from a configuration file path using component-based matching
-    /// Determines the MCP client type based on the configuration file path
+    /// Detect client type from path
     pub fn detect_client<P: AsRef<Path>>(path: P) -> Option<MCPClient> {
         let path = path.as_ref();
-        let components: Vec<_> = path
-            .components()
-            .filter_map(|c| c.as_os_str().to_str())
-            .map(str::to_lowercase)
-            .collect();
+        let _path_str = path.to_string_lossy().to_lowercase();
 
-        // Check path components in order of specificity to avoid false matches
-        for component in &components {
-            match component.as_str() {
-                // Exact matches first
-                "cursor" | ".cursor" => return Some(MCPClient::Cursor),
-                "windsurf" => return Some(MCPClient::Windsurf),
-                ".claude.json" => return Some(MCPClient::ClaudeCode),
-                "claude" | ".claude" => return Some(MCPClient::Claude),
-                "gemini" | ".gemini" => return Some(MCPClient::Gemini),
-                "zed" => return Some(MCPClient::Zed),
-                "zencoder" => return Some(MCPClient::Zencoder),
-                "helix" => return Some(MCPClient::Helix),
-                "nvim" | "neovim" => return Some(MCPClient::Neovim),
-                "code" | "vscode" | ".vscode" => return Some(MCPClient::VSCode),
-
-                // Partial matches with disambiguation
-                c if c.contains("cursor") && !c.contains("vscode") => {
-                    return Some(MCPClient::Cursor)
-                }
-                c if c.contains("windsurf") => return Some(MCPClient::Windsurf),
-                c if c.contains("codium") => return Some(MCPClient::Windsurf), // Codium usually means Windsurf context
-                c if c.contains("microsoft") && c.contains("code") => {
-                    return Some(MCPClient::VSCode)
-                }
-
-                _ => {} // Keep looking
-            }
-        }
-
-        // Check specific file names for client detection
-        if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+        // Check for specific filenames first
+        if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
             match filename {
+                ".claude.json" => return Some(MCPClient::ClaudeCode),
                 "claude_desktop_config.json" => return Some(MCPClient::Claude),
-                "settings.json" => {
-                    // Check if it's in a VS Code directory
-                    if components
-                        .iter()
-                        .any(|c| c.contains("code") || c.contains("vscode"))
-                    {
-                        return Some(MCPClient::VSCode);
-                    }
-                }
                 _ => {}
             }
         }
 
-        // Fallback: check full path string for edge cases
-        let path_str = path.to_string_lossy().to_lowercase();
-        if path_str.contains("rooveterinaryinc.cursor-mcp") {
-            return Some(MCPClient::Cursor);
+        // Check path components
+        for component in path.components() {
+            if let Some(comp_str) = component.as_os_str().to_str() {
+                let comp_lower = comp_str.to_lowercase();
+                match comp_lower.as_str() {
+                    "cursor" | ".cursor" => return Some(MCPClient::Cursor),
+                    "windsurf" | ".windsurf" => return Some(MCPClient::Windsurf),
+                    "claude" | ".claude" => return Some(MCPClient::Claude),
+                    "code" | "vscode" | ".vscode" => return Some(MCPClient::VSCode),
+                    "gemini" | ".gemini" => return Some(MCPClient::Gemini),
+                    "zed" => return Some(MCPClient::Zed),
+                    "nvim" | "neovim" => return Some(MCPClient::Neovim),
+                    "helix" => return Some(MCPClient::Helix),
+                    _ => {}
+                }
+            }
         }
 
         None
     }
 
-    /// Load configuration from all available IDE config files
-    pub fn load_config(&self) -> MCPConfig {
-        let mut merged_config = MCPConfig::default();
-        let mut loaded_configs = 0;
-        let mut failed_configs = Vec::new();
+    /// Load configurations grouped by IDE
+    pub fn load_config_by_ide(&self) -> Vec<(String, MCPConfig)> {
+        let mut configs_by_ide = Vec::new();
 
         for (path, client) in &self.config_paths {
+            if !path.exists() {
+                continue;
+            }
+
             match Self::load_config_from_path(path) {
                 Ok(config) => {
-                    // Validate configuration before merging
                     if let Err(validation_error) = Self::validate_config(&config) {
                         warn!(
                             "Invalid MCP configuration in {} ({}): {}",
@@ -1237,827 +495,379 @@ impl MCPConfigManager {
                             path.display(),
                             validation_error
                         );
-                        failed_configs.push((path.clone(), validation_error));
+                        continue;
+                    }
+
+                    configs_by_ide.push((client.display_name().to_string(), config));
+                    debug!(
+                        "Loaded MCP configuration from {}: {}",
+                        client.name(),
+                        path.display()
+                    );
+                }
+                Err(e) => {
+                    debug!(
+                        "Failed to load MCP configuration from {}: {}",
+                        path.display(),
+                        e
+                    );
+                }
+            }
+        }
+
+        configs_by_ide
+    }
+
+    /// Load and merge all configurations
+    pub fn load_config(&self) -> MCPConfig {
+        let mut merged_config = MCPConfig::default();
+        let mut loaded_configs = 0;
+
+        for (path, client) in &self.config_paths {
+            if !path.exists() {
+                continue;
+            }
+
+            match Self::load_config_from_path(path) {
+                Ok(config) => {
+                    if let Err(validation_error) = Self::validate_config(&config) {
+                        warn!(
+                            "Invalid MCP configuration in {} ({}): {}",
+                            client.name(),
+                            path.display(),
+                            validation_error
+                        );
                         continue;
                     }
 
                     Self::merge_config(&mut merged_config, &config);
                     loaded_configs += 1;
                     debug!(
-                        "Loaded MCP configuration from {} IDE: {}",
+                        "Loaded MCP configuration from {}: {}",
                         client.name(),
                         path.display()
                     );
                 }
                 Err(e) => {
-                    if path.exists() {
-                        // File exists but couldn't be parsed - this is an error
-                        warn!(
-                            "Failed to parse MCP configuration from {} IDE at {}: {}",
-                            client.name(),
-                            path.display(),
-                            e
-                        );
-                        failed_configs.push((path.clone(), e));
-                    } else {
-                        // File doesn't exist - this is normal
-                        debug!(
-                            "No MCP configuration found for {} IDE at: {}",
-                            client.name(),
-                            path.display()
-                        );
-                    }
+                    debug!(
+                        "Failed to load MCP configuration from {}: {}",
+                        path.display(),
+                        e
+                    );
                 }
             }
         }
 
-        if loaded_configs == 0 && failed_configs.is_empty() {
+        if loaded_configs == 0 {
             debug!("No MCP configuration files found in any supported IDE locations");
-        } else if !failed_configs.is_empty() {
-            warn!(
-                "Found {} configuration files with errors",
-                failed_configs.len()
-            );
         }
 
         merged_config
     }
 
-    /// Load configuration from a specific IDE config path
+    /// Load configuration from a specific path
     pub fn load_config_from_path(path: &Path) -> Result<MCPConfig> {
         if !path.exists() {
             return Err(anyhow!(
-                "IDE configuration file does not exist: {}",
+                "Configuration file does not exist: {}",
                 path.display()
             ));
         }
 
         let content = fs::read_to_string(path)
-            .map_err(|e| anyhow!("Failed to read IDE config file {}: {}", path.display(), e))?;
+            .map_err(|e| anyhow!("Failed to read config file {}: {}", path.display(), e))?;
 
-        // Detect IDE type by checking the client type from path
         let client = Self::detect_client(path);
         let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-        // Try parsing based on client type and file name
-        match client {
-            Some(MCPClient::Cursor) => {
-                if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
-                    debug!("Parsed as Cursor MCP configuration format");
-                    return Ok(Self::convert_cursor_config(cursor_config));
+        // Try parsing based on detected client and filename
+        match (client, filename) {
+            (Some(MCPClient::VSCode), "settings.json") => {
+                if let Ok(config) = serde_json::from_str::<VSCodeSettings>(&content) {
+                    debug!("Parsed as VS Code settings format");
+                    return config.to_mcp_config();
                 }
             }
-            Some(MCPClient::Claude) => {
-                // Claude Desktop uses claude_desktop_config.json
-                if filename == "claude_desktop_config.json" {
-                    if let Ok(claude_config) = serde_json::from_str::<ClaudeDesktopConfig>(&content)
-                    {
-                        debug!("Parsed as Claude Desktop configuration format");
-                        return Ok(Self::convert_claude_desktop_config(claude_config));
-                    }
-                }
-                // Claude Code uses .claude.json
-                if filename == ".claude.json" {
-                    if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
-                        debug!("Parsed as Claude Code configuration format");
-                        return Ok(Self::convert_cursor_config(cursor_config));
-                    }
+            (Some(MCPClient::ClaudeCode), ".claude.json") => {
+                // Try Claude Code specific format first
+                if let Ok(config) =
+                    serde_json::from_str::<IDEConfigFormat<UnifiedServerConfig>>(&content)
+                {
+                    debug!("Parsed as Claude Code configuration format");
+                    return config.to_mcp_config();
                 }
             }
-            Some(MCPClient::VSCode) => {
-                // VS Code settings.json may contain MCP configuration
-                if filename == "settings.json" {
-                    if let Ok(vscode_config) = serde_json::from_str::<VSCodeSettings>(&content) {
-                        debug!("Parsed as VS Code settings configuration format");
-                        return Ok(Self::convert_vscode_config(vscode_config));
-                    }
-                }
-                // VS Code mcp.json uses the new format
-                else if filename == "mcp.json" {
-                    if let Ok(vscode_mcp_config) = serde_json::from_str::<VSCodeMCPConfig>(&content)
-                    {
-                        debug!("Parsed as VS Code MCP configuration format");
-                        return Ok(Self::convert_vscode_mcp_config(vscode_mcp_config));
-                    }
+            (Some(MCPClient::Claude), "claude_desktop_config.json") => {
+                if let Ok(config) =
+                    serde_json::from_str::<IDEConfigFormat<UnifiedServerConfig>>(&content)
+                {
+                    debug!("Parsed as Claude Desktop configuration format");
+                    return config.to_mcp_config();
                 }
             }
             _ => {}
         }
 
-        // Try parsing as standard format
-        match serde_json::from_str::<MCPConfig>(&content) {
-            Ok(config) => Ok(config),
-            Err(e) => {
-                // Try fallback parsing for different formats
-                if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
-                    debug!("Parsed as Cursor MCP configuration format (fallback)");
-                    Ok(Self::convert_cursor_config(cursor_config))
-                } else if let Ok(claude_config) =
-                    serde_json::from_str::<ClaudeDesktopConfig>(&content)
-                {
-                    debug!("Parsed as Claude Desktop configuration format (fallback)");
-                    Ok(Self::convert_claude_desktop_config(claude_config))
-                } else if let Ok(vscode_config) = serde_json::from_str::<VSCodeSettings>(&content) {
-                    debug!("Parsed as VS Code settings configuration format (fallback)");
-                    Ok(Self::convert_vscode_config(vscode_config))
-                } else if let Ok(vscode_mcp_config) =
-                    serde_json::from_str::<VSCodeMCPConfig>(&content)
-                {
-                    debug!("Parsed as VS Code MCP configuration format (fallback)");
-                    Ok(Self::convert_vscode_mcp_config(vscode_mcp_config))
-                } else {
-                    Err(anyhow!(
-                        "Failed to parse IDE config file {}: {}",
-                        path.display(),
-                        e
-                    ))
+        // Try generic IDE format
+        if let Ok(config) = serde_json::from_str::<IDEConfigFormat<UnifiedServerConfig>>(&content) {
+            debug!("Parsed as generic IDE configuration format");
+            return config.to_mcp_config();
+        }
+
+        // Try standard MCP format
+        if let Ok(config) = serde_json::from_str::<MCPConfig>(&content) {
+            debug!("Parsed as standard MCP configuration format");
+            return Ok(config);
+        }
+
+        Err(anyhow!(
+            "Failed to parse configuration file: {}",
+            path.display()
+        ))
+    }
+
+    /// Validate configuration
+    fn validate_config(config: &MCPConfig) -> Result<()> {
+        if let Some(servers) = &config.servers {
+            for server in servers {
+                if server.name.is_none() || server.name.as_ref().unwrap().is_empty() {
+                    return Err(anyhow!("Server name cannot be empty"));
+                }
+
+                if server.url.is_none() && server.command.is_none() {
+                    return Err(anyhow!("Server must have either URL or command"));
                 }
             }
         }
+        Ok(())
     }
 
-    /// Convert Cursor MCP configuration to standard format
-    fn convert_cursor_config(cursor_config: CursorMCPConfig) -> MCPConfig {
-        let servers = cursor_config.mcp_servers.map(|mcp_servers| {
-            mcp_servers
-                .into_iter()
-                .map(|(name, server_config)| {
-                    // Use explicit URL first, then build from transport config
-                    let url = if let Some(url) = server_config.url {
-                        url
-                    } else if let Some(transport) = &server_config.transport {
-                        let host = transport.host.as_deref().unwrap_or("localhost");
-                        let port = transport.port.unwrap_or(8080);
-                        #[allow(clippy::match_same_arms)]
-                        let scheme = match transport.transport_type.as_deref() {
-                            Some("http" | "streamable-http") => "http",
-                            Some("https") => "https",
-                            _ => "http",
-                        };
-                        format!("{scheme}://{host}:{port}")
-                    } else {
-                        // Default URL for servers without transport config
-                        "http://localhost:8123".to_string()
-                    };
-
-                    MCPServerConfig {
-                        name: Some(name),
-                        url: Some(url),
-                        command: None,
-                        args: None,
-                        env: None,
-                        description: server_config.description,
-                        auth_headers: None, // Cursor format doesn't specify auth headers at server level
-                        options: None, // Could be extended to convert any server-specific options
-                    }
-                })
-                .collect()
-        });
-
-        MCPConfig {
-            servers,
-            options: None, // Could convert cursor settings to options if needed
-            auth_headers: None,
-        }
-    }
-
-    /// Convert Claude Desktop configuration to standard format
-    fn convert_claude_desktop_config(claude_config: ClaudeDesktopConfig) -> MCPConfig {
-        let servers = claude_config.mcp_servers.map(|mcp_servers| {
-            mcp_servers
-                .into_iter()
-                .filter_map(|(name, server_config)| {
-                    // Skip disabled servers
-                    if server_config.disabled.unwrap_or(false) {
-                        return None;
-                    }
-
-                    // Use explicit URL if provided, otherwise build from command
-                    let url = if let Some(url) = server_config.url {
-                        url
-                    } else if server_config.command.is_some() {
-                        // For command-based servers, create a placeholder URL
-                        // This represents a local server that will be started by the command
-                        format!("stdio://{name}")
-                    } else {
-                        // Default URL for servers without explicit configuration
-                        "http://localhost:8123".to_string()
-                    };
-
-                    Some(MCPServerConfig {
-                        name: Some(name),
-                        url: Some(url),
-                        command: None,
-                        args: None,
-                        env: None,
-                        description: None, // Claude Desktop format doesn't include descriptions
-                        auth_headers: None,
-                        options: None,
-                    })
-                })
-                .collect()
-        });
-
-        MCPConfig {
-            servers,
-            options: None,
-            auth_headers: None,
-        }
-    }
-
-    /// Convert VS Code settings configuration to standard format
-    fn convert_vscode_config(vscode_config: VSCodeSettings) -> MCPConfig {
-        let servers = vscode_config.mcp_servers.map(|mcp_servers| {
-            mcp_servers
-                .into_iter()
-                .map(|(name, server_config)| {
-                    // Use explicit URL if provided, otherwise build from command
-                    let url = if let Some(url) = server_config.url {
-                        url
-                    } else if server_config.command.is_some() {
-                        // For command-based servers, create a placeholder URL
-                        format!("stdio://{name}")
-                    } else {
-                        // Default URL for servers without explicit configuration
-                        "http://localhost:8123".to_string()
-                    };
-
-                    MCPServerConfig {
-                        name: Some(name),
-                        url: Some(url),
-                        command: None,
-                        args: None,
-                        env: None,
-                        description: None, // VS Code settings don't typically include descriptions
-                        auth_headers: None,
-                        options: None,
-                    }
-                })
-                .collect()
-        });
-
-        MCPConfig {
-            servers,
-            options: None,
-            auth_headers: None,
-        }
-    }
-
-    /// Convert VS Code MCP configuration (new mcp.json format) to standard format
-    fn convert_vscode_mcp_config(vscode_mcp_config: VSCodeMCPConfig) -> MCPConfig {
-        let servers = vscode_mcp_config.servers.map(|servers| {
-            servers
-                .into_iter()
-                .map(|(name, server_config)| {
-                    // Use explicit URL if provided, otherwise build from command
-                    let url = if let Some(url) = server_config.url {
-                        url
-                    } else if server_config.command.is_some() {
-                        // For command-based servers, create a placeholder URL
-                        format!("stdio://{name}")
-                    } else {
-                        // Default URL for servers without explicit configuration
-                        "http://localhost:8123".to_string()
-                    };
-
-                    MCPServerConfig {
-                        name: Some(name),
-                        url: Some(url),
-                        command: None,
-                        args: None,
-                        env: None,
-                        description: None, // VS Code MCP format doesn't include descriptions
-                        auth_headers: None,
-                        options: None,
-                    }
-                })
-                .collect()
-        });
-
-        MCPConfig {
-            servers,
-            options: None,
-            auth_headers: None,
-        }
-    }
-
-    /// Try to parse using IDE-specific format, then fall back to standard format with better error reporting
-    #[allow(dead_code)]
-    fn try_parse_with_fallback<F>(
-        ide_name: &str,
-        content: &str,
-        ide_parser: F,
-        path: &Path,
-    ) -> Result<MCPConfig>
-    where
-        F: Fn(&str) -> Result<MCPConfig>,
-    {
-        match ide_parser(content) {
-            Ok(config) => Ok(config),
-            Err(ide_error) => {
-                // Try standard format as fallback
-                match Self::parse_standard_config(content) {
-                    Ok(config) => {
-                        debug!(
-                            "{} format parsing failed for {}, but standard format succeeded. {} error was: {}",
-                            ide_name,
-                            path.display(),
-                            ide_name,
-                            ide_error
-                        );
-                        Ok(config)
-                    }
-                    Err(standard_error) => {
-                        Err(anyhow!(
-                            "Failed to parse IDE config file {} in both {} format and standard format. {} format error: {}. Standard format error: {}",
-                            path.display(),
-                            ide_name,
-                            ide_name,
-                            ide_error,
-                            standard_error
-                        ))
-                    }
-                }
-            }
-        }
-    }
-
-    /// Parse standard Ramparts MCP config format
-    #[allow(dead_code)]
-    fn parse_standard_config(content: &str) -> Result<MCPConfig> {
-        serde_json::from_str(content).map_err(|e| anyhow!("Standard format parsing failed: {}", e))
-    }
-
-    /// Parse VS Code MCP config format
-    #[allow(dead_code)]
-    fn parse_vscode_config(content: &str) -> Result<MCPConfig> {
-        // Try array format first (more common), then object format with descriptions, then basic object format
-        if let Ok(vscode_array_config) = serde_json::from_str::<VSCodeArrayMCPConfig>(content) {
-            Ok(vscode_array_config.into())
-        } else if let Ok(vscode_object_config) =
-            serde_json::from_str::<VSCodeObjectMCPConfig>(content)
-        {
-            Ok(vscode_object_config.into())
-        } else {
-            let vscode_config: VSCodeMCPConfig = serde_json::from_str(content)?;
-            Ok(vscode_config.into())
-        }
-    }
-
-    /// Parse Cursor MCP config format  
-    #[allow(dead_code)]
-    fn parse_cursor_config(content: &str) -> Result<MCPConfig> {
-        let cursor_config: CursorMCPConfig = serde_json::from_str(content)?;
-        Ok(cursor_config.into())
-    }
-
-    /// Parse Windsurf MCP config format
-    #[allow(dead_code)]
-    fn parse_windsurf_config(content: &str) -> Result<MCPConfig> {
-        let windsurf_config: WindsurfMCPConfig = serde_json::from_str(content)?;
-        Ok(windsurf_config.into())
-    }
-
-    /// Parse Claude Desktop MCP config format
-    #[allow(dead_code)]
-    fn parse_claude_config(content: &str) -> Result<MCPConfig> {
-        let claude_config: ClaudeMCPConfig = serde_json::from_str(content)?;
-        Ok(claude_config.into())
-    }
-
-    /// Parse Claude Code MCP config format (from ~/.claude.json)
-    #[allow(dead_code)]
-    fn parse_claude_code_config(content: &str) -> Result<MCPConfig> {
-        let claude_code_config: ClaudeCodeConfig = serde_json::from_str(content)?;
-        Ok(claude_code_config.into())
-    }
-
-    /// Parse Zed MCP config format
-    #[allow(dead_code)]
-    fn parse_zed_config(content: &str) -> Result<MCPConfig> {
-        let zed_config: ZedMCPConfig = serde_json::from_str(content)?;
-        Ok(zed_config.into())
-    }
-
-    /// Parse Zencoder MCP config format
-    #[allow(dead_code)]
-    fn parse_zencoder_config(content: &str) -> Result<MCPConfig> {
-        let zencoder_config: ZencoderMCPConfig = serde_json::from_str(content)?;
-        Ok(zencoder_config.into())
-    }
-
-    /// Merge two configurations, with the second one taking precedence
-    /// Handles server deduplication based on URL
+    /// Merge two configurations
     fn merge_config(base: &mut MCPConfig, other: &MCPConfig) {
-        // Merge servers with deduplication
-        if let Some(other_servers) = &other.servers {
-            match &mut base.servers {
-                Some(base_servers) => {
-                    // Pre-allocate HashMap with capacity hint for better performance
-                    let total_capacity = base_servers.len() + other_servers.len();
-                    let mut server_map: HashMap<String, MCPServerConfig> =
-                        HashMap::with_capacity(total_capacity);
+        // Merge servers
+        let mut server_map: HashMap<String, MCPServerConfig> = HashMap::new();
 
-                    // Move existing servers to the map using drain() to avoid cloning
-                    for server in base_servers.drain(..) {
-                        let key = server.dedup_key();
-                        server_map.insert(key, server);
-                    }
-
-                    // Add new servers - we must clone since we're borrowing from other
-                    for server in other_servers {
-                        let key = server.dedup_key();
-                        server_map.insert(key, server.clone());
-                    }
-
-                    // Convert back to vector
-                    *base_servers = server_map.into_values().collect();
-                }
-                None => {
-                    // Avoid cloning the entire vector - move if possible
-                    base.servers = Some(other_servers.clone());
+        // Add existing servers
+        if let Some(base_servers) = &base.servers {
+            for server in base_servers {
+                if let Some(name) = &server.name {
+                    server_map.insert(name.clone(), server.clone());
                 }
             }
         }
 
-        // Merge global options
-        if let Some(other_options) = &other.options {
-            match &mut base.options {
-                Some(base_options) => {
-                    if other_options.timeout.is_some() {
-                        base_options.timeout = other_options.timeout;
-                    }
-                    if other_options.http_timeout.is_some() {
-                        base_options.http_timeout = other_options.http_timeout;
-                    }
-                    if other_options.format.is_some() {
-                        base_options.format.clone_from(&other_options.format);
-                    }
-                    if other_options.detailed.is_some() {
-                        base_options.detailed = other_options.detailed;
-                    }
-                }
-                None => {
-                    base.options = Some(other_options.clone());
+        // Add new servers (overwrites duplicates)
+        if let Some(other_servers) = &other.servers {
+            for server in other_servers {
+                if let Some(name) = &server.name {
+                    server_map.insert(name.clone(), server.clone());
                 }
             }
+        }
+
+        // Convert back to vector
+        base.servers = if server_map.is_empty() {
+            None
+        } else {
+            Some(server_map.into_values().collect())
+        };
+
+        // Merge options (other takes precedence)
+        if other.options.is_some() {
+            base.options = other.options.clone();
         }
 
         // Merge auth headers
-        if let Some(other_auth_headers) = &other.auth_headers {
-            match &mut base.auth_headers {
-                Some(base_auth_headers) => {
-                    for (key, value) in other_auth_headers {
-                        base_auth_headers.insert(key.clone(), value.clone());
-                    }
-                }
-                None => {
-                    base.auth_headers = Some(other_auth_headers.clone());
-                }
+        if let Some(other_headers) = &other.auth_headers {
+            if let Some(base_headers) = &mut base.auth_headers {
+                base_headers.extend(other_headers.clone());
+            } else {
+                base.auth_headers = Some(other_headers.clone());
             }
         }
     }
+}
 
-    /// Validate a loaded MCP configuration with comprehensive checks
-    fn validate_server_count(servers: &[MCPServerConfig]) -> Result<()> {
-        if servers.len() > 100 {
-            return Err(anyhow!(
-                "Too many servers configured ({}). Maximum recommended: 100",
-                servers.len()
-            ));
-        }
-        Ok(())
-    }
+/// Scanner-specific configuration
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ScannerConfig {
+    pub scanner: ScannerSettings,
+    pub security: SecuritySettings,
+    pub llm: LlmSettings,
+    pub logging: LoggingSettings,
+}
 
-    /// Comprehensive server configuration validation
-    fn validate_server_config(server: &MCPServerConfig, server_index: usize) -> Result<()> {
-        // Validate that server has either URL or command, but not both
-        match (&server.url, &server.command) {
-            (Some(url), None) => {
-                // HTTP server - validate URL
-                Self::validate_server_url(url, server_index)?;
-            }
-            (None, Some(command)) => {
-                // STDIO server - validate command and args
-                Self::validate_stdio_server(command, server.args.as_ref(), server_index)?;
-            }
-            (Some(_), Some(_)) => {
-                return Err(anyhow!(
-                    "Server {} cannot have both URL and command specified - choose HTTP (url) or STDIO (command)",
-                    server_index
-                ));
-            }
-            (None, None) => {
-                return Err(anyhow!(
-                    "Server {} must have either URL (for HTTP servers) or command (for STDIO servers) specified",
-                    server_index
-                ));
-            }
-        }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScannerSettings {
+    #[serde(default = "default_http_timeout")]
+    pub http_timeout: u64,
+    #[serde(default = "default_format")]
+    pub format: String,
+    #[serde(default)]
+    pub detailed: bool,
+    #[serde(default = "default_max_connections")]
+    pub max_connections: u32,
+    #[serde(default = "default_retry_attempts")]
+    pub retry_attempts: u32,
+    #[serde(default = "default_retry_delay")]
+    pub retry_delay: u64,
+    #[serde(default = "default_scan_timeout")]
+    pub scan_timeout: u64,
+    #[serde(default = "default_llm_batch_size")]
+    pub llm_batch_size: u32,
+}
 
-        // Validate server name if present
-        if let Some(name) = &server.name {
-            Self::validate_server_name(name, server_index)?;
-        }
-
-        // Validate environment variables if present
-        if let Some(env) = &server.env {
-            Self::validate_env_vars(env, server_index)?;
-        }
-
-        Ok(())
-    }
-
-    /// Validate STDIO server configuration
-    fn validate_stdio_server(
-        command: &str,
-        args: Option<&Vec<String>>,
-        server_index: usize,
-    ) -> Result<()> {
-        if command.trim().is_empty() {
-            return Err(anyhow!("Server {} has empty command", server_index));
-        }
-
-        if command.len() > 1024 {
-            return Err(anyhow!(
-                "Server {} command too long ({}), maximum 1024 characters",
-                server_index,
-                command.len()
-            ));
-        }
-
-        // Validate command doesn't contain dangerous characters
-        if command.contains('\0') || command.contains('\n') || command.contains('\r') {
-            return Err(anyhow!(
-                "Server {} command contains invalid characters",
-                server_index
-            ));
-        }
-
-        // Validate arguments if present
-        if let Some(args_vec) = args {
-            if args_vec.len() > 100 {
-                return Err(anyhow!(
-                    "Server {} has too many arguments ({}), maximum 100",
-                    server_index,
-                    args_vec.len()
-                ));
-            }
-
-            for (arg_index, arg) in args_vec.iter().enumerate() {
-                if arg.len() > 4096 {
-                    return Err(anyhow!(
-                        "Server {} argument {} too long ({}), maximum 4096 characters",
-                        server_index,
-                        arg_index,
-                        arg.len()
-                    ));
-                }
-
-                if arg.contains('\0') {
-                    return Err(anyhow!(
-                        "Server {} argument {} contains null character",
-                        server_index,
-                        arg_index
-                    ));
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Validate environment variables
-    fn validate_env_vars(env: &HashMap<String, String>, server_index: usize) -> Result<()> {
-        if env.len() > 100 {
-            return Err(anyhow!(
-                "Server {} has too many environment variables ({}), maximum 100",
-                server_index,
-                env.len()
-            ));
-        }
-
-        for (key, value) in env {
-            if key.trim().is_empty() {
-                return Err(anyhow!(
-                    "Server {} has empty environment variable name",
-                    server_index
-                ));
-            }
-
-            if key.len() > 1024 {
-                return Err(anyhow!(
-                    "Server {} environment variable name '{}' too long ({}), maximum 1024 characters",
-                    server_index,
-                    key,
-                    key.len()
-                ));
-            }
-
-            if value.len() > 8192 {
-                return Err(anyhow!(
-                    "Server {} environment variable value for '{}' too long ({}), maximum 8192 characters",
-                    server_index,
-                    key,
-                    value.len()
-                ));
-            }
-
-            // Validate key format (must be valid environment variable name)
-            if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-                return Err(anyhow!(
-                    "Server {} environment variable name '{}' contains invalid characters (only alphanumeric and underscore allowed)",
-                    server_index,
-                    key
-                ));
-            }
-
-            if key.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-                return Err(anyhow!(
-                    "Server {} environment variable name '{}' cannot start with a digit",
-                    server_index,
-                    key
-                ));
-            }
-        }
-
-        Ok(())
-    }
-
-    fn validate_server_url(url_str: &str, server_index: usize) -> Result<()> {
-        if url_str.is_empty() {
-            return Err(anyhow!("Server {} has empty URL", server_index));
-        }
-
-        let url_str = url_str.trim();
-        if url_str.len() > 2048 {
-            return Err(anyhow!(
-                "Server {} URL too long ({}), maximum 2048 characters",
-                server_index,
-                url_str.len()
-            ));
-        }
-
-        // stdio: URLs should not be handled here - they should use command field instead
-        if url_str.starts_with("stdio:") {
-            return Err(anyhow!(
-                "Server {} uses deprecated stdio: URL format. Use 'command' and 'args' fields instead of 'url' for STDIO servers",
-                server_index
-            ));
-        }
-
-        // Parse HTTP/HTTPS URLs using the url crate
-        if url_str.starts_with("http://") || url_str.starts_with("https://") {
-            match Url::parse(url_str) {
-                Ok(parsed_url) => {
-                    // Validate port if present
-                    if let Some(port) = parsed_url.port() {
-                        if port == 0 {
-                            return Err(anyhow!(
-                                "Server {} has invalid port 0: {}",
-                                server_index,
-                                url_str
-                            ));
-                        }
-                    }
-                    Ok(())
-                }
-                Err(e) => Err(anyhow!(
-                    "Server {} has malformed URL '{}': {}",
-                    server_index,
-                    url_str,
-                    e
-                )),
-            }
-        } else {
-            Err(anyhow!(
-                "Server {} has invalid URL scheme: {}. Supported: http://, https://, stdio:",
-                server_index,
-                url_str
-            ))
+impl Default for ScannerSettings {
+    fn default() -> Self {
+        Self {
+            http_timeout: default_http_timeout(),
+            format: default_format(),
+            detailed: false,
+            max_connections: default_max_connections(),
+            retry_attempts: default_retry_attempts(),
+            retry_delay: default_retry_delay(),
+            scan_timeout: default_scan_timeout(),
+            llm_batch_size: default_llm_batch_size(),
         }
     }
+}
 
-    fn validate_server_name(name: &str, server_index: usize) -> Result<()> {
-        let name = name.trim();
-        if name.is_empty() {
-            return Err(anyhow!("Server {} has empty name", server_index));
+fn default_http_timeout() -> u64 {
+    30
+}
+fn default_format() -> String {
+    "table".to_string()
+}
+fn default_max_connections() -> u32 {
+    10
+}
+fn default_retry_attempts() -> u32 {
+    3
+}
+fn default_retry_delay() -> u64 {
+    1000
+}
+fn default_scan_timeout() -> u64 {
+    300
+}
+fn default_llm_batch_size() -> u32 {
+    5
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SecuritySettings {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmSettings {
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_base_url")]
+    pub base_url: String,
+    #[serde(default = "default_model")]
+    pub model: String,
+    #[serde(default = "default_temperature")]
+    pub temperature: f32,
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
+    #[serde(default = "default_llm_timeout")]
+    pub timeout: u64,
+}
+
+impl Default for LlmSettings {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            base_url: default_base_url(),
+            model: default_model(),
+            temperature: default_temperature(),
+            max_tokens: default_max_tokens(),
+            timeout: default_llm_timeout(),
         }
+    }
+}
 
-        if name.len() > 255 {
-            return Err(anyhow!(
-                "Server {} name too long ({}), maximum 255 characters",
-                server_index,
-                name.len()
-            ));
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoggingSettings {
+    #[serde(default = "default_log_level")]
+    pub level: String,
+}
+
+impl Default for LoggingSettings {
+    fn default() -> Self {
+        Self {
+            level: default_log_level(),
         }
+    }
+}
 
-        Ok(())
+fn default_base_url() -> String {
+    "https://api.openai.com/v1".to_string()
+}
+fn default_model() -> String {
+    "gpt-3.5-turbo".to_string()
+}
+fn default_temperature() -> f32 {
+    0.1
+}
+fn default_max_tokens() -> u32 {
+    4000
+}
+fn default_llm_timeout() -> u64 {
+    30
+}
+fn default_log_level() -> String {
+    "info".to_string()
+}
+
+/// Scanner configuration manager
+pub struct ScannerConfigManager {
+    config_path: PathBuf,
+}
+
+impl Default for ScannerConfigManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ScannerConfigManager {
+    pub fn new() -> Self {
+        let config_path = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("ramparts")
+            .join("config.json");
+
+        Self { config_path }
     }
 
-    fn validate_auth_headers(
-        auth_headers: &HashMap<String, String>,
-        server_index: usize,
-    ) -> Result<()> {
-        for (header_name, header_value) in auth_headers {
-            if header_name.trim().is_empty() {
-                return Err(anyhow!(
-                    "Server {} has empty auth header name",
-                    server_index
-                ));
-            }
-            if header_value.trim().is_empty() {
-                return Err(anyhow!(
-                    "Server {} has empty auth header value for '{}'",
-                    server_index,
-                    header_name
-                ));
-            }
-            if header_name.len() > 1024 || header_value.len() > 4096 {
-                return Err(anyhow!(
-                    "Server {} has auth header that's too long",
-                    server_index
-                ));
-            }
+    pub fn load_config(&self) -> Result<ScannerConfig> {
+        if !self.config_path.exists() {
+            return Ok(ScannerConfig::default());
         }
-        Ok(())
+
+        let content = fs::read_to_string(&self.config_path)
+            .map_err(|e| anyhow!("Failed to read scanner config: {}", e))?;
+
+        serde_json::from_str(&content).map_err(|e| anyhow!("Failed to parse scanner config: {}", e))
     }
 
-    fn validate_server_description(description: &str, server_index: usize) -> Result<()> {
-        if description.len() > 1000 {
-            return Err(anyhow!(
-                "Server {} description too long ({}), maximum 1000 characters",
-                server_index,
-                description.len()
-            ));
+    pub fn save_config(&self, config: &ScannerConfig) -> Result<()> {
+        if let Some(parent) = self.config_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| anyhow!("Failed to create config directory: {}", e))?;
         }
-        Ok(())
+
+        let content = serde_json::to_string_pretty(config)
+            .map_err(|e| anyhow!("Failed to serialize scanner config: {}", e))?;
+
+        fs::write(&self.config_path, content)
+            .map_err(|e| anyhow!("Failed to write scanner config: {}", e))
     }
 
-    fn validate_global_auth_headers(global_auth_headers: &HashMap<String, String>) -> Result<()> {
-        for (header_name, header_value) in global_auth_headers {
-            if header_name.trim().is_empty() || header_value.trim().is_empty() {
-                return Err(anyhow!(
-                    "Global auth headers cannot have empty names or values"
-                ));
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_config(config: &MCPConfig) -> Result<()> {
-        if let Some(servers) = &config.servers {
-            Self::validate_server_count(servers)?;
-
-            let mut seen_dedup_keys = HashMap::new();
-            let mut seen_names = HashMap::new();
-
-            for (i, server) in servers.iter().enumerate() {
-                // Validate the entire server configuration
-                Self::validate_server_config(server, i)?;
-
-                // Check for duplicate servers using the same deduplication logic as merge
-                let dedup_key = server.dedup_key();
-                if let Some(existing_index) = seen_dedup_keys.get(&dedup_key) {
-                    return Err(anyhow!(
-                        "Duplicate server configuration detected: server {} and server {} both resolve to the same configuration (key: '{}')",
-                        existing_index, i, dedup_key
-                    ));
-                }
-                seen_dedup_keys.insert(dedup_key, i);
-
-                if let Some(name) = &server.name {
-                    Self::validate_server_name(name, i)?;
-                    let name = name.trim();
-                    if let Some(existing_index) = seen_names.get(name) {
-                        return Err(anyhow!(
-                            "Duplicate server name '{}': server {} and server {} both use this name",
-                            name, existing_index, i
-                        ));
-                    }
-                    seen_names.insert(name.to_string(), i);
-                }
-
-                if let Some(auth_headers) = &server.auth_headers {
-                    Self::validate_auth_headers(auth_headers, i)?;
-                }
-
-                if let Some(description) = &server.description {
-                    Self::validate_server_description(description, i)?;
-                }
-            }
-        }
-
-        if let Some(global_auth_headers) = &config.auth_headers {
-            Self::validate_global_auth_headers(global_auth_headers)?;
-        }
-
-        Ok(())
-    }
-
-    /// Check if any IDE configuration files exist
-    pub fn has_config_files(&self) -> bool {
-        self.config_paths.iter().any(|(path, _)| path.exists())
+    pub fn has_config_file(&self) -> bool {
+        self.config_path.exists()
     }
 }
 
@@ -2068,31 +878,138 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    fn test_unified_server_config_conversion() {
+        // Test STDIO server (command-based)
+        let stdio_config = UnifiedServerConfig {
+            command: Some("python".to_string()),
+            args: Some(vec!["-m".to_string(), "server".to_string()]),
+            env: None,
+            url: None,
+            description: Some("Test STDIO server".to_string()),
+            disabled: Some(false),
+            transport: None,
+        };
+        let mcp_config = convert_unified_server_config("stdio-test".to_string(), stdio_config);
+        assert_eq!(mcp_config.name, Some("stdio-test".to_string()));
+        assert_eq!(mcp_config.command, Some("python".to_string()));
+        assert_eq!(mcp_config.url, None); // STDIO server should have no URL
+
+        // Test HTTP server (URL-based)
+        let http_config = UnifiedServerConfig {
+            command: None,
+            args: None,
+            env: None,
+            url: Some("http://localhost:8080".to_string()),
+            description: Some("Test HTTP server".to_string()),
+            disabled: Some(false),
+            transport: None,
+        };
+        let mcp_config = convert_unified_server_config("http-test".to_string(), http_config);
+        assert_eq!(mcp_config.name, Some("http-test".to_string()));
+        assert_eq!(mcp_config.url, Some("http://localhost:8080".to_string()));
+        assert_eq!(mcp_config.command, None);
+
+        // Test transport-based server
+        let transport_config = UnifiedServerConfig {
+            command: None,
+            args: None,
+            env: None,
+            url: None,
+            description: None,
+            disabled: Some(false),
+            transport: Some(TransportConfig {
+                transport_type: Some("http".to_string()),
+                host: Some("example.com".to_string()),
+                port: Some(9000),
+            }),
+        };
+        let mcp_config =
+            convert_unified_server_config("transport-test".to_string(), transport_config);
+        assert_eq!(mcp_config.url, Some("http://example.com:9000".to_string()));
+    }
+
+    #[test]
+    fn test_url_normalization() {
+        assert_eq!(normalize_url("localhost:8080"), "http://localhost:8080");
+        assert_eq!(
+            normalize_url("http://localhost:8080"),
+            "http://localhost:8080"
+        );
+        assert_eq!(normalize_url("https://example.com"), "https://example.com");
+        assert_eq!(normalize_url("127.0.0.1:3000"), "http://127.0.0.1:3000");
+        assert_eq!(normalize_url("example.com:5000"), "http://example.com:5000");
+    }
+
+    #[test]
+    fn test_client_detection() {
+        // Test specific filenames
+        assert_eq!(
+            MCPConfigManager::detect_client("/home/user/.claude.json"),
+            Some(MCPClient::ClaudeCode)
+        );
+        assert_eq!(
+            MCPConfigManager::detect_client("/home/user/claude_desktop_config.json"),
+            Some(MCPClient::Claude)
+        );
+
+        // Test path components
+        assert_eq!(
+            MCPConfigManager::detect_client("/home/user/.vscode/settings.json"),
+            Some(MCPClient::VSCode)
+        );
+        assert_eq!(
+            MCPConfigManager::detect_client("/home/user/.cursor/mcp.json"),
+            Some(MCPClient::Cursor)
+        );
+        assert_eq!(
+            MCPConfigManager::detect_client("/home/user/.windsurf/mcp.json"),
+            Some(MCPClient::Windsurf)
+        );
+
+        // Test unknown paths
+        assert_eq!(
+            MCPConfigManager::detect_client("/home/user/random.json"),
+            None
+        );
+    }
+
+    #[test]
     fn test_load_config_from_path() {
         let temp_dir = tempdir().unwrap();
         let config_path = temp_dir.path().join("test_config.json");
 
+        // Test IDE format (servers object)
         let config_content = r#"{
-            "servers": [
-                {
-                    "name": "test-server",
+            "servers": {
+                "test-server": {
                     "url": "http://localhost:3000",
                     "description": "Test server"
+                },
+                "stdio-server": {
+                    "command": "python",
+                    "args": ["-m", "server"]
                 }
-            ],
-            "options": {
-                "timeout": 60,
-                "format": "json"
             }
         }"#;
 
         fs::write(&config_path, config_content).unwrap();
-
         let config = MCPConfigManager::load_config_from_path(&config_path).unwrap();
+        assert!(config.servers.is_some());
+        assert_eq!(config.servers.unwrap().len(), 2);
 
+        // Test mcpServers format
+        let mcp_config_content = r#"{
+            "mcpServers": {
+                "test-server-2": {
+                    "url": "http://localhost:4000"
+                }
+            }
+        }"#;
+
+        fs::write(&config_path, mcp_config_content).unwrap();
+        let config = MCPConfigManager::load_config_from_path(&config_path).unwrap();
         assert!(config.servers.is_some());
         assert_eq!(config.servers.unwrap().len(), 1);
-        assert!(config.options.is_some());
     }
 
     #[test]
@@ -2109,124 +1026,21 @@ mod tests {
                 auth_headers: None,
                 options: None,
             }]),
-            options: Some(MCPGlobalOptions {
-                timeout: Some(60),
-                http_timeout: None,
-                format: Some("json".to_string()),
-                detailed: None,
-            }),
+            options: None,
             auth_headers: None,
         };
 
         MCPConfigManager::merge_config(&mut base, &other);
-
         assert!(base.servers.is_some());
         assert_eq!(base.servers.unwrap().len(), 1);
-        assert!(base.options.is_some());
     }
 
     #[test]
-    fn test_merge_config_deduplication() {
-        let mut base = MCPConfig {
-            servers: Some(vec![MCPServerConfig {
-                name: Some("server1".to_string()),
-                url: Some("http://localhost:3000".to_string()),
-                command: None,
-                args: None,
-                env: None,
-                description: None,
-                auth_headers: None,
-                options: None,
-            }]),
-            options: None,
-            auth_headers: None,
-        };
-
-        let other = MCPConfig {
-            servers: Some(vec![
-                MCPServerConfig {
-                    name: Some("server1-updated".to_string()),
-                    url: Some("http://localhost:3000".to_string()), // Same URL - should replace
-                    command: None,
-                    args: None,
-                    env: None,
-                    description: Some("Updated server".to_string()),
-                    auth_headers: None,
-                    options: None,
-                },
-                MCPServerConfig {
-                    name: Some("server2".to_string()),
-                    url: Some("http://localhost:4000".to_string()), // Different URL - should add
-                    command: None,
-                    args: None,
-                    env: None,
-                    description: None,
-                    auth_headers: None,
-                    options: None,
-                },
-            ]),
-            options: None,
-            auth_headers: None,
-        };
-
-        MCPConfigManager::merge_config(&mut base, &other);
-
-        let servers = base.servers.unwrap();
-        assert_eq!(servers.len(), 2); // Should have 2 servers, not 3
-
-        // Find the server with URL localhost:3000 - should be the updated one
-        let updated_server = servers
-            .iter()
-            .find(|s| s.url.as_deref() == Some("http://localhost:3000"))
-            .unwrap();
-        assert_eq!(updated_server.name.as_ref().unwrap(), "server1-updated");
-        assert_eq!(
-            updated_server.description.as_ref().unwrap(),
-            "Updated server"
-        );
-
-        // Should also have the new server
-        let new_server = servers
-            .iter()
-            .find(|s| s.url.as_deref() == Some("http://localhost:4000"))
-            .unwrap();
-        assert_eq!(new_server.name.as_ref().unwrap(), "server2");
-    }
-
-    #[test]
-    fn test_detect_client() {
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.cursor/mcp.json"),
-            Some(MCPClient::Cursor)
-        );
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.codium/windsurf/mcp_config.json"),
-            Some(MCPClient::Windsurf)
-        );
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.vscode/mcp.json"),
-            Some(MCPClient::VSCode)
-        );
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.claude/mcp.json"),
-            Some(MCPClient::Claude)
-        );
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.config/nvim/mcp.json"),
-            Some(MCPClient::Neovim)
-        );
-        assert_eq!(
-            MCPConfigManager::detect_client("/some/unknown/path.json"),
-            None
-        );
-    }
-
-    #[test]
-    fn test_validate_config() {
+    fn test_config_validation() {
         // Valid config
         let valid_config = MCPConfig {
             servers: Some(vec![MCPServerConfig {
-                name: Some("test".to_string()),
+                name: Some("valid-server".to_string()),
                 url: Some("http://localhost:3000".to_string()),
                 command: None,
                 args: None,
@@ -2240,11 +1054,11 @@ mod tests {
         };
         assert!(MCPConfigManager::validate_config(&valid_config).is_ok());
 
-        // Invalid config - empty URL
+        // Invalid config - empty server name
         let invalid_config = MCPConfig {
             servers: Some(vec![MCPServerConfig {
-                name: Some("test".to_string()),
-                url: Some(String::new()),
+                name: Some("".to_string()),
+                url: Some("http://localhost:3000".to_string()),
                 command: None,
                 args: None,
                 env: None,
@@ -2257,11 +1071,11 @@ mod tests {
         };
         assert!(MCPConfigManager::validate_config(&invalid_config).is_err());
 
-        // Invalid config - bad URL format
+        // Invalid config - no URL or command
         let invalid_config2 = MCPConfig {
             servers: Some(vec![MCPServerConfig {
-                name: Some("test".to_string()),
-                url: Some("not-a-url".to_string()),
+                name: Some("invalid-server".to_string()),
+                url: None,
                 command: None,
                 args: None,
                 env: None,
@@ -2276,1016 +1090,36 @@ mod tests {
     }
 
     #[test]
-    fn test_mcp_client_enum() {
-        assert_eq!(MCPClient::Cursor.name(), "cursor");
-        assert_eq!(MCPClient::Windsurf.name(), "windsurf");
-        assert_eq!(MCPClient::VSCode.name(), "vscode");
-        assert_eq!(MCPClient::Claude.name(), "claude");
-        assert_eq!(MCPClient::Neovim.name(), "neovim");
-        assert_eq!(MCPClient::Helix.name(), "helix");
-        assert_eq!(MCPClient::Zed.name(), "zed");
-        assert_eq!(MCPClient::Zencoder.name(), "zencoder");
-    }
-
-    #[test]
-    fn test_url_normalization() {
-        assert_eq!(
-            MCPConfigManager::normalize_url("HTTP://LOCALHOST:3000/"),
-            "http://localhost:3000"
-        );
-        assert_eq!(
-            MCPConfigManager::normalize_url("http://127.0.0.1:3000"),
-            "http://localhost:3000"
-        );
-        assert_eq!(
-            MCPConfigManager::normalize_url("https://0.0.0.0:8080/"),
-            "https://localhost:8080"
-        );
-        assert_eq!(MCPConfigManager::normalize_url("stdio:test"), "stdio:test");
-        assert_eq!(
-            MCPConfigManager::normalize_url("http://example.com/path/"),
-            "http://example.com/path"
-        );
-    }
-
-    #[test]
-    fn test_enhanced_client_detection() {
-        use std::path::PathBuf;
-
-        // Test exact component matches
-        assert_eq!(
-            MCPConfigManager::detect_client(PathBuf::from(
-                "/Applications/Cursor.app/Contents/mcp.json"
-            )),
-            Some(MCPClient::Cursor)
-        );
-
-        // Test Windows paths - use forward slashes for cross-platform compatibility
-        assert_eq!(
-            MCPConfigManager::detect_client(PathBuf::from(
-                "C:/Users/test/AppData/Roaming/Code/User/mcp.json"
-            )),
-            Some(MCPClient::VSCode)
-        );
-
-        // Test extension ID path
-        assert_eq!(
-            MCPConfigManager::detect_client(PathBuf::from(
-                "/home/user/.config/rooveterinaryinc.cursor-mcp/config.json"
-            )),
-            Some(MCPClient::Cursor)
-        );
-
-        // Test disambiguation - should not match generic "code" in paths
-        assert_eq!(
-            MCPConfigManager::detect_client(PathBuf::from(
-                "/home/user/my-code-project/config.json"
-            )),
-            None
-        );
-    }
-
-    #[test]
-    fn test_enhanced_validation() {
-        // Test duplicate URL detection with normalization
-        let config_with_duplicate_urls = MCPConfig {
-            servers: Some(vec![
-                MCPServerConfig {
-                    name: Some("server1".to_string()),
-                    url: Some("http://localhost:3000".to_string()),
-                    command: None,
-                    args: None,
-                    env: None,
-                    description: None,
-                    auth_headers: None,
-                    options: None,
-                },
-                MCPServerConfig {
-                    name: Some("server2".to_string()),
-                    url: Some("HTTP://LOCALHOST:3000/".to_string()), // Different case and trailing slash
-                    command: None,
-                    args: None,
-                    env: None,
-                    description: None,
-                    auth_headers: None,
-                    options: None,
-                },
-            ]),
-            options: None,
+    fn test_mcp_server_config_methods() {
+        // Test STDIO server display URL
+        let stdio_server = MCPServerConfig {
+            name: Some("stdio-test".to_string()),
+            url: None,
+            command: Some("python".to_string()),
+            args: Some(vec!["-m".to_string(), "server".to_string()]),
+            env: None,
+            description: None,
             auth_headers: None,
-        };
-        assert!(MCPConfigManager::validate_config(&config_with_duplicate_urls).is_err());
-
-        // Test duplicate names
-        let config_with_duplicate_names = MCPConfig {
-            servers: Some(vec![
-                MCPServerConfig {
-                    name: Some("same-name".to_string()),
-                    url: Some("http://localhost:3000".to_string()),
-                    command: None,
-                    args: None,
-                    env: None,
-                    description: None,
-                    auth_headers: None,
-                    options: None,
-                },
-                MCPServerConfig {
-                    name: Some("same-name".to_string()),
-                    url: Some("http://localhost:4000".to_string()),
-                    command: None,
-                    args: None,
-                    env: None,
-                    description: None,
-                    auth_headers: None,
-                    options: None,
-                },
-            ]),
             options: None,
-            auth_headers: None,
         };
-        assert!(MCPConfigManager::validate_config(&config_with_duplicate_names).is_err());
+        assert_eq!(stdio_server.to_display_url(), "stdio://python");
+        assert!(stdio_server.scan_url().is_none());
 
-        // Test invalid port
-        let config_with_invalid_port = MCPConfig {
-            servers: Some(vec![MCPServerConfig {
-                name: Some("test".to_string()),
-                url: Some("http://localhost:0".to_string()),
-                command: None,
-                args: None,
-                env: None,
-                description: None,
-                auth_headers: None,
-                options: None,
-            }]),
+        // Test HTTP server
+        let http_server = MCPServerConfig {
+            name: Some("http-test".to_string()),
+            url: Some("http://localhost:8080".to_string()),
+            command: None,
+            args: None,
+            env: None,
+            description: None,
+            auth_headers: None,
             options: None,
-            auth_headers: None,
         };
-        assert!(MCPConfigManager::validate_config(&config_with_invalid_port).is_err());
-    }
-
-    #[test]
-    fn test_platform_detection() {
-        // Test that platform detection works without panicking
-        let paths = MCPConfigManager::discover_config_paths();
-        assert!(
-            !paths.is_empty(),
-            "Should discover some configuration paths"
-        );
-    }
-
-    #[test]
-    fn test_merge_config_with_normalization() {
-        let mut base = MCPConfig {
-            servers: Some(vec![MCPServerConfig {
-                name: Some("server1".to_string()),
-                url: Some("http://localhost:3000/".to_string()), // With trailing slash
-                command: None,
-                args: None,
-                env: None,
-                description: None,
-                auth_headers: None,
-                options: None,
-            }]),
-            options: None,
-            auth_headers: None,
-        };
-
-        let other = MCPConfig {
-            servers: Some(vec![MCPServerConfig {
-                name: Some("server1-updated".to_string()),
-                url: Some("HTTP://LOCALHOST:3000".to_string()), // Different case, no trailing slash
-                command: None,
-                args: None,
-                env: None,
-                description: Some("Updated".to_string()),
-                auth_headers: None,
-                options: None,
-            }]),
-            options: None,
-            auth_headers: None,
-        };
-
-        MCPConfigManager::merge_config(&mut base, &other);
-
-        let servers = base.servers.unwrap();
-        assert_eq!(servers.len(), 1); // Should be deduplicated due to URL normalization
-        assert_eq!(servers[0].name.as_ref().unwrap(), "server1-updated");
-        assert_eq!(servers[0].description.as_ref().unwrap(), "Updated");
-    }
-
-    #[test]
-    fn test_vscode_config_parsing() {
-        let vscode_content = r#"{
-            "servers": {
-                "github": {
-                    "type": "http",
-                    "url": "https://api.githubcopilot.com/mcp/",
-                    "gallery": true
-                },
-                "local-fs": {
-                    "type": "stdio",
-                    "command": "npx",
-                    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-                    "description": "Local filesystem access"
-                }
-            },
-            "inputs": []
-        }"#;
-
-        // Test VS Code format parsing
-        let result = MCPConfigManager::parse_vscode_config(vscode_content);
-        assert!(
-            result.is_ok(),
-            "Failed to parse VS Code config: {:?}",
-            result.err()
-        );
-
-        let config = result.unwrap();
-        assert!(config.servers.is_some());
-        let servers = config.servers.unwrap();
-        assert_eq!(servers.len(), 2);
-
-        // Check github server
-        let github_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("github"))
-            .unwrap();
+        assert_eq!(http_server.to_display_url(), "http://localhost:8080");
         assert_eq!(
-            github_server.url,
-            Some("https://api.githubcopilot.com/mcp/".to_string())
+            http_server.scan_url(),
+            Some("http://localhost:8080".to_string())
         );
-
-        // Check local-fs server
-        let fs_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("local-fs"))
-            .unwrap();
-        assert_eq!(fs_server.url, None);
-        assert_eq!(
-            fs_server.description,
-            Some("Local filesystem access".to_string())
-        );
-    }
-
-    #[test]
-    fn test_zed_config_parsing() {
-        let zed_content = r#"{
-            "context_servers": [
-                {
-                    "mcp-server-git": {
-                        "command": {
-                            "path": "uvx",
-                            "args": ["mcp-server-git"]
-                        }
-                    }
-                },
-                {
-                    "filesystem": {
-                        "command": {
-                            "path": "node",
-                            "args": ["/path/to/filesystem-server.js", "/tmp"]
-                        }
-                    }
-                }
-            ]
-        }"#;
-
-        // Test Zed format parsing
-        let result = MCPConfigManager::parse_zed_config(zed_content);
-        assert!(
-            result.is_ok(),
-            "Failed to parse Zed config: {:?}",
-            result.err()
-        );
-
-        let config = result.unwrap();
-        assert!(config.servers.is_some());
-        let servers = config.servers.unwrap();
-        assert_eq!(servers.len(), 2);
-
-        // Check git server
-        let git_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("mcp-server-git"))
-            .unwrap();
-        assert_eq!(git_server.url, None);
-        assert!(git_server
-            .description
-            .as_ref()
-            .unwrap()
-            .contains("uvx mcp-server-git"));
-
-        // Check filesystem server
-        let fs_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("filesystem"))
-            .unwrap();
-        assert_eq!(fs_server.url, None);
-        assert!(fs_server
-            .description
-            .as_ref()
-            .unwrap()
-            .contains("node /path/to/filesystem-server.js /tmp"));
-    }
-
-    #[test]
-    fn test_zencoder_config_parsing() {
-        let zencoder_content = r#"{
-            "command": "uvx",
-            "args": ["mcp-server-git", "--repository", "path/to/git/repo"]
-        }"#;
-
-        // Test Zencoder format parsing
-        let result = MCPConfigManager::parse_zencoder_config(zencoder_content);
-        assert!(
-            result.is_ok(),
-            "Failed to parse Zencoder config: {:?}",
-            result.err()
-        );
-
-        let config = result.unwrap();
-        assert!(config.servers.is_some());
-        let servers = config.servers.unwrap();
-        assert_eq!(servers.len(), 1);
-
-        // Check zencoder server
-        let zencoder_server = &servers[0];
-        assert_eq!(zencoder_server.name.as_deref(), Some("zencoder"));
-        assert_eq!(zencoder_server.url, None);
-        assert_eq!(zencoder_server.command.as_deref(), Some("uvx"));
-        assert_eq!(
-            zencoder_server.args,
-            Some(vec![
-                "mcp-server-git".to_string(),
-                "--repository".to_string(),
-                "path/to/git/repo".to_string()
-            ])
-        );
-        assert_eq!(
-            zencoder_server.description.as_deref(),
-            Some("Zencoder MCP server")
-        );
-    }
-
-    #[test]
-    fn test_cursor_config_parsing() {
-        let cursor_content = r#"{
-            "mcpServers": {
-                "airbnb": {
-                    "command": "npx",
-                    "args": ["-y", "@openbnb/mcp-server-airbnb"]
-                },
-                "playwright": {
-                    "command": "npx",
-                    "args": ["-y", "@executeautomation/playwright-mcp-server"]
-                },
-                "time": {
-                    "command": "uvx",
-                    "args": ["mcp-server-time"],
-                    "env": {
-                        "TZ": "UTC"
-                    }
-                }
-            }
-        }"#;
-
-        // Test Cursor format parsing
-        let result = MCPConfigManager::parse_cursor_config(cursor_content);
-        assert!(
-            result.is_ok(),
-            "Failed to parse Cursor config: {:?}",
-            result.err()
-        );
-
-        let config = result.unwrap();
-        assert!(config.servers.is_some());
-        let servers = config.servers.unwrap();
-        assert_eq!(servers.len(), 3);
-
-        // Check airbnb server
-        let airbnb_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("airbnb"))
-            .unwrap();
-        assert_eq!(airbnb_server.command, Some("npx".to_string()));
-        assert_eq!(
-            airbnb_server.args,
-            Some(vec![
-                "-y".to_string(),
-                "@openbnb/mcp-server-airbnb".to_string()
-            ])
-        );
-        assert_eq!(airbnb_server.url, None);
-
-        // Check time server with env
-        let time_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("time"))
-            .unwrap();
-        assert_eq!(time_server.command, Some("uvx".to_string()));
-        assert!(time_server.env.is_some());
-        let env = time_server.env.as_ref().unwrap();
-        assert_eq!(env.get("TZ"), Some(&"UTC".to_string()));
-    }
-
-    #[test]
-    fn test_windsurf_config_parsing() {
-        let windsurf_content = r#"{
-            "servers": {
-                "git": {
-                    "command": "uvx",
-                    "args": ["mcp-server-git"],
-                    "type": "stdio"
-                },
-                "filesystem": {
-                    "command": "npx",
-                    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-                    "description": "File system access",
-                    "env": {
-                        "NODE_ENV": "development"
-                    }
-                }
-            },
-            "global": {
-                "timeout": 30
-            }
-        }"#;
-
-        // Test Windsurf format parsing
-        let result = MCPConfigManager::parse_windsurf_config(windsurf_content);
-        assert!(
-            result.is_ok(),
-            "Failed to parse Windsurf config: {:?}",
-            result.err()
-        );
-
-        let config = result.unwrap();
-        assert!(config.servers.is_some());
-        let servers = config.servers.unwrap();
-        assert_eq!(servers.len(), 2);
-
-        // Check git server
-        let git_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("git"))
-            .unwrap();
-        assert_eq!(git_server.command, Some("uvx".to_string()));
-        assert_eq!(git_server.args, Some(vec!["mcp-server-git".to_string()]));
-
-        // Check filesystem server
-        let fs_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("filesystem"))
-            .unwrap();
-        assert_eq!(
-            fs_server.description,
-            Some("File system access".to_string())
-        );
-        assert!(fs_server.env.is_some());
-    }
-
-    #[test]
-    fn test_claude_desktop_config_parsing() {
-        let claude_content = r#"{
-            "mcpServers": {
-                "brave-search": {
-                    "command": "npx",
-                    "args": ["-y", "@modelcontextprotocol/server-brave-search"],
-                    "env": {
-                        "BRAVE_API_KEY": "your-api-key"
-                    }
-                },
-                "filesystem": {
-                    "command": "npx",
-                    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/username/Desktop"],
-                    "type": "stdio"
-                }
-            }
-        }"#;
-
-        // Test Claude Desktop format parsing
-        let result = MCPConfigManager::parse_claude_config(claude_content);
-        assert!(
-            result.is_ok(),
-            "Failed to parse Claude Desktop config: {:?}",
-            result.err()
-        );
-
-        let config = result.unwrap();
-        assert!(config.servers.is_some());
-        let servers = config.servers.unwrap();
-        assert_eq!(servers.len(), 2);
-
-        // Check brave-search server
-        let brave_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("brave-search"))
-            .unwrap();
-        assert_eq!(brave_server.command, Some("npx".to_string()));
-        assert!(brave_server.env.is_some());
-        let env = brave_server.env.as_ref().unwrap();
-        assert_eq!(env.get("BRAVE_API_KEY"), Some(&"your-api-key".to_string()));
-
-        // Check filesystem server
-        let fs_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("filesystem"))
-            .unwrap();
-        assert_eq!(fs_server.command, Some("npx".to_string()));
-        assert!(fs_server
-            .args
-            .as_ref()
-            .unwrap()
-            .contains(&"/Users/username/Desktop".to_string()));
-    }
-
-    #[test]
-    fn test_claude_code_config_parsing() {
-        let claude_code_content = r#"{
-            "numStartups": 36,
-            "installMethod": "unknown", 
-            "mcpServers": {
-                "sequential-thinking": {
-                    "type": "stdio",
-                    "command": "npx",
-                    "args": ["-y", "u/modelcontextprotocol/server-sequential-thinking"],
-                    "env": {}
-                },
-                "filesystem": {
-                    "type": "stdio",
-                    "command": "uvx",
-                    "args": ["mcp-server-filesystem", "/tmp"],
-                    "env": {
-                        "DEBUG": "true"
-                    }
-                }
-            }
-        }"#;
-
-        // Test Claude Code format parsing
-        let result = MCPConfigManager::parse_claude_code_config(claude_code_content);
-        assert!(
-            result.is_ok(),
-            "Failed to parse Claude Code config: {:?}",
-            result.err()
-        );
-
-        let config = result.unwrap();
-        assert!(config.servers.is_some());
-        let servers = config.servers.unwrap();
-        assert_eq!(servers.len(), 2);
-
-        // Check sequential-thinking server
-        let seq_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("sequential-thinking"))
-            .unwrap();
-        assert_eq!(seq_server.command, Some("npx".to_string()));
-        assert_eq!(
-            seq_server.args,
-            Some(vec![
-                "-y".to_string(),
-                "u/modelcontextprotocol/server-sequential-thinking".to_string()
-            ])
-        );
-        assert_eq!(seq_server.url, None);
-
-        // Check filesystem server with env
-        let fs_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("filesystem"))
-            .unwrap();
-        assert_eq!(fs_server.command, Some("uvx".to_string()));
-        assert!(fs_server.env.is_some());
-        let env = fs_server.env.as_ref().unwrap();
-        assert_eq!(env.get("DEBUG"), Some(&"true".to_string()));
-    }
-
-    #[test]
-    fn test_vscode_array_config_parsing() {
-        let vscode_array_content = r#"{
-            "servers": [
-                {
-                    "name": "time",
-                    "command": "uvx",
-                    "args": ["mcp-server-time"]
-                },
-                {
-                    "name": "everything",
-                    "command": "npx",
-                    "args": ["-y", "@modelcontextprotocol/server-everything"]
-                },
-                {
-                    "name": "git",
-                    "command": "uvx",
-                    "args": ["mcp-server-git"]
-                },
-                {
-                    "name": "Neon",
-                    "command": "npx",
-                    "args": ["-y", "mcp-remote", "https://mcp.neon.tech/mcp"]
-                }
-            ]
-        }"#;
-
-        // Test VS Code array format parsing
-        let result = MCPConfigManager::parse_vscode_config(vscode_array_content);
-        assert!(
-            result.is_ok(),
-            "Failed to parse VS Code array config: {:?}",
-            result.err()
-        );
-
-        let config = result.unwrap();
-        assert!(config.servers.is_some());
-        let servers = config.servers.unwrap();
-        assert_eq!(servers.len(), 4);
-
-        // Check time server
-        let time_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("time"))
-            .unwrap();
-        assert_eq!(time_server.command, Some("uvx".to_string()));
-        assert_eq!(time_server.args, Some(vec!["mcp-server-time".to_string()]));
-
-        // Check Neon server
-        let neon_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("Neon"))
-            .unwrap();
-        assert_eq!(neon_server.command, Some("npx".to_string()));
-        assert!(neon_server
-            .args
-            .as_ref()
-            .unwrap()
-            .contains(&"https://mcp.neon.tech/mcp".to_string()));
-    }
-
-    #[test]
-    fn test_client_path_detection_claude_code() {
-        // Test Claude Code vs Claude Desktop path detection
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.claude.json"),
-            Some(MCPClient::ClaudeCode)
-        );
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.claude/mcp.json"),
-            Some(MCPClient::Claude)
-        );
-
-        // Test Windsurf path detection (corrected path)
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.codeium/windsurf/mcp_config.json"),
-            Some(MCPClient::Windsurf)
-        );
-    }
-
-    #[test]
-    fn test_gemini_config_parsing() {
-        let gemini_content = r#"{
-            "mcpServers": {
-                "github": {
-                    "command": "npx",
-                    "args": [
-                        "-y",
-                        "@modelcontextprotocol/server-github"
-                    ],
-                    "env": {
-                        "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_example_personal_access_token12345"
-                    }
-                },
-                "gitlab": {
-                    "command": "npx",
-                    "args": [
-                        "-y",
-                        "@modelcontextprotocol/server-gitlab"
-                    ]
-                },
-                "cloudflare-observability": {
-                    "command": "npx",
-                    "args": ["mcp-remote", "https://observability.mcp.cloudflare.com/sse"]
-                },
-                "cloudflare-bindings": {
-                    "command": "npx",
-                    "args": ["mcp-remote", "https://bindings.mcp.cloudflare.com/sse"]
-                }
-            }
-        }"#;
-
-        // Test Gemini format parsing (reuses Cursor parsing logic since format is the same)
-        let result = MCPConfigManager::parse_cursor_config(gemini_content);
-        assert!(
-            result.is_ok(),
-            "Failed to parse Gemini config: {:?}",
-            result.err()
-        );
-
-        let config = result.unwrap();
-        assert!(config.servers.is_some());
-        let servers = config.servers.unwrap();
-        assert_eq!(servers.len(), 4);
-
-        // Check github server with env
-        let github_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("github"))
-            .unwrap();
-        assert_eq!(github_server.command, Some("npx".to_string()));
-        assert_eq!(
-            github_server.args,
-            Some(vec![
-                "-y".to_string(),
-                "@modelcontextprotocol/server-github".to_string()
-            ])
-        );
-        assert_eq!(github_server.url, None);
-        assert!(github_server.env.is_some());
-        let env = github_server.env.as_ref().unwrap();
-        assert_eq!(
-            env.get("GITHUB_PERSONAL_ACCESS_TOKEN"),
-            Some(&"ghp_example_personal_access_token12345".to_string())
-        );
-
-        // Check gitlab server
-        let gitlab_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("gitlab"))
-            .unwrap();
-        assert_eq!(gitlab_server.command, Some("npx".to_string()));
-        assert_eq!(
-            gitlab_server.args,
-            Some(vec![
-                "-y".to_string(),
-                "@modelcontextprotocol/server-gitlab".to_string()
-            ])
-        );
-
-        // Check cloudflare-observability server
-        let cf_obs_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("cloudflare-observability"))
-            .unwrap();
-        assert_eq!(cf_obs_server.command, Some("npx".to_string()));
-        assert_eq!(
-            cf_obs_server.args,
-            Some(vec![
-                "mcp-remote".to_string(),
-                "https://observability.mcp.cloudflare.com/sse".to_string()
-            ])
-        );
-
-        // Check cloudflare-bindings server
-        let cf_bind_server = servers
-            .iter()
-            .find(|s| s.name.as_deref() == Some("cloudflare-bindings"))
-            .unwrap();
-        assert_eq!(cf_bind_server.command, Some("npx".to_string()));
-        assert_eq!(
-            cf_bind_server.args,
-            Some(vec![
-                "mcp-remote".to_string(),
-                "https://bindings.mcp.cloudflare.com/sse".to_string()
-            ])
-        );
-    }
-
-    #[test]
-    fn test_client_path_detection_gemini() {
-        // Test Gemini path detection
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.gemini/settings.json"),
-            Some(MCPClient::Gemini)
-        );
-        assert_eq!(
-            MCPConfigManager::detect_client("/Users/user/.gemini/settings.json"),
-            Some(MCPClient::Gemini)
-        );
-
-        // Test combined with other path detections
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.claude.json"),
-            Some(MCPClient::ClaudeCode)
-        );
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.codeium/windsurf/mcp_config.json"),
-            Some(MCPClient::Windsurf)
-        );
-    }
-
-    #[test]
-    fn test_client_name_mappings_complete() {
-        // Test all client name mappings including Claude Code and Gemini
-        assert_eq!(MCPClient::Cursor.name(), "cursor");
-        assert_eq!(MCPClient::Windsurf.name(), "windsurf");
-        assert_eq!(MCPClient::VSCode.name(), "vscode");
-        assert_eq!(MCPClient::Claude.name(), "claude");
-        assert_eq!(MCPClient::ClaudeCode.name(), "claude-code");
-        assert_eq!(MCPClient::Gemini.name(), "gemini");
-        assert_eq!(MCPClient::Neovim.name(), "neovim");
-        assert_eq!(MCPClient::Helix.name(), "helix");
-        assert_eq!(MCPClient::Zed.name(), "zed");
-        assert_eq!(MCPClient::Zencoder.name(), "zencoder");
-    }
-}
-
-/// Scanner Configuration structure for reading from config.yaml
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScannerConfig {
-    /// LLM configuration
-    pub llm: LLMConfig,
-    /// Scanner configuration
-    pub scanner: ScannerSettings,
-    /// Security configuration
-    pub security: SecurityConfig,
-    /// Logging configuration
-    pub logging: LoggingConfig,
-    /// Performance configuration
-    pub performance: PerformanceConfig,
-}
-
-/// LLM Configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LLMConfig {
-    /// Model provider (openai, anthropic, local, etc.)
-    pub provider: String,
-    /// Model name/identifier
-    pub model: String,
-    /// Base URL for the API
-    pub base_url: String,
-    /// API key (can also be set via environment variable)
-    pub api_key: String,
-    /// Request timeout in seconds
-    pub timeout: u64,
-    /// Maximum tokens for LLM responses
-    pub max_tokens: u32,
-    /// Temperature for LLM responses
-    pub temperature: f32,
-}
-
-/// Scanner Settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScannerSettings {
-    /// Default HTTP timeout for MCP server connections (seconds)
-    pub http_timeout: u64,
-    /// Default scan timeout (seconds)
-    pub scan_timeout: u64,
-    /// Enable/disable detailed output
-    pub detailed: bool,
-    /// Output format (json, table, text)
-    pub format: String,
-    /// Enable/disable parallel execution
-    pub parallel: bool,
-    /// Number of retries for failed requests
-    pub max_retries: u32,
-    /// Initial delay for retry backoff (milliseconds)
-    pub retry_delay_ms: u64,
-    /// Maximum number of tools to process in a single LLM batch
-    pub llm_batch_size: u32,
-    /// Enable/disable YARA rule scanning
-    pub enable_yara: bool,
-}
-
-/// Security Configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SecurityConfig {
-    /// Enable/disable security scanning
-    pub enabled: bool,
-    /// Minimum severity level to report
-    pub min_severity: String,
-    /// Enable/disable specific vulnerability checks
-    pub checks: SecurityChecks,
-}
-
-/// Security Checks Configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(clippy::struct_excessive_bools)]
-pub struct SecurityChecks {
-    pub tool_poisoning: bool,
-    pub secrets_leakage: bool,
-    pub sql_injection: bool,
-    pub command_injection: bool,
-    pub path_traversal: bool,
-    pub auth_bypass: bool,
-    pub prompt_injection: bool,
-    pub pii_leakage: bool,
-    pub jailbreak: bool,
-}
-
-/// Logging Configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoggingConfig {
-    /// Log level (trace, debug, info, warn, error)
-    pub level: String,
-    /// Enable/disable colored output
-    pub colored: bool,
-    /// Enable/disable timestamps in logs
-    pub timestamps: bool,
-}
-
-/// Performance Configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PerformanceConfig {
-    /// Enable/disable performance tracking
-    pub tracking: bool,
-    /// Threshold for slow execution warnings (milliseconds)
-    pub slow_threshold_ms: u64,
-}
-
-impl Default for ScannerConfig {
-    fn default() -> Self {
-        Self {
-            llm: LLMConfig {
-                provider: "openai".to_string(),
-                model: "gpt-4o".to_string(),
-                base_url: "https://api.openai.com/v1".to_string(),
-                api_key: String::new(),
-                timeout: 30,
-                max_tokens: 4000,
-                temperature: 0.1,
-            },
-            scanner: ScannerSettings {
-                http_timeout: 30,
-                scan_timeout: 60,
-                detailed: false,
-                format: "table".to_string(),
-                parallel: true,
-                max_retries: 3,
-                retry_delay_ms: 1000,
-                llm_batch_size: 10,
-                enable_yara: true,
-            },
-            security: SecurityConfig {
-                enabled: true,
-                min_severity: "low".to_string(),
-                checks: SecurityChecks {
-                    tool_poisoning: true,
-                    secrets_leakage: true,
-                    sql_injection: true,
-                    command_injection: true,
-                    path_traversal: true,
-                    auth_bypass: true,
-                    prompt_injection: true,
-                    pii_leakage: true,
-                    jailbreak: true,
-                },
-            },
-            logging: LoggingConfig {
-                level: "info".to_string(),
-                colored: true,
-                timestamps: true,
-            },
-            performance: PerformanceConfig {
-                tracking: true,
-                slow_threshold_ms: 5000,
-            },
-        }
-    }
-}
-
-/// Scanner Configuration Manager
-pub struct ScannerConfigManager {
-    config_path: PathBuf,
-}
-
-impl ScannerConfigManager {
-    /// Create a new scanner configuration manager
-    pub fn new() -> Self {
-        let config_path = PathBuf::from("config.yaml");
-        Self { config_path }
-    }
-
-    /// Load configuration from config.yaml
-    pub fn load_config(&self) -> Result<ScannerConfig> {
-        if !self.config_path.exists() {
-            debug!("No config.yaml found, using default configuration");
-            return Ok(ScannerConfig::default());
-        }
-
-        let content = fs::read_to_string(&self.config_path)
-            .map_err(|e| anyhow!("Failed to read config.yaml: {}", e))?;
-
-        let config: ScannerConfig = serde_yaml::from_str(&content)
-            .map_err(|e| anyhow!("Failed to parse config.yaml: {}", e))?;
-
-        debug!("Loaded configuration from config.yaml");
-        Ok(config)
-    }
-
-    /// Save configuration to config.yaml
-    pub fn save_config(&self, config: &ScannerConfig) -> Result<()> {
-        let content = serde_yaml::to_string(config)
-            .map_err(|e| anyhow!("Failed to serialize configuration: {}", e))?;
-
-        fs::write(&self.config_path, content)
-            .map_err(|e| anyhow!("Failed to write config.yaml: {}", e))?;
-
-        debug!("Saved configuration to config.yaml");
-        Ok(())
-    }
-
-    /// Check if config.yaml exists
-    pub fn has_config_file(&self) -> bool {
-        self.config_path.exists()
     }
 }

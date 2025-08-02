@@ -281,11 +281,13 @@ async fn handle_scan_config_command(
         .as_ref()
         .expect("Scanner should be initialized for scan-config command");
 
-    match scanner.scan_config(options).await {
+    match scanner.scan_config_by_ide(options).await {
         Ok(results) => {
-            for result in results {
-                utils::print_result(&result, &output_format, scanner_config.scanner.detailed);
-            }
+            utils::print_multi_server_results(
+                &results,
+                &output_format,
+                scanner_config.scanner.detailed,
+            );
             Ok(())
         }
         Err(e) => {
