@@ -4,12 +4,13 @@ use crate::core::{
 };
 use axum::{
     extract::State,
-    http::{Method, StatusCode},
+    http::{HeaderMap, Method, StatusCode},
     response::Json,
     routing::{get, post},
     Router,
 };
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -89,6 +90,34 @@ impl MCPScannerServer {
         axum::serve(listener, app).await?;
 
         Ok(())
+    }
+}
+
+/// Helper function to extract Javelin API key from headers and add to auth_headers
+fn extract_and_add_api_key(
+    headers: &HeaderMap,
+    auth_headers: &mut Option<HashMap<String, String>>,
+) {
+    if let Some(api_key) = headers
+        .get("x-javelin-apikey")
+        .and_then(|h| h.to_str().ok())
+        .filter(|key| !key.trim().is_empty())
+    // Filter out empty keys
+    {
+        debug!("Extracted Javelin API key from X-Javelin-Apikey header");
+
+        // Initialize auth_headers if it doesn't exist
+        if auth_headers.is_none() {
+            *auth_headers = Some(HashMap::new());
+        }
+
+        // Add the API key to auth_headers if not already present
+        if let Some(ref mut headers_map) = auth_headers {
+            if !headers_map.contains_key("x-javelin-api-key") {
+                headers_map.insert("x-javelin-api-key".to_string(), api_key.to_string());
+                debug!("Added API key to auth_headers for conversion");
+            }
+        }
     }
 }
 
@@ -190,8 +219,12 @@ async fn api_docs() -> Json<Value> {
 
 async fn scan_endpoint(
     State(state): State<ServerState>,
-    Json(request): Json<ScanRequest>,
+    headers: HeaderMap,
+    Json(mut request): Json<ScanRequest>,
 ) -> Result<Json<ScanResponse>, (StatusCode, Json<Value>)> {
+    // Extract Javelin API key from headers using helper function
+    extract_and_add_api_key(&headers, &mut request.auth_headers);
+
     // Input validation
     if request.url.is_empty() {
         return Err((
@@ -259,8 +292,12 @@ async fn scan_endpoint(
 
 async fn validate_endpoint(
     State(state): State<ServerState>,
-    Json(request): Json<ScanRequest>,
+    headers: HeaderMap,
+    Json(mut request): Json<ScanRequest>,
 ) -> Result<Json<ValidationResponse>, (StatusCode, Json<Value>)> {
+    // Extract Javelin API key from headers using helper function
+    extract_and_add_api_key(&headers, &mut request.auth_headers);
+
     debug!("Received validation request");
 
     let response = state.core.validate_config(&request);
@@ -289,14 +326,26 @@ async fn validate_endpoint(
 
 async fn batch_scan_endpoint(
     State(state): State<ServerState>,
-    Json(request): Json<BatchScanRequest>,
+    headers: HeaderMap,
+    Json(mut request): Json<BatchScanRequest>,
 ) -> Result<Json<BatchScanResponse>, (StatusCode, Json<Value>)> {
+    // Fix critical bug: Handle API key even when options is None
+    if request.options.is_none() {
+        // Create default options if they don't exist
+        request.options = Some(ScanRequest::default());
+    }
+
+    // Extract Javelin API key from headers using helper function
+    if let Some(ref mut options) = request.options {
+        extract_and_add_api_key(&headers, &mut options.auth_headers);
+    }
+
     if request.urls.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(json!({
                 "success": false,
-                "error": "URLs array is required",
+                "error": "At least one URL is required",
                 "timestamp": chrono::Utc::now().to_rfc3339()
             })),
         ));
@@ -309,14 +358,22 @@ async fn batch_scan_endpoint(
 
     let response = state.core.batch_scan(request).await;
 
-    if !response.success {
+    if response.success {
+        Ok(Json(response))
+    } else {
         error!(
             "Batch scan failed: {} successful, {} failed",
             response.successful, response.failed
         );
+        Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "error": "Batch scan failed",
+                "timestamp": response.timestamp
+            })),
+        ))
     }
-
-    Ok(Json(response))
 }
 
 // Tests removed for now - would need axum-test dependency
