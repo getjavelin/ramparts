@@ -4,12 +4,13 @@ use crate::core::{
 };
 use axum::{
     extract::State,
-    http::{Method, StatusCode},
+    http::{HeaderMap, Method, StatusCode},
     response::Json,
     routing::{get, post},
     Router,
 };
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -190,8 +191,27 @@ async fn api_docs() -> Json<Value> {
 
 async fn scan_endpoint(
     State(state): State<ServerState>,
-    Json(request): Json<ScanRequest>,
+    headers: HeaderMap,
+    Json(mut request): Json<ScanRequest>,
 ) -> Result<Json<ScanResponse>, (StatusCode, Json<Value>)> {
+    // Extract Javelin API key from headers and add to auth_headers if not present
+    if let Some(api_key) = headers.get("x-javelin-apikey").and_then(|h| h.to_str().ok()) {
+        debug!("Extracted Javelin API key from X-Javelin-Apikey header");
+        
+        // Initialize auth_headers if it doesn't exist
+        if request.auth_headers.is_none() {
+            request.auth_headers = Some(HashMap::new());
+        }
+        
+        // Add the API key to auth_headers if not already present
+        if let Some(ref mut auth_headers) = request.auth_headers {
+            if !auth_headers.contains_key("x-javelin-api-key") {
+                auth_headers.insert("x-javelin-api-key".to_string(), api_key.to_string());
+                debug!("Added API key to auth_headers for conversion");
+            }
+        }
+    }
+
     // Input validation
     if request.url.is_empty() {
         return Err((
@@ -259,8 +279,20 @@ async fn scan_endpoint(
 
 async fn validate_endpoint(
     State(state): State<ServerState>,
-    Json(request): Json<ScanRequest>,
+    headers: HeaderMap,
+    Json(mut request): Json<ScanRequest>,
 ) -> Result<Json<ValidationResponse>, (StatusCode, Json<Value>)> {
+    // Extract Javelin API key from headers and add to auth_headers if not present
+    if let Some(api_key) = headers.get("x-javelin-apikey").and_then(|h| h.to_str().ok()) {
+        if request.auth_headers.is_none() {
+            request.auth_headers = Some(HashMap::new());
+        }
+        if let Some(ref mut auth_headers) = request.auth_headers {
+            if !auth_headers.contains_key("x-javelin-api-key") {
+                auth_headers.insert("x-javelin-api-key".to_string(), api_key.to_string());
+            }
+        }
+    }
     debug!("Received validation request");
 
     let response = state.core.validate_config(&request);
@@ -289,8 +321,22 @@ async fn validate_endpoint(
 
 async fn batch_scan_endpoint(
     State(state): State<ServerState>,
-    Json(request): Json<BatchScanRequest>,
+    headers: HeaderMap,
+    Json(mut request): Json<BatchScanRequest>,
 ) -> Result<Json<BatchScanResponse>, (StatusCode, Json<Value>)> {
+    // Extract Javelin API key from headers and add to batch scan options
+    if let Some(api_key) = headers.get("x-javelin-apikey").and_then(|h| h.to_str().ok()) {
+        if let Some(ref mut options) = request.options {
+            if options.auth_headers.is_none() {
+                options.auth_headers = Some(HashMap::new());
+            }
+            if let Some(ref mut auth_headers) = options.auth_headers {
+                if !auth_headers.contains_key("x-javelin-api-key") {
+                    auth_headers.insert("x-javelin-api-key".to_string(), api_key.to_string());
+                }
+            }
+        }
+    }
     if request.urls.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
