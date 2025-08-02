@@ -56,7 +56,7 @@ pub struct MCPScannerCore {
 impl MCPScannerCore {
     pub fn new() -> Result<Self> {
         let config_manager = ScannerConfigManager::new();
-        let scanner_config = match config_manager.load_config() {
+        let scanner_config = match config_manager.load_scanner_config() {
             Ok(config) => config,
             Err(e) => {
                 warn!("Failed to load scanner config, using defaults: {}", e);
@@ -72,7 +72,7 @@ impl MCPScannerCore {
 
     /// Parse scan options from request parameters
     fn parse_scan_options(&self, request: &ScanRequest) -> ScanOptions {
-        let scanner_config = self.config_manager.load_config().unwrap_or_default();
+        let scanner_config = self.config_manager.load_scanner_config().unwrap_or_default();
 
         let mut builder = ScanConfigBuilder::new()
             .timeout(

@@ -286,6 +286,13 @@ impl McpClient {
         for arg in args {
             cmd.arg(arg);
         }
+        
+        // Suppress subprocess stdout/stderr to prevent startup messages from cluttering output
+        // Only suppress if not in debug mode (to preserve error messages for troubleshooting)
+        if std::env::var("RUST_LOG").map_or(true, |log| !log.contains("debug") && !log.contains("trace")) {
+            cmd.stdout(std::process::Stdio::null());
+            cmd.stderr(std::process::Stdio::null());
+        }
 
         // Add environment variables if provided
         if let Some(env) = env_vars {

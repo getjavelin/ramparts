@@ -63,7 +63,7 @@ impl MCPServerConfig {
         if let Some(url) = &self.url {
             url.clone()
         } else if let Some(command) = &self.command {
-            format!("stdio://{}", command)
+            format!("stdio://{command}")
         } else {
             "unknown".to_string()
         }
@@ -111,7 +111,6 @@ pub enum MCPClient {
     Neovim,
     Helix,
     Zed,
-    Zencoder,
 }
 
 impl MCPClient {
@@ -126,7 +125,6 @@ impl MCPClient {
             MCPClient::Neovim => "neovim",
             MCPClient::Helix => "helix",
             MCPClient::Zed => "zed",
-            MCPClient::Zencoder => "zencoder",
         }
     }
 
@@ -141,7 +139,6 @@ impl MCPClient {
             MCPClient::Neovim => "NEOVIM",
             MCPClient::Helix => "HELIX",
             MCPClient::Zed => "ZED",
-            MCPClient::Zencoder => "ZENCODER",
         }
     }
 }
@@ -245,7 +242,7 @@ fn determine_server_url(name: &str, config: &UnifiedServerConfig) -> Option<Stri
             Some("https") => "https",
             _ => "http",
         };
-        return Some(format!("{}://{}:{}", scheme, host, port));
+        return Some(format!("{scheme}://{host}:{port}"));
     }
 
     // If command is provided, this is a STDIO server - no URL needed
@@ -254,17 +251,16 @@ fn determine_server_url(name: &str, config: &UnifiedServerConfig) -> Option<Stri
     }
 
     // Default fallback for HTTP servers
-    Some(format!("http://localhost:8080/{}", name))
+    Some(format!("http://localhost:8080/{name}"))
 }
 
 /// Normalize URL format
 fn normalize_url(url: &str) -> String {
-    if url.starts_with("localhost:") {
-        format!("http://{}", url)
-    } else if url.starts_with("127.0.0.1:") {
-        format!("http://{}", url)
-    } else if !url.starts_with("http://") && !url.starts_with("https://") {
-        format!("http://{}", url)
+    if url.starts_with("localhost:")
+        || url.starts_with("127.0.0.1:")
+        || (!url.starts_with("http://") && !url.starts_with("https://"))
+    {
+        format!("http://{url}")
     } else {
         url.to_string()
     }
@@ -293,17 +289,11 @@ impl MCPConfigManager {
         }
     }
 
-    /// Creates a new MCPConfigManager without using the cache (for testing)
-    pub fn new_uncached() -> Self {
-        Self {
-            config_paths: Self::discover_config_paths(),
-        }
-    }
-
     /// Check if any configuration files exist
     pub fn has_config_files(&self) -> bool {
         self.config_paths.iter().any(|(path, _)| path.exists())
     }
+
 
     /// Discover MCP configuration paths based on platform and IDE
     fn discover_config_paths() -> Vec<(PathBuf, MCPClient)> {
@@ -479,14 +469,14 @@ impl MCPConfigManager {
 
     /// Load configurations grouped by IDE
     pub fn load_config_by_ide(&self) -> Vec<(String, MCPConfig)> {
-        let mut configs_by_ide = Vec::new();
+        let mut configs_by_ide = std::collections::HashMap::new();
 
         for (path, client) in &self.config_paths {
             if !path.exists() {
                 continue;
             }
 
-            match Self::load_config_from_path(path) {
+            match Self::load_config_from_path_with_client(path, *client) {
                 Ok(config) => {
                     if let Err(validation_error) = Self::validate_config(&config) {
                         warn!(
@@ -498,7 +488,29 @@ impl MCPConfigManager {
                         continue;
                     }
 
-                    configs_by_ide.push((client.display_name().to_string(), config));
+                    let ide_name = client.display_name().to_string();
+                    
+                    // Merge configurations for the same IDE
+                    configs_by_ide.entry(ide_name.clone())
+                        .and_modify(|existing_config: &mut MCPConfig| {
+                            // Merge servers from this config into existing config
+                            if let Some(ref servers) = config.servers {
+                                if let Some(ref mut existing_servers) = existing_config.servers {
+                                    // Add servers that don't already exist (deduplicate by name)
+                                    for server in servers {
+                                        let server_name = server.name.as_deref().unwrap_or("unnamed");
+                                        // Only add if a server with this name doesn't already exist
+                                        if !existing_servers.iter().any(|s| s.name.as_deref().unwrap_or("unnamed") == server_name) {
+                                            existing_servers.push(server.clone());
+                                        }
+                                    }
+                                } else {
+                                    existing_config.servers = Some(servers.clone());
+                                }
+                            }
+                        })
+                        .or_insert(config);
+
                     debug!(
                         "Loaded MCP configuration from {}: {}",
                         client.name(),
@@ -515,54 +527,68 @@ impl MCPConfigManager {
             }
         }
 
-        configs_by_ide
+        // Convert HashMap back to Vec
+        configs_by_ide.into_iter().collect()
     }
 
-    /// Load and merge all configurations
-    pub fn load_config(&self) -> MCPConfig {
-        let mut merged_config = MCPConfig::default();
-        let mut loaded_configs = 0;
-
-        for (path, client) in &self.config_paths {
-            if !path.exists() {
-                continue;
-            }
-
-            match Self::load_config_from_path(path) {
-                Ok(config) => {
-                    if let Err(validation_error) = Self::validate_config(&config) {
-                        warn!(
-                            "Invalid MCP configuration in {} ({}): {}",
-                            client.name(),
-                            path.display(),
-                            validation_error
-                        );
-                        continue;
-                    }
-
-                    Self::merge_config(&mut merged_config, &config);
-                    loaded_configs += 1;
-                    debug!(
-                        "Loaded MCP configuration from {}: {}",
-                        client.name(),
-                        path.display()
-                    );
-                }
-                Err(e) => {
-                    debug!(
-                        "Failed to load MCP configuration from {}: {}",
-                        path.display(),
-                        e
-                    );
-                }
-            }
+    /// Load configuration from a specific path with known client
+    fn load_config_from_path_with_client(path: &Path, client: MCPClient) -> Result<MCPConfig> {
+        if !path.exists() {
+            return Err(anyhow!(
+                "Configuration file does not exist: {}",
+                path.display()
+            ));
         }
 
-        if loaded_configs == 0 {
-            debug!("No MCP configuration files found in any supported IDE locations");
+        let content = fs::read_to_string(path)
+            .map_err(|e| anyhow!("Failed to read config file {}: {}", path.display(), e))?;
+
+        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+        // Try parsing based on known client and filename
+        match (client, filename) {
+            (MCPClient::VSCode, "settings.json") => {
+                if let Ok(config) = serde_json::from_str::<VSCodeSettings>(&content) {
+                    debug!("Parsed as VS Code settings format");
+                    return config.to_mcp_config();
+                }
+            }
+            (MCPClient::ClaudeCode, ".claude.json") => {
+                // Try Claude Code specific format first
+                if let Ok(config) =
+                    serde_json::from_str::<IDEConfigFormat<UnifiedServerConfig>>(&content)
+                {
+                    debug!("Parsed as Claude Code configuration format");
+                    return config.to_mcp_config();
+                }
+            }
+            (MCPClient::Claude, "claude_desktop_config.json") => {
+                if let Ok(config) =
+                    serde_json::from_str::<IDEConfigFormat<UnifiedServerConfig>>(&content)
+                {
+                    debug!("Parsed as Claude Desktop configuration format");
+                    return config.to_mcp_config();
+                }
+            }
+            _ => {}
         }
 
-        merged_config
+        // Try generic IDE format
+        if let Ok(config) = serde_json::from_str::<IDEConfigFormat<UnifiedServerConfig>>(&content) {
+            debug!("Parsed as generic IDE configuration format");
+            return config.to_mcp_config();
+        }
+
+        // Try standard MCP format
+        if let Ok(config) = serde_json::from_str::<MCPConfig>(&content) {
+            debug!("Parsed as standard MCP configuration format");
+            return Ok(config);
+        }
+
+        Err(anyhow!(
+            "Failed to parse configuration file: {}",
+            path.display()
+        ))
     }
 
     /// Load configuration from a specific path
@@ -640,51 +666,6 @@ impl MCPConfigManager {
             }
         }
         Ok(())
-    }
-
-    /// Merge two configurations
-    fn merge_config(base: &mut MCPConfig, other: &MCPConfig) {
-        // Merge servers
-        let mut server_map: HashMap<String, MCPServerConfig> = HashMap::new();
-
-        // Add existing servers
-        if let Some(base_servers) = &base.servers {
-            for server in base_servers {
-                if let Some(name) = &server.name {
-                    server_map.insert(name.clone(), server.clone());
-                }
-            }
-        }
-
-        // Add new servers (overwrites duplicates)
-        if let Some(other_servers) = &other.servers {
-            for server in other_servers {
-                if let Some(name) = &server.name {
-                    server_map.insert(name.clone(), server.clone());
-                }
-            }
-        }
-
-        // Convert back to vector
-        base.servers = if server_map.is_empty() {
-            None
-        } else {
-            Some(server_map.into_values().collect())
-        };
-
-        // Merge options (other takes precedence)
-        if other.options.is_some() {
-            base.options = other.options.clone();
-        }
-
-        // Merge auth headers
-        if let Some(other_headers) = &other.auth_headers {
-            if let Some(base_headers) = &mut base.auth_headers {
-                base_headers.extend(other_headers.clone());
-            } else {
-                base.auth_headers = Some(other_headers.clone());
-            }
-        }
     }
 }
 
@@ -842,7 +823,7 @@ impl ScannerConfigManager {
         Self { config_path }
     }
 
-    pub fn load_config(&self) -> Result<ScannerConfig> {
+    pub fn load_scanner_config(&self) -> Result<ScannerConfig> {
         if !self.config_path.exists() {
             return Ok(ScannerConfig::default());
         }
@@ -853,7 +834,7 @@ impl ScannerConfigManager {
         serde_json::from_str(&content).map_err(|e| anyhow!("Failed to parse scanner config: {}", e))
     }
 
-    pub fn save_config(&self, config: &ScannerConfig) -> Result<()> {
+    pub fn save_scanner_config(&self, config: &ScannerConfig) -> Result<()> {
         if let Some(parent) = self.config_path.parent() {
             fs::create_dir_all(parent)
                 .map_err(|e| anyhow!("Failed to create config directory: {}", e))?;
@@ -1010,29 +991,6 @@ mod tests {
         let config = MCPConfigManager::load_config_from_path(&config_path).unwrap();
         assert!(config.servers.is_some());
         assert_eq!(config.servers.unwrap().len(), 1);
-    }
-
-    #[test]
-    fn test_merge_config() {
-        let mut base = MCPConfig::default();
-        let other = MCPConfig {
-            servers: Some(vec![MCPServerConfig {
-                name: Some("server1".to_string()),
-                url: Some("http://localhost:3000".to_string()),
-                command: None,
-                args: None,
-                env: None,
-                description: None,
-                auth_headers: None,
-                options: None,
-            }]),
-            options: None,
-            auth_headers: None,
-        };
-
-        MCPConfigManager::merge_config(&mut base, &other);
-        assert!(base.servers.is_some());
-        assert_eq!(base.servers.unwrap().len(), 1);
     }
 
     #[test]
