@@ -324,8 +324,8 @@ impl MCPConfigManager {
             (".vscode/settings.json", MCPClient::VSCode),
             (".cursor/mcp.json", MCPClient::Cursor),
             (".cursor/settings.json", MCPClient::Cursor),
-            (".mcp.json", MCPClient::ClaudeCode),  // Project-scoped Claude Code config
-            (".claude/settings.local.json", MCPClient::ClaudeCode),  // Project-specific Claude Code config
+            (".mcp.json", MCPClient::ClaudeCode), // Project-scoped Claude Code config
+            (".claude/settings.local.json", MCPClient::ClaudeCode), // Project-specific Claude Code config
             (".claude/mcp.json", MCPClient::Claude),
             (".windsurf/mcp.json", MCPClient::Windsurf),
             (".windsurf/mcp_config.json", MCPClient::Windsurf),
@@ -371,8 +371,8 @@ impl MCPConfigManager {
                 (".vscode/mcp.json", MCPClient::VSCode),
                 (".vscode/settings.json", MCPClient::VSCode),
                 (".claude/mcp.json", MCPClient::Claude),
-                (".claude.json", MCPClient::ClaudeCode),  // Global Claude Code config
-                (".claude/settings.local.json", MCPClient::ClaudeCode),  // User-specific Claude Code config
+                (".claude.json", MCPClient::ClaudeCode), // Global Claude Code config
+                (".claude/settings.local.json", MCPClient::ClaudeCode), // User-specific Claude Code config
                 (".windsurf/mcp.json", MCPClient::Windsurf),
                 (".gemini/settings.json", MCPClient::Gemini),
             ];
