@@ -102,8 +102,16 @@ impl MCPScannerCore {
             
             // If we have x-javelin-api-key, add the formats that work with Javelin MCP
             if let Some(api_key) = auth_headers.get("x-javelin-api-key") {
-                headers.insert("x-javelin-apikey".to_string(), api_key.clone());
-                headers.insert("authorization".to_string(), format!("Bearer {}", api_key));
+                // Only proceed if the API key is not empty
+                if !api_key.trim().is_empty() {
+                    // Add x-javelin-apikey format
+                    headers.insert("x-javelin-apikey".to_string(), api_key.clone());
+
+                    // Only add authorization header if one doesn't already exist
+                    if !headers.contains_key("authorization") {
+                        headers.insert("authorization".to_string(), format!("Bearer {}", api_key));
+                    }
+                }
             }
             
             builder = builder.auth_headers(Some(headers));
