@@ -93,8 +93,17 @@ impl MCPScannerCore {
                     .unwrap_or(scanner_config.scanner.format),
             );
 
+        // Handle auth headers with minimal conversion for Javelin API key
         if let Some(auth_headers) = &request.auth_headers {
-            builder = builder.auth_headers(Some(auth_headers.clone()));
+            let mut headers = auth_headers.clone();
+            
+            // If we have x-javelin-api-key, add the formats that work with Javelin MCP
+            if let Some(api_key) = auth_headers.get("x-javelin-api-key") {
+                headers.insert("x-javelin-apikey".to_string(), api_key.clone());
+                headers.insert("authorization".to_string(), format!("Bearer {}", api_key));
+            }
+            
+            builder = builder.auth_headers(Some(headers));
         }
 
         builder.build()
@@ -138,7 +147,7 @@ impl MCPScannerCore {
     pub fn validate_config(&self, request: &ScanRequest) -> ValidationResponse {
         let timestamp = chrono::Utc::now().to_rfc3339();
 
-        let options = self.parse_scan_options(request);
+        let options = self.parse_scan_options(request); // No conversion for validation
         match config_utils::validate_scan_config(&options) {
             Ok(()) => ValidationResponse {
                 success: true,
@@ -363,7 +372,7 @@ mod tests {
             )])),
         };
 
-        let options = core.parse_scan_options(&request);
+        let options = core.parse_scan_options(&request); // No conversion for test
         assert_eq!(options.timeout, 120);
         assert_eq!(options.http_timeout, 60);
         assert!(options.detailed);
@@ -383,7 +392,7 @@ mod tests {
             auth_headers: None,
         };
 
-        let options = core.parse_scan_options(&request);
+        let options = core.parse_scan_options(&request); // No conversion for test
         // These will use default values from config
         assert!(options.timeout > 0);
         assert!(options.http_timeout > 0);
