@@ -22,6 +22,7 @@ Thumbs.db
 
 # Logs
 *.log
+scan_*
 
 # Environment files
 .env

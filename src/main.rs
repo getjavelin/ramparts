@@ -181,14 +181,20 @@ fn setup_logging(cli: &Cli, scanner_config: &ScannerConfig) {
     let filter = match level {
         Level::DEBUG | Level::TRACE => {
             // For debug/trace, show everything to help with troubleshooting
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(format!("ramparts={level}").parse().unwrap())
+            tracing_subscriber::EnvFilter::from_default_env().add_directive(
+                format!("ramparts={level}")
+                    .parse()
+                    .expect("Failed to parse logging directive for debug/trace level"),
+            )
         }
         _ => {
             // For info/warn/error, only show ramparts at the configured level
             // and suppress INFO from external crates
-            tracing_subscriber::EnvFilter::new("warn")
-                .add_directive(format!("ramparts={level}").parse().unwrap())
+            tracing_subscriber::EnvFilter::new("warn").add_directive(
+                format!("ramparts={level}")
+                    .parse()
+                    .expect("Failed to parse logging directive for ramparts level"),
+            )
         }
     };
 

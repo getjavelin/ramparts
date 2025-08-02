@@ -476,16 +476,20 @@ impl MCPConfigManager {
             }
 
             match Self::load_config_from_path_with_client(path, *client) {
-                Ok(config) => {
+                Ok(mut config) => {
+                    // Validate and log warnings for invalid servers
                     if let Err(validation_error) = Self::validate_config(&config) {
                         warn!(
-                            "Invalid MCP configuration in {} ({}): {}",
+                            "Critical validation error in {} ({}): {}",
                             client.name(),
                             path.display(),
                             validation_error
                         );
                         continue;
                     }
+
+                    // Filter out invalid servers
+                    Self::filter_valid_servers(&mut config);
 
                     let ide_name = client.display_name().to_string();
 
@@ -656,20 +660,40 @@ impl MCPConfigManager {
         ))
     }
 
-    /// Validate configuration
+    /// Validate configuration and log warnings for invalid servers
+    #[allow(clippy::unnecessary_wraps)]
     fn validate_config(config: &MCPConfig) -> Result<()> {
         if let Some(servers) = &config.servers {
             for server in servers {
-                if server.name.is_none() || server.name.as_ref().unwrap().is_empty() {
-                    return Err(anyhow!("Server name cannot be empty"));
-                }
+                let server_name = server.name.as_deref().unwrap_or("unnamed");
 
-                if server.url.is_none() && server.command.is_none() {
-                    return Err(anyhow!("Server must have either URL or command"));
+                if server
+                    .name
+                    .as_ref()
+                    .is_none_or(std::string::String::is_empty)
+                {
+                    warn!("Server has empty or missing name - this server will be skipped");
+                } else if server.url.is_none() && server.command.is_none() {
+                    warn!("Server '{}' has neither URL nor command configured - this server will be skipped", server_name);
                 }
             }
         }
         Ok(())
+    }
+
+    /// Filter out invalid servers from configuration
+    fn filter_valid_servers(config: &mut MCPConfig) {
+        if let Some(servers) = &mut config.servers {
+            servers.retain(|server| {
+                // Keep servers that have a non-empty name AND (URL or command)
+                let has_valid_name = !server
+                    .name
+                    .as_ref()
+                    .is_none_or(std::string::String::is_empty);
+                let has_url_or_command = server.url.is_some() || server.command.is_some();
+                has_valid_name && has_url_or_command
+            });
+        }
     }
 }
 
@@ -1016,7 +1040,7 @@ mod tests {
         };
         assert!(MCPConfigManager::validate_config(&valid_config).is_ok());
 
-        // Invalid config - empty server name
+        // Invalid config - empty server name (logs warning but succeeds)
         let invalid_config = MCPConfig {
             servers: Some(vec![MCPServerConfig {
                 name: Some(String::new()),
@@ -1031,9 +1055,9 @@ mod tests {
             options: None,
             auth_headers: None,
         };
-        assert!(MCPConfigManager::validate_config(&invalid_config).is_err());
+        assert!(MCPConfigManager::validate_config(&invalid_config).is_ok());
 
-        // Invalid config - no URL or command
+        // Invalid config - no URL or command (logs warning but succeeds)
         let invalid_config2 = MCPConfig {
             servers: Some(vec![MCPServerConfig {
                 name: Some("invalid-server".to_string()),
@@ -1048,7 +1072,7 @@ mod tests {
             options: None,
             auth_headers: None,
         };
-        assert!(MCPConfigManager::validate_config(&invalid_config2).is_err());
+        assert!(MCPConfigManager::validate_config(&invalid_config2).is_ok());
     }
 
     #[test]

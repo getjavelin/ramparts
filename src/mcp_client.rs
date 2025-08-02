@@ -95,7 +95,7 @@ impl McpClient {
             let client = HttpClient::builder()
                 .default_headers(header_map)
                 .build()
-                .unwrap();
+                .expect("Failed to build HTTP client");
             let config =
                 rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig {
                     uri: url.into(),
@@ -193,7 +193,7 @@ impl McpClient {
             let client = HttpClient::builder()
                 .default_headers(header_map)
                 .build()
-                .unwrap();
+                .expect("Failed to build HTTP client");
             let config = rmcp::transport::sse_client::SseClientConfig {
                 sse_endpoint: url.into(),
                 ..Default::default()
