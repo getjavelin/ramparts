@@ -876,6 +876,7 @@ pub fn print_multi_server_results(results: &[ScanResult], format: &str, detailed
 }
 
 /// Enhanced tree view for multiple MCP servers grouped by IDE
+#[allow(clippy::too_many_lines)]
 fn print_multi_server_tree(results: &[ScanResult], _detailed: bool) {
     // Group results by IDE source
     let mut results_by_ide: std::collections::HashMap<String, Vec<&ScanResult>> =
@@ -970,8 +971,7 @@ fn print_multi_server_tree(results: &[ScanResult], _detailed: bool) {
             let server_name = result
                 .server_info
                 .as_ref()
-                .map(|info| info.name.clone())
-                .unwrap_or_else(|| "Unknown Server".to_string());
+                .map_or_else(|| "Unknown Server".to_string(), |info| info.name.clone());
 
             let status_emoji = match &result.status {
                 crate::types::ScanStatus::Success => "✅",
@@ -1012,7 +1012,12 @@ fn print_multi_server_tree(results: &[ScanResult], _detailed: bool) {
                                 .filter(|issue| issue.tool_name.as_ref() == Some(&tool.name))
                                 .collect();
 
-                            if !tool_issues.is_empty() {
+                            if tool_issues.is_empty() {
+                                println!(
+                                    "{}{}    ├── {} ✅",
+                                    ide_continuation, continuation, tool.name
+                                );
+                            } else {
                                 println!(
                                     "{}{}    ├── {} ⚠️  {} warning{}",
                                     ide_continuation,
@@ -1043,11 +1048,6 @@ fn print_multi_server_tree(results: &[ScanResult], _detailed: bool) {
                                         issue.description
                                     );
                                 }
-                            } else {
-                                println!(
-                                    "{}{}    ├── {} ✅",
-                                    ide_continuation, continuation, tool.name
-                                );
                             }
                         }
                     } else {
@@ -1115,7 +1115,7 @@ fn print_multi_server_tree(results: &[ScanResult], _detailed: bool) {
                     crate::types::ScanStatus::Timeout => {
                         println!("{ide_continuation}{continuation}⏱️  Timeout occurred");
                     }
-                    _ => {}
+                    crate::types::ScanStatus::Success => {}
                 }
             }
         }
@@ -1224,34 +1224,39 @@ mod tests {
 }
 
 /// Display a summary of discovered IDE configurations and MCP servers
+#[allow(clippy::items_after_test_module)]
 pub fn display_ide_discovery_summary(configs_by_ide: &[(String, crate::config::MCPConfig)]) {
     use colored::Colorize;
-    
+
     println!("\n📋 {} Configuration Discovery", "IDE".bold());
     println!("{}", "─".repeat(50));
-    
+
     let mut total_servers = 0;
     let mut total_ides = 0;
-    
+
     for (ide_name, config) in configs_by_ide {
         total_ides += 1;
-        
+
         if let Some(ref servers) = config.servers {
             let server_count = servers.len();
             total_servers += server_count;
-            
+
             println!(
                 "📁 {} {} server{}",
                 ide_name.cyan().bold(),
                 server_count.to_string().yellow().bold(),
                 if server_count == 1 { "" } else { "s" }
             );
-            
+
             for (i, server) in servers.iter().enumerate() {
                 let server_name = server.name.as_deref().unwrap_or("unnamed");
                 let server_url = server.to_display_url();
-                let prefix = if i == servers.len() - 1 { "└──" } else { "├──" };
-                
+                let prefix = if i == servers.len() - 1 {
+                    "└──"
+                } else {
+                    "├──"
+                };
+
                 // Determine server type and show appropriate icon
                 let (icon, server_type) = if server_url.starts_with("stdio://") {
                     ("🔧", "STDIO")
@@ -1260,7 +1265,7 @@ pub fn display_ide_discovery_summary(configs_by_ide: &[(String, crate::config::M
                 } else {
                     ("❓", "UNKNOWN")
                 };
-                
+
                 println!(
                     "   {} {} {} {} ({})",
                     prefix,
@@ -1271,12 +1276,16 @@ pub fn display_ide_discovery_summary(configs_by_ide: &[(String, crate::config::M
                 );
             }
         } else {
-            println!("📁 {} {} servers", ide_name.cyan().bold(), "0".yellow().bold());
+            println!(
+                "📁 {} {} servers",
+                ide_name.cyan().bold(),
+                "0".yellow().bold()
+            );
         }
-        
+
         println!(); // Empty line between IDEs
     }
-    
+
     // Summary footer
     println!(
         "🎯 {} Found {} server{} across {} IDE{}",
@@ -1290,34 +1299,42 @@ pub fn display_ide_discovery_summary(configs_by_ide: &[(String, crate::config::M
 }
 
 /// Generate a detailed markdown report from scan results
+#[allow(clippy::too_many_lines)]
 pub fn generate_markdown_report(results: &[ScanResult]) -> Result<String> {
     use chrono::Utc;
     use std::fmt::Write;
-    
+
     let timestamp = Utc::now();
     let mut report = String::new();
-    
+
     // Header
     writeln!(report, "# MCP Security Scan Report")?;
-    writeln!(report, "")?;
-    writeln!(report, "**Generated:** {}", timestamp.format("%Y-%m-%d %H:%M:%S UTC"))?;
+    writeln!(report)?;
+    writeln!(
+        report,
+        "**Generated:** {}",
+        timestamp.format("%Y-%m-%d %H:%M:%S UTC")
+    )?;
     writeln!(report, "**Scanner:** Ramparts MCP Security Scanner")?;
-    writeln!(report, "")?;
-    
+    writeln!(report)?;
+
     // Executive Summary
     writeln!(report, "## Executive Summary")?;
-    writeln!(report, "")?;
-    
+    writeln!(report)?;
+
     let total_servers = results.len();
-    let successful_scans = results.iter().filter(|r| matches!(r.status, ScanStatus::Success)).count();
+    let successful_scans = results
+        .iter()
+        .filter(|r| matches!(r.status, ScanStatus::Success))
+        .count();
     let failed_scans = total_servers - successful_scans;
-    
+
     // Count security issues by severity
     let mut critical_count = 0;
     let mut high_count = 0;
     let mut medium_count = 0;
     let mut low_count = 0;
-    
+
     for result in results {
         if let Some(ref security_issues) = result.security_issues {
             for issue in &security_issues.tool_issues {
@@ -1346,44 +1363,44 @@ pub fn generate_markdown_report(results: &[ScanResult]) -> Result<String> {
             }
         }
     }
-    
-    writeln!(report, "- **Total Servers Scanned:** {}", total_servers)?;
-    writeln!(report, "- **Successful Scans:** {}", successful_scans)?;
-    writeln!(report, "- **Failed Scans:** {}", failed_scans)?;
-    writeln!(report, "")?;
+
+    writeln!(report, "- **Total Servers Scanned:** {total_servers}")?;
+    writeln!(report, "- **Successful Scans:** {successful_scans}")?;
+    writeln!(report, "- **Failed Scans:** {failed_scans}")?;
+    writeln!(report)?;
     writeln!(report, "### Security Issues Summary")?;
-    writeln!(report, "")?;
+    writeln!(report)?;
     if critical_count + high_count + medium_count + low_count == 0 {
         writeln!(report, "✅ **No security issues detected**")?;
     } else {
         writeln!(report, "| Severity | Count |")?;
         writeln!(report, "|----------|-------|")?;
-        writeln!(report, "| 🔴 **CRITICAL** | {} |", critical_count)?;
-        writeln!(report, "| 🟠 **HIGH** | {} |", high_count)?;
-        writeln!(report, "| 🟡 **MEDIUM** | {} |", medium_count)?;
-        writeln!(report, "| 🟢 **LOW** | {} |", low_count)?;
+        writeln!(report, "| 🔴 **CRITICAL** | {critical_count} |")?;
+        writeln!(report, "| 🟠 **HIGH** | {high_count} |")?;
+        writeln!(report, "| 🟡 **MEDIUM** | {medium_count} |")?;
+        writeln!(report, "| 🟢 **LOW** | {low_count} |")?;
     }
-    writeln!(report, "")?;
-    
+    writeln!(report)?;
+
     // Detailed Results
     writeln!(report, "## Detailed Scan Results")?;
-    writeln!(report, "")?;
-    
+    writeln!(report)?;
+
     for (i, result) in results.iter().enumerate() {
         writeln!(report, "### Server {} - {}", i + 1, result.url)?;
-        writeln!(report, "")?;
-        
+        writeln!(report)?;
+
         // Server Info
         if let Some(ref server_info) = result.server_info {
             writeln!(report, "**Server Information:**")?;
             writeln!(report, "- **Name:** {}", server_info.name)?;
             writeln!(report, "- **Version:** {}", server_info.version)?;
             if let Some(ref description) = server_info.description {
-                writeln!(report, "- **Description:** {}", description)?;
+                writeln!(report, "- **Description:** {description}")?;
             }
-            writeln!(report, "")?;
+            writeln!(report)?;
         }
-        
+
         // Scan Status
         match &result.status {
             ScanStatus::Success => {
@@ -1392,55 +1409,66 @@ pub fn generate_markdown_report(results: &[ScanResult]) -> Result<String> {
             }
             ScanStatus::Failed(error) => {
                 writeln!(report, "**Status:** ❌ Failed")?;
-                writeln!(report, "**Error:** {}", error)?;
-                writeln!(report, "")?;
+                writeln!(report, "**Error:** {error}")?;
+                writeln!(report)?;
                 continue;
             }
             ScanStatus::Timeout => {
                 writeln!(report, "**Status:** ⏰ Timeout")?;
-                writeln!(report, "")?;
+                writeln!(report)?;
                 continue;
             }
             ScanStatus::ConnectionError(error) => {
                 writeln!(report, "**Status:** ❌ Connection Error")?;
-                writeln!(report, "**Error:** {}", error)?;
-                writeln!(report, "")?;
+                writeln!(report, "**Error:** {error}")?;
+                writeln!(report)?;
                 continue;
             }
             ScanStatus::AuthenticationError(error) => {
                 writeln!(report, "**Status:** 🔐 Authentication Error")?;
-                writeln!(report, "**Error:** {}", error)?;
-                writeln!(report, "")?;
+                writeln!(report, "**Error:** {error}")?;
+                writeln!(report)?;
                 continue;
             }
         }
-        writeln!(report, "")?;
-        
+        writeln!(report)?;
+
         // Tools - only show tools with security issues
         if let Some(ref security_issues) = result.security_issues {
-            let tools_with_issues: Vec<_> = result.tools.iter()
+            let tools_with_issues: Vec<_> = result
+                .tools
+                .iter()
                 .filter(|tool| {
-                    security_issues.tool_issues.iter()
+                    security_issues
+                        .tool_issues
+                        .iter()
                         .any(|issue| issue.tool_name.as_ref() == Some(&tool.name))
                 })
                 .collect();
-            
+
             if !tools_with_issues.is_empty() {
-                writeln!(report, "#### Tools with Security Issues ({} of {} total)", tools_with_issues.len(), result.tools.len())?;
-                writeln!(report, "")?;
-                
+                writeln!(
+                    report,
+                    "#### Tools with Security Issues ({} of {} total)",
+                    tools_with_issues.len(),
+                    result.tools.len()
+                )?;
+                writeln!(report)?;
+
                 for tool in tools_with_issues {
                     writeln!(report, "##### {}", tool.name)?;
-                    
+
                     if let Some(ref description) = tool.description {
-                        writeln!(report, "{}", description)?;
-                        writeln!(report, "")?;
+                        writeln!(report, "{description}")?;
+                        writeln!(report)?;
                     }
-                    
-                    let tool_issues: Vec<_> = security_issues.tool_issues.iter()
+
+                    let tool_issues: Vec<_> = security_issues
+                        .tool_issues
+                        .iter()
                         .filter(|issue| issue.tool_name.as_ref() == Some(&tool.name))
                         .collect();
-                    
+
                     writeln!(report, "**Security Issues:**")?;
                     for issue in tool_issues {
                         let severity_emoji = match issue.severity.as_str() {
@@ -1449,51 +1477,74 @@ pub fn generate_markdown_report(results: &[ScanResult]) -> Result<String> {
                             "MEDIUM" => "🟡",
                             _ => "🟢",
                         };
-                        writeln!(report, "- {} **{}:** {}", severity_emoji, issue.severity, issue.description)?;
+                        writeln!(
+                            report,
+                            "- {} **{}:** {}",
+                            severity_emoji, issue.severity, issue.description
+                        )?;
                         if let Some(ref details) = issue.details {
-                            writeln!(report, "  - *Details:* {}", details)?;
+                            writeln!(report, "  - *Details:* {details}")?;
                         }
                     }
-                    writeln!(report, "")?;
+                    writeln!(report)?;
                 }
             } else if !result.tools.is_empty() {
                 writeln!(report, "#### Tools")?;
-                writeln!(report, "")?;
-                writeln!(report, "✅ All {} tools passed security checks", result.tools.len())?;
-                writeln!(report, "")?;
+                writeln!(report)?;
+                writeln!(
+                    report,
+                    "✅ All {} tools passed security checks",
+                    result.tools.len()
+                )?;
+                writeln!(report)?;
             }
         } else if !result.tools.is_empty() {
             writeln!(report, "#### Tools")?;
-            writeln!(report, "")?;
-            writeln!(report, "⚠️ {} tools found but no security analysis available", result.tools.len())?;
-            writeln!(report, "")?;
+            writeln!(report)?;
+            writeln!(
+                report,
+                "⚠️ {} tools found but no security analysis available",
+                result.tools.len()
+            )?;
+            writeln!(report)?;
         }
-        
+
         // Resources - only show resources with security issues
         if let Some(ref security_issues) = result.security_issues {
-            let resources_with_issues: Vec<_> = result.resources.iter()
+            let resources_with_issues: Vec<_> = result
+                .resources
+                .iter()
                 .filter(|resource| {
-                    security_issues.resource_issues.iter()
+                    security_issues
+                        .resource_issues
+                        .iter()
                         .any(|issue| issue.resource_uri.as_ref() == Some(&resource.uri))
                 })
                 .collect();
-            
+
             if !resources_with_issues.is_empty() {
-                writeln!(report, "#### Resources with Security Issues ({} of {} total)", resources_with_issues.len(), result.resources.len())?;
-                writeln!(report, "")?;
-                
+                writeln!(
+                    report,
+                    "#### Resources with Security Issues ({} of {} total)",
+                    resources_with_issues.len(),
+                    result.resources.len()
+                )?;
+                writeln!(report)?;
+
                 for resource in resources_with_issues {
                     writeln!(report, "##### {}", resource.name)?;
                     writeln!(report, "- **URI:** {}", resource.uri)?;
                     if let Some(ref description) = resource.description {
-                        writeln!(report, "- **Description:** {}", description)?;
+                        writeln!(report, "- **Description:** {description}")?;
                     }
-                    
-                    let resource_issues: Vec<_> = security_issues.resource_issues.iter()
+
+                    let resource_issues: Vec<_> = security_issues
+                        .resource_issues
+                        .iter()
                         .filter(|issue| issue.resource_uri.as_ref() == Some(&resource.uri))
                         .collect();
-                    
-                    writeln!(report, "")?;
+
+                    writeln!(report)?;
                     writeln!(report, "**Security Issues:**")?;
                     for issue in resource_issues {
                         let severity_emoji = match issue.severity.as_str() {
@@ -1502,47 +1553,70 @@ pub fn generate_markdown_report(results: &[ScanResult]) -> Result<String> {
                             "MEDIUM" => "🟡",
                             _ => "🟢",
                         };
-                        writeln!(report, "- {} **{}:** {}", severity_emoji, issue.severity, issue.description)?;
+                        writeln!(
+                            report,
+                            "- {} **{}:** {}",
+                            severity_emoji, issue.severity, issue.description
+                        )?;
                     }
-                    writeln!(report, "")?;
+                    writeln!(report)?;
                 }
             } else if !result.resources.is_empty() {
                 writeln!(report, "#### Resources")?;
-                writeln!(report, "")?;
-                writeln!(report, "✅ All {} resources passed security checks", result.resources.len())?;
-                writeln!(report, "")?;
+                writeln!(report)?;
+                writeln!(
+                    report,
+                    "✅ All {} resources passed security checks",
+                    result.resources.len()
+                )?;
+                writeln!(report)?;
             }
         } else if !result.resources.is_empty() {
             writeln!(report, "#### Resources")?;
-            writeln!(report, "")?;
-            writeln!(report, "⚠️ {} resources found but no security analysis available", result.resources.len())?;
-            writeln!(report, "")?;
+            writeln!(report)?;
+            writeln!(
+                report,
+                "⚠️ {} resources found but no security analysis available",
+                result.resources.len()
+            )?;
+            writeln!(report)?;
         }
-        
+
         // Prompts - only show prompts with security issues
         if let Some(ref security_issues) = result.security_issues {
-            let prompts_with_issues: Vec<_> = result.prompts.iter()
+            let prompts_with_issues: Vec<_> = result
+                .prompts
+                .iter()
                 .filter(|prompt| {
-                    security_issues.prompt_issues.iter()
+                    security_issues
+                        .prompt_issues
+                        .iter()
                         .any(|issue| issue.prompt_name.as_ref() == Some(&prompt.name))
                 })
                 .collect();
-            
+
             if !prompts_with_issues.is_empty() {
-                writeln!(report, "#### Prompts with Security Issues ({} of {} total)", prompts_with_issues.len(), result.prompts.len())?;
-                writeln!(report, "")?;
-                
+                writeln!(
+                    report,
+                    "#### Prompts with Security Issues ({} of {} total)",
+                    prompts_with_issues.len(),
+                    result.prompts.len()
+                )?;
+                writeln!(report)?;
+
                 for prompt in prompts_with_issues {
                     writeln!(report, "##### {}", prompt.name)?;
                     if let Some(ref description) = prompt.description {
-                        writeln!(report, "{}", description)?;
-                        writeln!(report, "")?;
+                        writeln!(report, "{description}")?;
+                        writeln!(report)?;
                     }
-                    
-                    let prompt_issues: Vec<_> = security_issues.prompt_issues.iter()
+
+                    let prompt_issues: Vec<_> = security_issues
+                        .prompt_issues
+                        .iter()
                         .filter(|issue| issue.prompt_name.as_ref() == Some(&prompt.name))
                         .collect();
-                    
+
                     writeln!(report, "**Security Issues:**")?;
                     for issue in prompt_issues {
                         let severity_emoji = match issue.severity.as_str() {
@@ -1551,34 +1625,46 @@ pub fn generate_markdown_report(results: &[ScanResult]) -> Result<String> {
                             "MEDIUM" => "🟡",
                             _ => "🟢",
                         };
-                        writeln!(report, "- {} **{}:** {}", severity_emoji, issue.severity, issue.description)?;
+                        writeln!(
+                            report,
+                            "- {} **{}:** {}",
+                            severity_emoji, issue.severity, issue.description
+                        )?;
                     }
-                    writeln!(report, "")?;
+                    writeln!(report)?;
                 }
             } else if !result.prompts.is_empty() {
                 writeln!(report, "#### Prompts")?;
-                writeln!(report, "")?;
-                writeln!(report, "✅ All {} prompts passed security checks", result.prompts.len())?;
-                writeln!(report, "")?;
+                writeln!(report)?;
+                writeln!(
+                    report,
+                    "✅ All {} prompts passed security checks",
+                    result.prompts.len()
+                )?;
+                writeln!(report)?;
             }
         } else if !result.prompts.is_empty() {
             writeln!(report, "#### Prompts")?;
-            writeln!(report, "")?;
-            writeln!(report, "⚠️ {} prompts found but no security analysis available", result.prompts.len())?;
-            writeln!(report, "")?;
+            writeln!(report)?;
+            writeln!(
+                report,
+                "⚠️ {} prompts found but no security analysis available",
+                result.prompts.len()
+            )?;
+            writeln!(report)?;
         }
-        
+
         writeln!(report, "---")?;
-        writeln!(report, "")?;
+        writeln!(report)?;
     }
-    
+
     // Footer
     writeln!(report, "## Report Information")?;
-    writeln!(report, "")?;
+    writeln!(report)?;
     writeln!(report, "This report was generated by [Ramparts](https://github.com/getjavelin/ramparts), an MCP security scanner.")?;
-    writeln!(report, "")?;
+    writeln!(report)?;
     writeln!(report, "For more information about security issues and remediation, see the [Ramparts documentation](https://github.com/getjavelin/ramparts/blob/main/docs/security-features.md).")?;
-    
+
     Ok(report)
 }
 
@@ -1586,13 +1672,13 @@ pub fn generate_markdown_report(results: &[ScanResult]) -> Result<String> {
 pub fn write_markdown_report(results: &[ScanResult]) -> Result<String> {
     let report_content = generate_markdown_report(results)?;
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-    let filename = format!("scan_{}.md", timestamp);
-    
+    let filename = format!("scan_{timestamp}.md");
+
     let mut file = File::create(&filename)
         .map_err(|e| anyhow!("Failed to create report file {}: {}", filename, e))?;
-    
+
     file.write_all(report_content.as_bytes())
         .map_err(|e| anyhow!("Failed to write report to {}: {}", filename, e))?;
-    
+
     Ok(filename)
 }

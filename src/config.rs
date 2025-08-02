@@ -238,9 +238,8 @@ fn determine_server_url(name: &str, config: &UnifiedServerConfig) -> Option<Stri
         let host = transport.host.as_deref().unwrap_or("localhost");
         let port = transport.port.unwrap_or(8080);
         let scheme = match transport.transport_type.as_deref() {
-            Some("http" | "streamable-http") => "http",
             Some("https") => "https",
-            _ => "http",
+            _ => "http", // Default for http, streamable-http, and others
         };
         return Some(format!("{scheme}://{host}:{port}"));
     }
@@ -282,7 +281,7 @@ impl Default for MCPConfigManager {
 }
 
 impl MCPConfigManager {
-    /// Creates a new MCPConfigManager using the cached configuration paths
+    /// Creates a new `MCPConfigManager` using the cached configuration paths
     pub fn new() -> Self {
         Self {
             config_paths: CONFIG_PATHS_CACHE.clone(),
@@ -293,7 +292,6 @@ impl MCPConfigManager {
     pub fn has_config_files(&self) -> bool {
         self.config_paths.iter().any(|(path, _)| path.exists())
     }
-
 
     /// Discover MCP configuration paths based on platform and IDE
     fn discover_config_paths() -> Vec<(PathBuf, MCPClient)> {
@@ -433,6 +431,7 @@ impl MCPConfigManager {
     }
 
     /// Detect client type from path
+    #[allow(dead_code)]
     pub fn detect_client<P: AsRef<Path>>(path: P) -> Option<MCPClient> {
         let path = path.as_ref();
         let _path_str = path.to_string_lossy().to_lowercase();
@@ -489,18 +488,22 @@ impl MCPConfigManager {
                     }
 
                     let ide_name = client.display_name().to_string();
-                    
+
                     // Merge configurations for the same IDE
-                    configs_by_ide.entry(ide_name.clone())
+                    configs_by_ide
+                        .entry(ide_name.clone())
                         .and_modify(|existing_config: &mut MCPConfig| {
                             // Merge servers from this config into existing config
                             if let Some(ref servers) = config.servers {
                                 if let Some(ref mut existing_servers) = existing_config.servers {
                                     // Add servers that don't already exist (deduplicate by name)
                                     for server in servers {
-                                        let server_name = server.name.as_deref().unwrap_or("unnamed");
+                                        let server_name =
+                                            server.name.as_deref().unwrap_or("unnamed");
                                         // Only add if a server with this name doesn't already exist
-                                        if !existing_servers.iter().any(|s| s.name.as_deref().unwrap_or("unnamed") == server_name) {
+                                        if !existing_servers.iter().any(|s| {
+                                            s.name.as_deref().unwrap_or("unnamed") == server_name
+                                        }) {
                                             existing_servers.push(server.clone());
                                         }
                                     }
@@ -592,6 +595,7 @@ impl MCPConfigManager {
     }
 
     /// Load configuration from a specific path
+    #[allow(dead_code)]
     pub fn load_config_from_path(path: &Path) -> Result<MCPConfig> {
         if !path.exists() {
             return Err(anyhow!(
@@ -1015,7 +1019,7 @@ mod tests {
         // Invalid config - empty server name
         let invalid_config = MCPConfig {
             servers: Some(vec![MCPServerConfig {
-                name: Some("".to_string()),
+                name: Some(String::new()),
                 url: Some("http://localhost:3000".to_string()),
                 command: None,
                 args: None,

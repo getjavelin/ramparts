@@ -72,7 +72,10 @@ impl MCPScannerCore {
 
     /// Parse scan options from request parameters
     fn parse_scan_options(&self, request: &ScanRequest) -> ScanOptions {
-        let scanner_config = self.config_manager.load_scanner_config().unwrap_or_default();
+        let scanner_config = self
+            .config_manager
+            .load_scanner_config()
+            .unwrap_or_default();
 
         let mut builder = ScanConfigBuilder::new()
             .timeout(

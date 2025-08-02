@@ -1093,7 +1093,8 @@ impl MCPScanner {
                 // === SECURITY ANALYSIS ===
                 // Load scanner configuration for security analysis
                 #[allow(clippy::single_match_else)]
-                let scanner_config = match config::ScannerConfigManager::new().load_scanner_config() {
+                let scanner_config = match config::ScannerConfigManager::new().load_scanner_config()
+                {
                     Ok(config) => config,
                     Err(_) => {
                         debug!("Failed to load scanner config for STDIO security analysis, using defaults");
@@ -1191,14 +1192,19 @@ impl MCPScanner {
         }
 
         let configs_by_ide = config_manager.load_config_by_ide();
-        
+
         // Debug: Show which IDEs were loaded
-        println!("🔍 Loaded configs for IDEs: {:?}", 
-                 configs_by_ide.iter().map(|(name, _)| name).collect::<Vec<_>>());
-        
+        println!(
+            "🔍 Loaded configs for IDEs: {:?}",
+            configs_by_ide
+                .iter()
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>()
+        );
+
         // Display discovery summary before scanning
         crate::utils::display_ide_discovery_summary(&configs_by_ide);
-        
+
         let mut results = Vec::new();
 
         for (ide_name, config) in configs_by_ide {
@@ -1255,7 +1261,6 @@ impl MCPScanner {
 
         Ok(results)
     }
-
 
     fn build_server_options(
         options: &ScanOptions,

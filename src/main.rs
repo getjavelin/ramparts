@@ -106,7 +106,7 @@ enum Commands {
         #[arg(long, value_name = "FORMAT")]
         format: Option<String>,
 
-        /// Generate a detailed markdown report with timestamp (scan_YYYYMMDD_HHMMSS.md)
+        /// Generate a detailed markdown report with timestamp (`scan_YYYYMMDD_HHMMSS.md`)
         #[arg(long)]
         report: bool,
     },
@@ -121,7 +121,7 @@ enum Commands {
         #[arg(long, value_name = "FORMAT")]
         format: Option<String>,
 
-        /// Generate a detailed markdown report with timestamp (scan_YYYYMMDD_HHMMSS.md)
+        /// Generate a detailed markdown report with timestamp (`scan_YYYYMMDD_HHMMSS.md`)
         #[arg(long)]
         report: bool,
     },
@@ -249,7 +249,9 @@ async fn execute_command(
             auth_headers,
             format,
             report,
-        } => handle_scan_config_command(auth_headers, format, report, &scanner_config, scanner).await,
+        } => {
+            handle_scan_config_command(auth_headers, format, report, &scanner_config, scanner).await
+        }
         Commands::InitConfig { force } => {
             handle_init_config_command(force);
             Ok(())
@@ -280,19 +282,19 @@ async fn handle_scan_command(
     match scanner.scan_single(&url, options.clone()).await {
         Ok(result) => {
             utils::print_result(&result, &output_format, options.detailed);
-            
+
             // Generate report if requested
             if report {
                 match utils::write_markdown_report(&[result]) {
                     Ok(filename) => {
-                        println!("\n📄 Detailed report generated: {}", filename);
+                        println!("\n📄 Detailed report generated: {filename}");
                     }
                     Err(e) => {
                         warn!("Failed to generate report: {}", e);
                     }
                 }
             }
-            
+
             Ok(())
         }
         Err(e) => {
@@ -330,19 +332,19 @@ async fn handle_scan_config_command(
                 &output_format,
                 scanner_config.scanner.detailed,
             );
-            
+
             // Generate report if requested
             if report {
                 match utils::write_markdown_report(&results) {
                     Ok(filename) => {
-                        println!("\n📄 Detailed report generated: {}", filename);
+                        println!("\n📄 Detailed report generated: {filename}");
                     }
                     Err(e) => {
                         warn!("Failed to generate report: {}", e);
                     }
                 }
             }
-            
+
             Ok(())
         }
         Err(e) => {
