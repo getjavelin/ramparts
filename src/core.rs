@@ -96,13 +96,13 @@ impl MCPScannerCore {
         // Handle auth headers with minimal conversion for Javelin API key
         if let Some(auth_headers) = &request.auth_headers {
             let mut headers = auth_headers.clone();
-            
+
             // If we have x-javelin-api-key, add the formats that work with Javelin MCP
             if let Some(api_key) = auth_headers.get("x-javelin-api-key") {
                 headers.insert("x-javelin-apikey".to_string(), api_key.clone());
                 headers.insert("authorization".to_string(), format!("Bearer {}", api_key));
             }
-            
+
             builder = builder.auth_headers(Some(headers));
         }
 
@@ -393,7 +393,7 @@ mod tests {
         };
 
         let options = core.parse_scan_options(&request); // No conversion for test
-        // These will use default values from config
+                                                         // These will use default values from config
         assert!(options.timeout > 0);
         assert!(options.http_timeout > 0);
         assert!(!options.detailed); // Default is false
