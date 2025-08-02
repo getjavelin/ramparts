@@ -48,6 +48,8 @@ pub struct CursorMCPServerConfig {
     pub tools: Option<Vec<String>>,
     /// Server URL (for HTTP transport)
     pub url: Option<String>,
+    /// Authentication headers
+    pub headers: Option<HashMap<String, String>>,
 }
 
 /// Cursor transport configuration
@@ -91,6 +93,8 @@ pub struct ClaudeDesktopServerConfig {
     pub disabled: Option<bool>,
     /// Server URL (for HTTP servers)
     pub url: Option<String>,
+    /// Authentication headers
+    pub headers: Option<HashMap<String, String>>,
 }
 
 /// VS Code settings structure (can contain MCP configuration)
@@ -120,6 +124,8 @@ pub struct VSCodeMCPServerConfig {
     /// Transport type (e.g., "http", "stdio")
     #[serde(rename = "type")]
     pub transport_type: Option<String>,
+    /// Authentication headers
+    pub headers: Option<HashMap<String, String>>,
 }
 
 /// New VS Code MCP configuration structure (for mcp.json files)
@@ -265,6 +271,8 @@ pub struct VSCodeArrayServerConfig {
     pub server_type: Option<String>,
     /// Description
     pub description: Option<String>,
+    /// Authentication headers
+    pub headers: Option<HashMap<String, String>>,
 }
 
 /// VS Code server configuration
@@ -285,6 +293,8 @@ pub struct VSCodeServerConfig {
     pub gallery: Option<bool>,
     /// Description
     pub description: Option<String>,
+    /// Authentication headers
+    pub headers: Option<HashMap<String, String>>,
 }
 
 /// Cursor server configuration
@@ -314,6 +324,8 @@ pub struct WindsurfServerConfig {
     #[serde(rename = "type")]
     pub server_type: Option<String>,
     pub description: Option<String>,
+    /// Authentication headers
+    pub headers: Option<HashMap<String, String>>,
 }
 
 /// Claude Desktop MCP configuration format
@@ -335,6 +347,8 @@ pub struct ClaudeServerConfig {
     pub url: Option<String>,
     #[serde(rename = "type")]
     pub server_type: Option<String>,
+    /// Authentication headers
+    pub headers: Option<HashMap<String, String>>,
 }
 
 /// Claude Code MCP configuration format (extracted from ~/.claude.json)
@@ -371,6 +385,8 @@ pub struct ZedServerConfig {
     pub url: Option<String>,
     /// Environment variables
     pub env: Option<HashMap<String, String>>,
+    /// Authentication headers
+    pub headers: Option<HashMap<String, String>>,
 }
 
 /// Zed command configuration
@@ -407,7 +423,7 @@ impl From<VSCodeMCPConfig> for MCPConfig {
                     args: server_config.args,
                     env: server_config.env,
                     description: None, // VSCodeMCPServerConfig doesn't have a description field
-                    auth_headers: None,
+                    auth_headers: server_config.headers,
                     options: None,
                 })
                 .collect()
@@ -433,7 +449,7 @@ impl From<VSCodeObjectMCPConfig> for MCPConfig {
                     args: server_config.args,
                     env: server_config.env,
                     description: server_config.description, // VSCodeServerConfig has a description field
-                    auth_headers: None,
+                    auth_headers: server_config.headers,
                     options: None,
                 })
                 .collect()
@@ -459,7 +475,7 @@ impl From<VSCodeArrayMCPConfig> for MCPConfig {
                     args: server_config.args,
                     env: server_config.env,
                     description: server_config.description,
-                    auth_headers: None,
+                    auth_headers: server_config.headers,
                     options: None,
                 })
                 .collect()
@@ -485,7 +501,7 @@ impl From<CursorMCPConfig> for MCPConfig {
                     args: server_config.args,
                     env: server_config.env,
                     description: server_config.description,
-                    auth_headers: None,
+                    auth_headers: server_config.headers,
                     options: None,
                 })
                 .collect()
@@ -511,7 +527,7 @@ impl From<WindsurfMCPConfig> for MCPConfig {
                     args: server_config.args,
                     env: server_config.env,
                     description: server_config.description,
-                    auth_headers: None,
+                    auth_headers: server_config.headers,
                     options: None,
                 })
                 .collect()
@@ -540,7 +556,7 @@ impl From<ClaudeMCPConfig> for MCPConfig {
                     args: server_config.args,
                     env: server_config.env,
                     description: None,
-                    auth_headers: None,
+                    auth_headers: server_config.headers,
                     options: None,
                 })
                 .collect()
@@ -607,7 +623,7 @@ impl From<ZedMCPConfig> for MCPConfig {
                                         .unwrap_or_default()
                                 )
                             }),
-                            auth_headers: None,
+                            auth_headers: server_config.headers,
                             options: None,
                         })
                 })
@@ -1407,7 +1423,7 @@ impl MCPConfigManager {
                         args: None,
                         env: None,
                         description: server_config.description,
-                        auth_headers: None, // Cursor format doesn't specify auth headers at server level
+                        auth_headers: server_config.headers, // Now supports auth headers at server level
                         options: None, // Could be extended to convert any server-specific options
                     }
                 })
@@ -1451,7 +1467,7 @@ impl MCPConfigManager {
                         args: None,
                         env: None,
                         description: None, // Claude Desktop format doesn't include descriptions
-                        auth_headers: None,
+                        auth_headers: server_config.headers,
                         options: None,
                     })
                 })
@@ -1527,7 +1543,7 @@ impl MCPConfigManager {
                         args: None,
                         env: None,
                         description: None, // VS Code MCP format doesn't include descriptions
-                        auth_headers: None,
+                        auth_headers: server_config.headers,
                         options: None,
                     }
                 })
