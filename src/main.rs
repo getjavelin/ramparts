@@ -105,6 +105,10 @@ enum Commands {
         /// Output format (json, raw, table, text)
         #[arg(long, value_name = "FORMAT")]
         format: Option<String>,
+
+        /// Generate a detailed markdown report with timestamp (`scan_YYYYMMDD_HHMMSS.md`)
+        #[arg(long)]
+        report: bool,
     },
 
     /// Scan MCP servers from IDE configuration files (~/.cursor/mcp.json, ~/.`codium/windsurf/mcp_config.json`)
@@ -116,6 +120,10 @@ enum Commands {
         /// Output format (json, raw, table, text)
         #[arg(long, value_name = "FORMAT")]
         format: Option<String>,
+
+        /// Generate a detailed markdown report with timestamp (`scan_YYYYMMDD_HHMMSS.md`)
+        #[arg(long)]
+        report: bool,
     },
 
     /// Generate a default config.yaml file
@@ -155,7 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// Loads the scanner configuration, using defaults if loading fails
 fn load_scanner_config() -> ScannerConfig {
     let config_manager = config::ScannerConfigManager::new();
-    match config_manager.load_config() {
+    match config_manager.load_scanner_config() {
         Ok(config) => config,
         Err(e) => {
             warn!("Failed to load scanner config, using defaults: {}", e);
@@ -168,8 +176,25 @@ fn load_scanner_config() -> ScannerConfig {
 fn setup_logging(cli: &Cli, scanner_config: &ScannerConfig) {
     let level = determine_log_level(cli, scanner_config);
 
+    // Create a filter that shows ramparts logs at the configured level,
+    // but suppresses INFO logs from external crates (like MCP servers)
+    let filter = match level {
+        Level::DEBUG | Level::TRACE => {
+            // For debug/trace, show everything to help with troubleshooting
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(format!("ramparts={level}").parse().unwrap())
+        }
+        _ => {
+            // For info/warn/error, only show ramparts at the configured level
+            // and suppress INFO from external crates
+            tracing_subscriber::EnvFilter::new("warn")
+                .add_directive(format!("ramparts={level}").parse().unwrap())
+        }
+    };
+
     FmtSubscriber::builder()
-        .with_max_level(level)
+        .with_max_level(Level::TRACE) // Allow all levels, let the filter decide
+        .with_env_filter(filter)
         .with_target(false)
         .with_thread_ids(false)
         .with_thread_names(false)
@@ -218,11 +243,15 @@ async fn execute_command(
             url,
             auth_headers,
             format,
-        } => handle_scan_command(url, auth_headers, format, &scanner_config, scanner).await,
+            report,
+        } => handle_scan_command(url, auth_headers, format, report, &scanner_config, scanner).await,
         Commands::ScanConfig {
             auth_headers,
             format,
-        } => handle_scan_config_command(auth_headers, format, &scanner_config, scanner).await,
+            report,
+        } => {
+            handle_scan_config_command(auth_headers, format, report, &scanner_config, scanner).await
+        }
         Commands::InitConfig { force } => {
             handle_init_config_command(force);
             Ok(())
@@ -236,6 +265,7 @@ async fn handle_scan_command(
     url: String,
     auth_headers: Vec<String>,
     format: Option<String>,
+    report: bool,
     scanner_config: &ScannerConfig,
     scanner: Option<MCPScanner>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -252,6 +282,19 @@ async fn handle_scan_command(
     match scanner.scan_single(&url, options.clone()).await {
         Ok(result) => {
             utils::print_result(&result, &output_format, options.detailed);
+
+            // Generate report if requested
+            if report {
+                match utils::write_markdown_report(&[result]) {
+                    Ok(filename) => {
+                        println!("\n📄 Detailed report generated: {filename}");
+                    }
+                    Err(e) => {
+                        warn!("Failed to generate report: {}", e);
+                    }
+                }
+            }
+
             Ok(())
         }
         Err(e) => {
@@ -268,6 +311,7 @@ async fn handle_scan_command(
 async fn handle_scan_config_command(
     auth_headers: Vec<String>,
     format: Option<String>,
+    report: bool,
     scanner_config: &ScannerConfig,
     scanner: Option<MCPScanner>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -281,11 +325,26 @@ async fn handle_scan_config_command(
         .as_ref()
         .expect("Scanner should be initialized for scan-config command");
 
-    match scanner.scan_config(options).await {
+    match scanner.scan_config_by_ide(options).await {
         Ok(results) => {
-            for result in results {
-                utils::print_result(&result, &output_format, scanner_config.scanner.detailed);
+            utils::print_multi_server_results(
+                &results,
+                &output_format,
+                scanner_config.scanner.detailed,
+            );
+
+            // Generate report if requested
+            if report {
+                match utils::write_markdown_report(&results) {
+                    Ok(filename) => {
+                        println!("\n📄 Detailed report generated: {filename}");
+                    }
+                    Err(e) => {
+                        warn!("Failed to generate report: {}", e);
+                    }
+                }
             }
+
             Ok(())
         }
         Err(e) => {
@@ -307,7 +366,7 @@ fn handle_init_config_command(force: bool) {
         std::process::exit(1);
     }
 
-    match config_manager.save_config(&config::ScannerConfig::default()) {
+    match config_manager.save_scanner_config(&config::ScannerConfig::default()) {
         Ok(()) => {
             println!("Created config.yaml with default settings");
             println!(
