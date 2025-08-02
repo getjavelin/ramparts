@@ -105,7 +105,9 @@ impl MCPScannerCore {
                     headers.insert("x-javelin-apikey".to_string(), api_key.clone());
 
                     // Only add authorization header if one doesn't already exist (case-insensitive check)
-                    let has_auth_header = headers.keys().any(|key| key.to_lowercase() == "authorization");
+                    let has_auth_header = headers
+                        .keys()
+                        .any(|key| key.to_lowercase() == "authorization");
                     if !has_auth_header {
                         headers.insert("authorization".to_string(), format!("Bearer {api_key}"));
                     }
