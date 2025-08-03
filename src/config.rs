@@ -63,7 +63,15 @@ impl MCPServerConfig {
         if let Some(url) = &self.url {
             url.clone()
         } else if let Some(command) = &self.command {
-            format!("stdio://{command}")
+            if let Some(args) = &self.args {
+                if args.is_empty() {
+                    format!("stdio://{command}")
+                } else {
+                    format!("stdio://{} {}", command, args.join(" "))
+                }
+            } else {
+                format!("stdio://{command}")
+            }
         } else {
             "unknown".to_string()
         }
@@ -326,7 +334,7 @@ impl MCPConfigManager {
             (".cursor/settings.json", MCPClient::Cursor),
             (".mcp.json", MCPClient::ClaudeCode), // Project-scoped Claude Code config
             (".claude/settings.local.json", MCPClient::ClaudeCode), // Project-specific Claude Code config
-            (".claude/mcp.json", MCPClient::Claude),
+            (".claude/mcp.json", MCPClient::ClaudeCode),
             (".windsurf/mcp.json", MCPClient::Windsurf),
             (".windsurf/mcp_config.json", MCPClient::Windsurf),
         ];
@@ -452,42 +460,6 @@ impl MCPConfigManager {
         paths
     }
 
-    /// Detect client type from path
-    #[allow(dead_code)]
-    pub fn detect_client<P: AsRef<Path>>(path: P) -> Option<MCPClient> {
-        let path = path.as_ref();
-        let _path_str = path.to_string_lossy().to_lowercase();
-
-        // Check for specific filenames first
-        if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
-            match filename {
-                ".claude.json" => return Some(MCPClient::ClaudeCode),
-                "claude_desktop_config.json" => return Some(MCPClient::Claude),
-                _ => {}
-            }
-        }
-
-        // Check path components
-        for component in path.components() {
-            if let Some(comp_str) = component.as_os_str().to_str() {
-                let comp_lower = comp_str.to_lowercase();
-                match comp_lower.as_str() {
-                    "cursor" | ".cursor" => return Some(MCPClient::Cursor),
-                    "windsurf" | ".windsurf" => return Some(MCPClient::Windsurf),
-                    "claude" | ".claude" => return Some(MCPClient::Claude),
-                    "code" | "vscode" | ".vscode" => return Some(MCPClient::VSCode),
-                    "gemini" | ".gemini" => return Some(MCPClient::Gemini),
-                    "zed" => return Some(MCPClient::Zed),
-                    "nvim" | "neovim" => return Some(MCPClient::Neovim),
-                    "helix" => return Some(MCPClient::Helix),
-                    _ => {}
-                }
-            }
-        }
-
-        None
-    }
-
     /// Load configurations grouped by IDE
     pub fn load_config_by_ide(&self) -> Vec<(String, MCPConfig)> {
         let mut configs_by_ide = std::collections::HashMap::new();
@@ -592,68 +564,6 @@ impl MCPConfigManager {
                 }
             }
             (MCPClient::Claude, "claude_desktop_config.json") => {
-                if let Ok(config) =
-                    serde_json::from_str::<IDEConfigFormat<UnifiedServerConfig>>(&content)
-                {
-                    debug!("Parsed as Claude Desktop configuration format");
-                    return config.to_mcp_config();
-                }
-            }
-            _ => {}
-        }
-
-        // Try generic IDE format
-        if let Ok(config) = serde_json::from_str::<IDEConfigFormat<UnifiedServerConfig>>(&content) {
-            debug!("Parsed as generic IDE configuration format");
-            return config.to_mcp_config();
-        }
-
-        // Try standard MCP format
-        if let Ok(config) = serde_json::from_str::<MCPConfig>(&content) {
-            debug!("Parsed as standard MCP configuration format");
-            return Ok(config);
-        }
-
-        Err(anyhow!(
-            "Failed to parse configuration file: {}",
-            path.display()
-        ))
-    }
-
-    /// Load configuration from a specific path
-    #[allow(dead_code)]
-    pub fn load_config_from_path(path: &Path) -> Result<MCPConfig> {
-        if !path.exists() {
-            return Err(anyhow!(
-                "Configuration file does not exist: {}",
-                path.display()
-            ));
-        }
-
-        let content = fs::read_to_string(path)
-            .map_err(|e| anyhow!("Failed to read config file {}: {}", path.display(), e))?;
-
-        let client = Self::detect_client(path);
-        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-        // Try parsing based on detected client and filename
-        match (client, filename) {
-            (Some(MCPClient::VSCode), "settings.json") => {
-                if let Ok(config) = serde_json::from_str::<VSCodeSettings>(&content) {
-                    debug!("Parsed as VS Code settings format");
-                    return config.to_mcp_config();
-                }
-            }
-            (Some(MCPClient::ClaudeCode), ".claude.json") => {
-                // Try Claude Code specific format first
-                if let Ok(config) =
-                    serde_json::from_str::<IDEConfigFormat<UnifiedServerConfig>>(&content)
-                {
-                    debug!("Parsed as Claude Code configuration format");
-                    return config.to_mcp_config();
-                }
-            }
-            (Some(MCPClient::Claude), "claude_desktop_config.json") => {
                 if let Ok(config) =
                     serde_json::from_str::<IDEConfigFormat<UnifiedServerConfig>>(&content)
                 {
@@ -905,8 +815,6 @@ impl ScannerConfigManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::tempdir;
 
     #[test]
     fn test_unified_server_config_conversion() {
@@ -969,78 +877,6 @@ mod tests {
         assert_eq!(normalize_url("https://example.com"), "https://example.com");
         assert_eq!(normalize_url("127.0.0.1:3000"), "http://127.0.0.1:3000");
         assert_eq!(normalize_url("example.com:5000"), "http://example.com:5000");
-    }
-
-    #[test]
-    fn test_client_detection() {
-        // Test specific filenames
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.claude.json"),
-            Some(MCPClient::ClaudeCode)
-        );
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/claude_desktop_config.json"),
-            Some(MCPClient::Claude)
-        );
-
-        // Test path components
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.vscode/settings.json"),
-            Some(MCPClient::VSCode)
-        );
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.cursor/mcp.json"),
-            Some(MCPClient::Cursor)
-        );
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.windsurf/mcp.json"),
-            Some(MCPClient::Windsurf)
-        );
-
-        // Test unknown paths
-        assert_eq!(
-            MCPConfigManager::detect_client("/home/user/random.json"),
-            None
-        );
-    }
-
-    #[test]
-    fn test_load_config_from_path() {
-        let temp_dir = tempdir().unwrap();
-        let config_path = temp_dir.path().join("test_config.json");
-
-        // Test IDE format (servers object)
-        let config_content = r#"{
-            "servers": {
-                "test-server": {
-                    "url": "http://localhost:3000",
-                    "description": "Test server"
-                },
-                "stdio-server": {
-                    "command": "python",
-                    "args": ["-m", "server"]
-                }
-            }
-        }"#;
-
-        fs::write(&config_path, config_content).unwrap();
-        let config = MCPConfigManager::load_config_from_path(&config_path).unwrap();
-        assert!(config.servers.is_some());
-        assert_eq!(config.servers.unwrap().len(), 2);
-
-        // Test mcpServers format
-        let mcp_config_content = r#"{
-            "mcpServers": {
-                "test-server-2": {
-                    "url": "http://localhost:4000"
-                }
-            }
-        }"#;
-
-        fs::write(&config_path, mcp_config_content).unwrap();
-        let config = MCPConfigManager::load_config_from_path(&config_path).unwrap();
-        assert!(config.servers.is_some());
-        assert_eq!(config.servers.unwrap().len(), 1);
     }
 
     #[test]

@@ -93,7 +93,7 @@ impl MCPScannerServer {
     }
 }
 
-/// Helper function to extract Javelin API key from headers and add to auth_headers
+/// Helper function to extract Javelin API key from headers and add to `auth_headers`
 fn extract_and_add_api_key(
     headers: &HeaderMap,
     auth_headers: &mut Option<HashMap<String, String>>,

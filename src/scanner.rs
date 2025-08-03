@@ -1195,7 +1195,7 @@ impl MCPScanner {
 
         // Debug: Show which IDEs were loaded
         println!(
-            "🔍 Loaded configs for IDEs: {:?}",
+            "🔍 Found MCP configs configured for IDEs: {:?}",
             configs_by_ide
                 .iter()
                 .map(|(name, _)| name)

@@ -306,7 +306,7 @@ fn add_errors_info(
 
 #[allow(clippy::too_many_lines)]
 fn print_table_result(result: &ScanResult, detailed: bool) {
-    println!("MCP Server Scan Result");
+    println!("Ramparts MCP Server Scan Result");
 
     // Server Info
     println!("URL: {}", result.url.blue());
@@ -1258,12 +1258,13 @@ pub fn display_ide_discovery_summary(configs_by_ide: &[(String, crate::config::M
                 };
 
                 // Determine server type and show appropriate icon
-                let (icon, server_type) = if server_url.starts_with("stdio://") {
-                    ("🔧", "STDIO")
+                let (icon, server_type, display_url) = if server_url.starts_with("stdio://") {
+                    let clean_url = server_url.strip_prefix("stdio://").unwrap_or(&server_url);
+                    ("🔧", "[stdio]", clean_url.to_string())
                 } else if server_url.starts_with("http://") || server_url.starts_with("https://") {
-                    ("🌐", "HTTP")
+                    ("🌐", "[http]", server_url.clone())
                 } else {
-                    ("❓", "UNKNOWN")
+                    ("❓", "[unknown]", server_url.clone())
                 };
 
                 println!(
@@ -1272,7 +1273,7 @@ pub fn display_ide_discovery_summary(configs_by_ide: &[(String, crate::config::M
                     icon,
                     server_name.green(),
                     server_type.dimmed(),
-                    server_url.blue()
+                    display_url.blue()
                 );
             }
         } else {
@@ -1369,7 +1370,6 @@ pub fn generate_markdown_report(results: &[ScanResult]) -> Result<String> {
     writeln!(report, "- **Failed Scans:** {failed_scans}")?;
     writeln!(report)?;
     writeln!(report, "### Security Issues Summary")?;
-    writeln!(report)?;
     if critical_count + high_count + medium_count + low_count == 0 {
         writeln!(report, "✅ **No security issues detected**")?;
     } else {
@@ -1384,11 +1384,9 @@ pub fn generate_markdown_report(results: &[ScanResult]) -> Result<String> {
 
     // Detailed Results
     writeln!(report, "## Detailed Scan Results")?;
-    writeln!(report)?;
 
     for (i, result) in results.iter().enumerate() {
         writeln!(report, "### Server {} - {}", i + 1, result.url)?;
-        writeln!(report)?;
 
         // Server Info
         if let Some(ref server_info) = result.server_info {
@@ -1398,7 +1396,6 @@ pub fn generate_markdown_report(results: &[ScanResult]) -> Result<String> {
             if let Some(ref description) = server_info.description {
                 writeln!(report, "- **Description:** {description}")?;
             }
-            writeln!(report)?;
         }
 
         // Scan Status
