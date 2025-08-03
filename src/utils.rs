@@ -1159,70 +1159,6 @@ fn print_multi_server_text(results: &[ScanResult]) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{error_utils, format_status, Timer};
-    use anyhow::anyhow;
-
-    #[test]
-    fn test_timer_functionality() {
-        let timer = Timer::start();
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        let elapsed = timer.elapsed_ms();
-
-        assert!(elapsed >= 10);
-        println!("Timer elapsed: {elapsed}ms");
-    }
-
-    #[test]
-    fn test_error_utils() {
-        // Test format_error
-        let error_msg = error_utils::format_error("Test operation", "Something went wrong");
-        assert_eq!(error_msg, "Test operation failed: Something went wrong");
-
-        // Test wrap_error with success
-        let result: Result<i32, anyhow::Error> = Ok(42);
-        let wrapped = error_utils::wrap_error(result, "Test context");
-        assert!(wrapped.is_ok());
-        assert_eq!(wrapped.unwrap(), 42);
-
-        // Test wrap_error with failure
-        let result: Result<i32, anyhow::Error> = Err(anyhow!("Original error"));
-        let wrapped = error_utils::wrap_error(result, "Test context");
-        assert!(wrapped.is_err());
-        let error_msg = wrapped.unwrap_err().to_string();
-        assert!(error_msg.contains("Test context"));
-        assert!(error_msg.contains("Original error"));
-    }
-
-    // TODO: Add test for track_performance when async closure type inference is resolved
-
-    #[test]
-    fn test_format_status() {
-        use crate::types::ScanStatus;
-
-        let success = format_status(&ScanStatus::Success);
-        assert!(success.contains("SUCCESS"));
-
-        let failed = format_status(&ScanStatus::Failed("Test error".to_string()));
-        assert!(failed.contains("FAILED"));
-        assert!(failed.contains("Test error"));
-
-        let timeout = format_status(&ScanStatus::Timeout);
-        assert!(timeout.contains("TIMEOUT"));
-
-        let connection_error = format_status(&ScanStatus::ConnectionError(
-            "Connection failed".to_string(),
-        ));
-        assert!(connection_error.contains("CONNECTION ERROR"));
-        assert!(connection_error.contains("Connection failed"));
-
-        let auth_error = format_status(&ScanStatus::AuthenticationError("Auth failed".to_string()));
-        assert!(auth_error.contains("AUTHENTICATION ERROR"));
-        assert!(auth_error.contains("Auth failed"));
-    }
-}
-
 /// Generate a detailed markdown report from scan results
 #[allow(clippy::too_many_lines)]
 pub fn generate_markdown_report(results: &[ScanResult]) -> Result<String> {
@@ -1602,4 +1538,68 @@ pub fn write_markdown_report(results: &[ScanResult]) -> Result<String> {
         .map_err(|e| anyhow!("Failed to write report to {}: {}", filename, e))?;
 
     Ok(filename)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{error_utils, format_status, Timer};
+    use anyhow::anyhow;
+
+    #[test]
+    fn test_timer_functionality() {
+        let timer = Timer::start();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let elapsed = timer.elapsed_ms();
+
+        assert!(elapsed >= 10);
+        println!("Timer elapsed: {elapsed}ms");
+    }
+
+    #[test]
+    fn test_error_utils() {
+        // Test format_error
+        let error_msg = error_utils::format_error("Test operation", "Something went wrong");
+        assert_eq!(error_msg, "Test operation failed: Something went wrong");
+
+        // Test wrap_error with success
+        let result: Result<i32, anyhow::Error> = Ok(42);
+        let wrapped = error_utils::wrap_error(result, "Test context");
+        assert!(wrapped.is_ok());
+        assert_eq!(wrapped.unwrap(), 42);
+
+        // Test wrap_error with failure
+        let result: Result<i32, anyhow::Error> = Err(anyhow!("Original error"));
+        let wrapped = error_utils::wrap_error(result, "Test context");
+        assert!(wrapped.is_err());
+        let error_msg = wrapped.unwrap_err().to_string();
+        assert!(error_msg.contains("Test context"));
+        assert!(error_msg.contains("Original error"));
+    }
+
+    // TODO: Add test for track_performance when async closure type inference is resolved
+
+    #[test]
+    fn test_format_status() {
+        use crate::types::ScanStatus;
+
+        let success = format_status(&ScanStatus::Success);
+        assert!(success.contains("SUCCESS"));
+
+        let failed = format_status(&ScanStatus::Failed("Test error".to_string()));
+        assert!(failed.contains("FAILED"));
+        assert!(failed.contains("Test error"));
+
+        let timeout = format_status(&ScanStatus::Timeout);
+        assert!(timeout.contains("TIMEOUT"));
+
+        let connection_error = format_status(&ScanStatus::ConnectionError(
+            "Connection failed".to_string(),
+        ));
+        assert!(connection_error.contains("CONNECTION ERROR"));
+        assert!(connection_error.contains("Connection failed"));
+
+        let auth_error = format_status(&ScanStatus::AuthenticationError("Auth failed".to_string()));
+        assert!(auth_error.contains("AUTHENTICATION ERROR"));
+        assert!(auth_error.contains("Auth failed"));
+    }
 }
