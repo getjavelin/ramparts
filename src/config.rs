@@ -1711,13 +1711,13 @@ impl MCPConfigManager {
         if let Some(ref mut servers) = config_with_source.servers {
             for server in servers.iter_mut() {
                 // Store IDE name in description field with a prefix
-                let ide_info = format!("IDE:{}", ide_name);
+                let ide_info = format!("IDE:{ide_name}");
                 match &server.description {
                     Some(desc) => {
-                        server.description = Some(format!("{} [{}]", desc, ide_info));
+                        server.description = Some(format!("{desc} [{ide_info}]"));
                     }
                     None => {
-                        server.description = Some(format!("[{}]", ide_info));
+                        server.description = Some(format!("[{ide_info}]"));
                     }
                 }
             }

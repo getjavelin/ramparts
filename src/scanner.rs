@@ -1234,7 +1234,7 @@ impl MCPScanner {
                 // Scan the MCP server - HTTP or STDIO
                 if let Some(url) = server.scan_url() {
                     // HTTP server scanning
-                    match self.scan_single(&url, server_options).await {
+                    match self.scan_single(url, server_options).await {
                         Ok(mut result) => {
                             result.ide_source = Some(ide_source.clone());
                             results.push(result);
