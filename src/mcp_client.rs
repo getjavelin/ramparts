@@ -84,11 +84,21 @@ impl McpClient {
             let mut header_map = HeaderMap::new();
 
             for (key, value) in headers {
-                if let (Ok(name), Ok(val)) = (
+                debug!("Processing header: {} = {}", key, value);
+                match (
                     HeaderName::from_bytes(key.as_bytes()),
                     HeaderValue::from_str(value),
                 ) {
-                    header_map.insert(name, val);
+                    (Ok(name), Ok(val)) => {
+                        debug!("Successfully added header: {}", key);
+                        header_map.insert(name, val);
+                    }
+                    (Err(e), _) => {
+                        warn!("Failed to parse header name '{}': {}", key, e);
+                    }
+                    (_, Err(e)) => {
+                        warn!("Failed to parse header value for '{}': {}", key, e);
+                    }
                 }
             }
 
@@ -182,11 +192,21 @@ impl McpClient {
             let mut header_map = HeaderMap::new();
 
             for (key, value) in headers {
-                if let (Ok(name), Ok(val)) = (
+                debug!("Processing SSE header: {} = {}", key, value);
+                match (
                     HeaderName::from_bytes(key.as_bytes()),
                     HeaderValue::from_str(value),
                 ) {
-                    header_map.insert(name, val);
+                    (Ok(name), Ok(val)) => {
+                        debug!("Successfully added SSE header: {}", key);
+                        header_map.insert(name, val);
+                    }
+                    (Err(e), _) => {
+                        warn!("Failed to parse SSE header name '{}': {}", key, e);
+                    }
+                    (_, Err(e)) => {
+                        warn!("Failed to parse SSE header value for '{}': {}", key, e);
+                    }
                 }
             }
 

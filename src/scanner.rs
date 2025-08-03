@@ -939,7 +939,7 @@ impl MCPScanner {
 
                 // Load scanner configuration
                 let config_manager = crate::config::ScannerConfigManager::new();
-                let scanner_config = match config_manager.load_scanner_config() {
+                let scanner_config = match config_manager.load_config() {
                     Ok(config) => config,
                     Err(e) => {
                         warn!("Failed to load scanner config, using defaults: {}", e);
@@ -1093,7 +1093,7 @@ impl MCPScanner {
                 // === SECURITY ANALYSIS ===
                 // Load scanner configuration for security analysis
                 #[allow(clippy::single_match_else)]
-                let scanner_config = match config::ScannerConfigManager::new().load_scanner_config()
+                let scanner_config = match config::ScannerConfigManager::new().load_config()
                 {
                     Ok(config) => config,
                     Err(_) => {
@@ -1191,68 +1191,52 @@ impl MCPScanner {
             return Err(anyhow!("No MCP IDE configuration files found"));
         }
 
-        let configs_by_ide = config_manager.load_config_by_ide();
+        let config = config_manager.load_config();
 
-        // Debug: Show which IDEs were loaded
-        println!(
-            "🔍 Found MCP configs configured for IDEs: {:?}",
-            configs_by_ide
-                .iter()
-                .map(|(name, _)| name)
-                .collect::<Vec<_>>()
-        );
-
-        // Display discovery summary before scanning
-        crate::utils::display_ide_discovery_summary(&configs_by_ide);
+        // Debug: Show that we loaded MCP config
+        println!("🔍 Loaded MCP configuration with {} servers", 
+            config.servers.as_ref().map(|s| s.len()).unwrap_or(0));
 
         let mut results = Vec::new();
 
-        for (ide_name, config) in configs_by_ide {
-            if let Some(ref servers) = config.servers {
+        if let Some(ref servers) = config.servers {
+            debug!(
+                "Found [\x1b[1m{}\x1b[0m] MCP servers to scan",
+                servers.len()
+            );
+
+            for server in servers {
                 debug!(
-                    "Found [\x1b[1m{}\x1b[0m] MCP servers from {} IDE",
-                    servers.len(),
-                    ide_name
+                    "Scanning MCP server: [\x1b[1m{}\x1b[0m] ({})",
+                    server.name.as_deref().unwrap_or("unnamed"),
+                    server.to_display_url()
                 );
 
-                for server in servers {
-                    debug!(
-                        "Scanning MCP server from {} IDE: [\x1b[1m{}\x1b[0m] ({})",
-                        ide_name,
-                        server.name.as_deref().unwrap_or("unnamed"),
-                        server.to_display_url()
-                    );
+                let server_options = Self::build_server_options(&options, &config, server);
 
-                    let server_options = Self::build_server_options(&options, &config, server);
-
-                    // Scan the MCP server - HTTP or STDIO
-                    if let Some(url) = server.scan_url() {
-                        // HTTP server scanning
-                        match self.scan_single(&url, server_options).await {
-                            Ok(mut result) => {
-                                result.ide_source = Some(ide_name.clone());
-                                results.push(result);
-                            }
-                            Err(e) => {
-                                let mut failed_result = ScanResult::new(url.to_string());
-                                failed_result.ide_source = Some(ide_name.clone());
-                                failed_result.status = ScanStatus::Failed(e.to_string());
-                                results.push(failed_result);
-                            }
+                // Scan the MCP server - HTTP or STDIO
+                if let Some(url) = server.scan_url() {
+                    // HTTP server scanning
+                    match self.scan_single(&url, server_options).await {
+                        Ok(result) => {
+                            results.push(result);
                         }
-                    } else if server.command.is_some() {
-                        // STDIO server scanning
-                        match self.scan_stdio_server(server, server_options).await {
-                            Ok(mut result) => {
-                                result.ide_source = Some(ide_name.clone());
-                                results.push(result);
-                            }
-                            Err(e) => {
-                                let mut failed_result = ScanResult::new(server.to_display_url());
-                                failed_result.ide_source = Some(ide_name.clone());
-                                failed_result.status = ScanStatus::Failed(e.to_string());
-                                results.push(failed_result);
-                            }
+                        Err(e) => {
+                            let mut failed_result = ScanResult::new(url.to_string());
+                            failed_result.status = ScanStatus::Failed(e.to_string());
+                            results.push(failed_result);
+                        }
+                    }
+                } else if server.command.is_some() {
+                    // STDIO server scanning
+                    match self.scan_stdio_server(server, server_options).await {
+                        Ok(result) => {
+                            results.push(result);
+                        }
+                        Err(e) => {
+                            let mut failed_result = ScanResult::new(server.to_display_url());
+                            failed_result.status = ScanStatus::Failed(e.to_string());
+                            results.push(failed_result);
                         }
                     }
                 }

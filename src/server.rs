@@ -93,7 +93,7 @@ impl MCPScannerServer {
     }
 }
 
-/// Helper function to extract Javelin API key from headers and add to `auth_headers`
+/// Helper function to extract Javelin API key from headers and add to auth_headers
 fn extract_and_add_api_key(
     headers: &HeaderMap,
     auth_headers: &mut Option<HashMap<String, String>>,
@@ -297,6 +297,7 @@ async fn validate_endpoint(
 ) -> Result<Json<ValidationResponse>, (StatusCode, Json<Value>)> {
     // Extract Javelin API key from headers using helper function
     extract_and_add_api_key(&headers, &mut request.auth_headers);
+
     debug!("Received validation request");
 
     let response = state.core.validate_config(&request);
@@ -360,7 +361,10 @@ async fn batch_scan_endpoint(
     if response.success {
         Ok(Json(response))
     } else {
-        error!("Batch scan failed");
+        error!(
+            "Batch scan failed: {} successful, {} failed",
+            response.successful, response.failed
+        );
         Err((
             StatusCode::BAD_REQUEST,
             Json(json!({

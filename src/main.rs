@@ -163,7 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// Loads the scanner configuration, using defaults if loading fails
 fn load_scanner_config() -> ScannerConfig {
     let config_manager = config::ScannerConfigManager::new();
-    match config_manager.load_scanner_config() {
+    match config_manager.load_config() {
         Ok(config) => config,
         Err(e) => {
             warn!("Failed to load scanner config, using defaults: {}", e);
@@ -372,7 +372,7 @@ fn handle_init_config_command(force: bool) {
         std::process::exit(1);
     }
 
-    match config_manager.save_scanner_config(&config::ScannerConfig::default()) {
+    match config_manager.save_config(&config::ScannerConfig::default()) {
         Ok(()) => {
             println!("Created config.yaml with default settings");
             println!(

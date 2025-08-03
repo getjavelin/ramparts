@@ -56,7 +56,7 @@ pub struct MCPScannerCore {
 impl MCPScannerCore {
     pub fn new() -> Result<Self> {
         let config_manager = ScannerConfigManager::new();
-        let scanner_config = match config_manager.load_scanner_config() {
+        let scanner_config = match config_manager.load_config() {
             Ok(config) => config,
             Err(e) => {
                 warn!("Failed to load scanner config, using defaults: {}", e);
@@ -72,10 +72,7 @@ impl MCPScannerCore {
 
     /// Parse scan options from request parameters
     fn parse_scan_options(&self, request: &ScanRequest) -> ScanOptions {
-        let scanner_config = self
-            .config_manager
-            .load_scanner_config()
-            .unwrap_or_default();
+        let scanner_config = self.config_manager.load_config().unwrap_or_default();
 
         let mut builder = ScanConfigBuilder::new()
             .timeout(
@@ -107,8 +104,11 @@ impl MCPScannerCore {
                     // Add x-javelin-apikey format
                     headers.insert("x-javelin-apikey".to_string(), api_key.clone());
 
-                    // Only add authorization header if one doesn't already exist
-                    if !headers.contains_key("authorization") {
+                    // Only add authorization header if one doesn't already exist (case-insensitive check)
+                    let has_auth_header = headers
+                        .keys()
+                        .any(|key| key.to_lowercase() == "authorization");
+                    if !has_auth_header {
                         headers.insert("authorization".to_string(), format!("Bearer {api_key}"));
                     }
                 }
@@ -196,7 +196,7 @@ impl MCPScannerCore {
         let failed = results.len() - successful;
 
         BatchScanResponse {
-            success: true,
+            success: failed == 0, // Set success to false if any scans failed
             results,
             total: request.urls.len(),
             successful,
@@ -318,7 +318,7 @@ mod tests {
         ];
 
         let response = BatchScanResponse {
-            success: true,
+            success: false, // Should be false when there are failures
             results: results.clone(),
             total: 2,
             successful: 1,
@@ -326,11 +326,44 @@ mod tests {
             timestamp: "2024-01-01T00:00:02Z".to_string(),
         };
 
-        assert!(response.success);
+        assert!(!response.success); // Should be false when there are failures
         assert_eq!(response.results.len(), 2);
         assert_eq!(response.total, 2);
         assert_eq!(response.successful, 1);
         assert_eq!(response.failed, 1);
+    }
+
+    #[test]
+    fn test_batch_scan_response_all_successful() {
+        let results = vec![
+            ScanResponse {
+                success: true,
+                result: Some(ScanResult::new("http://example1.com".to_string())),
+                error: None,
+                timestamp: "2024-01-01T00:00:00Z".to_string(),
+            },
+            ScanResponse {
+                success: true,
+                result: Some(ScanResult::new("http://example2.com".to_string())),
+                error: None,
+                timestamp: "2024-01-01T00:00:01Z".to_string(),
+            },
+        ];
+
+        let response = BatchScanResponse {
+            success: true, // Should be true when all scans are successful
+            results: results.clone(),
+            total: 2,
+            successful: 2,
+            failed: 0,
+            timestamp: "2024-01-01T00:00:02Z".to_string(),
+        };
+
+        assert!(response.success); // Should be true when all scans are successful
+        assert_eq!(response.results.len(), 2);
+        assert_eq!(response.total, 2);
+        assert_eq!(response.successful, 2);
+        assert_eq!(response.failed, 0);
     }
 
     #[test]
