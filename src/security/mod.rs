@@ -133,7 +133,7 @@ pub enum SecurityIssueType {
 }
 
 impl SecurityIssueType {
-    fn default_severity(self) -> &'static str {
+    pub fn default_severity(self) -> &'static str {
         match self {
             SecurityIssueType::ToolPoisoning
             | SecurityIssueType::SQLInjection

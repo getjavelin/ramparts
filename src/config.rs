@@ -1242,6 +1242,21 @@ impl MCPConfigManager {
         let mut loaded_configs = 0;
         let mut failed_configs = Vec::new();
 
+        // Only show existing config files
+        let existing_configs: Vec<_> = self
+            .config_paths
+            .iter()
+            .filter(|(path, _)| path.exists())
+            .collect();
+
+        if !existing_configs.is_empty() {
+            println!("🔍 Found {} IDE config files:", existing_configs.len());
+            for (path, client) in existing_configs {
+                println!("  ✓ {} IDE: {}", client.name(), path.display());
+            }
+            println!();
+        }
+
         for (path, client) in &self.config_paths {
             match Self::load_config_from_path(path) {
                 Ok(config) => {
@@ -1257,7 +1272,33 @@ impl MCPConfigManager {
                         continue;
                     }
 
-                    Self::merge_config(&mut merged_config, &config);
+                    // Display what was found in this config file
+                    let server_count = config.servers.as_ref().map(|s| s.len()).unwrap_or(0);
+                    println!(
+                        "📁 {} IDE config: {} ({} servers)",
+                        client.name(),
+                        path.display(),
+                        server_count
+                    );
+
+                    if let Some(ref servers) = config.servers {
+                        for server in servers {
+                            let server_name = server.name.as_deref().unwrap_or("unnamed");
+                            let server_type = if server.command.is_some() {
+                                "STDIO"
+                            } else {
+                                "HTTP"
+                            };
+                            println!(
+                                "  └─ {} [{}]: {}",
+                                server_name,
+                                server_type,
+                                server.to_display_url()
+                            );
+                        }
+                    }
+
+                    Self::merge_config_with_source(&mut merged_config, &config, client.name());
                     loaded_configs += 1;
                     debug!(
                         "Loaded MCP configuration from {} IDE: {}",
@@ -1397,7 +1438,7 @@ impl MCPConfigManager {
         let servers = cursor_config.mcp_servers.map(|mcp_servers| {
             mcp_servers
                 .into_iter()
-                .map(|(name, server_config)| {
+                .filter_map(|(name, server_config)| {
                     // Use explicit URL first, then build from transport config
                     let url = if let Some(url) = server_config.url {
                         url
@@ -1412,11 +1453,11 @@ impl MCPConfigManager {
                         };
                         format!("{scheme}://{host}:{port}")
                     } else {
-                        // Default URL for servers without transport config
-                        "http://localhost:8123".to_string()
+                        // Skip servers without proper configuration
+                        return None;
                     };
 
-                    MCPServerConfig {
+                    Some(MCPServerConfig {
                         name: Some(name),
                         url: Some(url),
                         command: None,
@@ -1425,7 +1466,7 @@ impl MCPConfigManager {
                         description: server_config.description,
                         auth_headers: server_config.headers, // Now supports auth headers at server level
                         options: None, // Could be extended to convert any server-specific options
-                    }
+                    })
                 })
                 .collect()
         });
@@ -1456,8 +1497,8 @@ impl MCPConfigManager {
                         // This represents a local server that will be started by the command
                         format!("stdio://{name}")
                     } else {
-                        // Default URL for servers without explicit configuration
-                        "http://localhost:8123".to_string()
+                        // Skip servers without explicit configuration
+                        return None;
                     };
 
                     Some(MCPServerConfig {
@@ -1486,7 +1527,7 @@ impl MCPConfigManager {
         let servers = vscode_config.mcp_servers.map(|mcp_servers| {
             mcp_servers
                 .into_iter()
-                .map(|(name, server_config)| {
+                .filter_map(|(name, server_config)| {
                     // Use explicit URL if provided, otherwise build from command
                     let url = if let Some(url) = server_config.url {
                         url
@@ -1494,11 +1535,11 @@ impl MCPConfigManager {
                         // For command-based servers, create a placeholder URL
                         format!("stdio://{name}")
                     } else {
-                        // Default URL for servers without explicit configuration
-                        "http://localhost:8123".to_string()
+                        // Skip servers without explicit configuration
+                        return None;
                     };
 
-                    MCPServerConfig {
+                    Some(MCPServerConfig {
                         name: Some(name),
                         url: Some(url),
                         command: None,
@@ -1507,7 +1548,7 @@ impl MCPConfigManager {
                         description: None, // VS Code settings don't typically include descriptions
                         auth_headers: None,
                         options: None,
-                    }
+                    })
                 })
                 .collect()
         });
@@ -1524,7 +1565,7 @@ impl MCPConfigManager {
         let servers = vscode_mcp_config.servers.map(|servers| {
             servers
                 .into_iter()
-                .map(|(name, server_config)| {
+                .filter_map(|(name, server_config)| {
                     // Use explicit URL if provided, otherwise build from command
                     let url = if let Some(url) = server_config.url {
                         url
@@ -1532,11 +1573,11 @@ impl MCPConfigManager {
                         // For command-based servers, create a placeholder URL
                         format!("stdio://{name}")
                     } else {
-                        // Default URL for servers without explicit configuration
-                        "http://localhost:8123".to_string()
+                        // Skip servers without explicit configuration
+                        return None;
                     };
 
-                    MCPServerConfig {
+                    Some(MCPServerConfig {
                         name: Some(name),
                         url: Some(url),
                         command: None,
@@ -1545,7 +1586,7 @@ impl MCPConfigManager {
                         description: None, // VS Code MCP format doesn't include descriptions
                         auth_headers: server_config.headers,
                         options: None,
-                    }
+                    })
                 })
                 .collect()
         });
@@ -1660,6 +1701,29 @@ impl MCPConfigManager {
     fn parse_zencoder_config(content: &str) -> Result<MCPConfig> {
         let zencoder_config: ZencoderMCPConfig = serde_json::from_str(content)?;
         Ok(zencoder_config.into())
+    }
+
+    /// Merge two configurations with IDE source information
+    /// Handles server deduplication based on URL and preserves IDE source
+    fn merge_config_with_source(base: &mut MCPConfig, other: &MCPConfig, ide_name: &str) {
+        // Clone the config and add IDE source info to each server
+        let mut config_with_source = other.clone();
+        if let Some(ref mut servers) = config_with_source.servers {
+            for server in servers.iter_mut() {
+                // Store IDE name in description field with a prefix
+                let ide_info = format!("IDE:{ide_name}");
+                match &server.description {
+                    Some(desc) => {
+                        server.description = Some(format!("{desc} [{ide_info}]"));
+                    }
+                    None => {
+                        server.description = Some(format!("[{ide_info}]"));
+                    }
+                }
+            }
+        }
+
+        Self::merge_config(base, &config_with_source);
     }
 
     /// Merge two configurations, with the second one taking precedence
