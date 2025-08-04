@@ -153,6 +153,20 @@ Scan a single MCP server for security vulnerabilities.
 }
 ```
 
+**Javelin Integration Headers:**
+
+For Javelin MCP servers, you can include the `X-Javelin-Apikey` header which will be automatically converted to the appropriate authentication formats:
+
+```bash
+curl -X POST http://localhost:3000/scan \
+  -H "Content-Type: application/json" \
+  -H "X-Javelin-Apikey: your-javelin-key" \
+  -d '{
+    "url": "https://api.example.com/mcp/",
+    "timeout": 60
+  }'
+```
+
 **Request Fields:**
 - `url` (required): MCP server URL or STDIO command
 - `timeout` (optional): Total scan timeout in seconds (1-3600, default: 60)
@@ -160,6 +174,9 @@ Scan a single MCP server for security vulnerabilities.
 - `detailed` (optional): Enable detailed analysis (default: false)
 - `format` (optional): Output format - "json", "table", "text", "raw" (default: "table")
 - `auth_headers` (optional): Authentication headers as key-value pairs
+
+**Special Headers:**
+- `X-Javelin-Apikey`: When included in request headers, automatically adds appropriate authentication for Javelin MCP servers
 
 **STDIO Examples:**
 ```json
