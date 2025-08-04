@@ -58,7 +58,7 @@ The server handles concurrent requests, so your team can run multiple scans simu
 
 Ramparts talks to MCP servers however they're set up. Most of the time that's HTTP/HTTPS for remote servers, but it also handles STDIO communication for local executables. You don't need to think about it much—Ramparts figures out the right transport based on your URL.
 
-So whether you're scanning `https://api.example.com/mcp/` or `stdio:///usr/local/bin/mcp-server`, it just works.
+So whether you're scanning `https://api.githubcopilot.com/mcp/` or `stdio:///usr/local/bin/mcp-server`, it just works.
 
 ## Output & Integration
 

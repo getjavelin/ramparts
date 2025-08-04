@@ -69,19 +69,19 @@ Options:
 
 **Basic scan:**
 ```bash
-ramparts scan https://api.example.com/mcp/
+ramparts scan https://api.githubcopilot.com/mcp/
 ```
 
 **Scan with authentication:**
 ```bash
-ramparts scan https://api.example.com/mcp/ \
+ramparts scan https://api.githubcopilot.com/mcp/ \
   --auth-headers "Authorization: Bearer $TOKEN" \
   --auth-headers "X-API-Key: $API_KEY"
 ```
 
 **Detailed JSON output:**
 ```bash
-ramparts scan https://api.example.com/mcp/ \
+ramparts scan https://api.githubcopilot.com/mcp/ \
   --output json \
   --detailed \
   --pretty
@@ -89,7 +89,7 @@ ramparts scan https://api.example.com/mcp/ \
 
 **Custom timeout and severity:**
 ```bash
-ramparts scan https://api.example.com/mcp/ \
+ramparts scan https://api.githubcopilot.com/mcp/ \
   --timeout 120 \
   --http-timeout 45 \
   --min-severity high
@@ -97,7 +97,7 @@ ramparts scan https://api.example.com/mcp/ \
 
 **Generate detailed report:**
 ```bash
-ramparts scan https://api.example.com/mcp/ --report
+ramparts scan https://api.githubcopilot.com/mcp/ --report
 ```
 
 **STDIO server scan:**

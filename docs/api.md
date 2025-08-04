@@ -118,7 +118,7 @@ Get interactive API documentation with examples.
       "description": "HTTP/HTTPS transport for remote MCP servers",
       "examples": [
         "http://localhost:3000",
-        "https://api.example.com/mcp"
+        "https://api.githubcopilot.com/mcp"
       ]
     },
     "stdio": {
@@ -141,7 +141,7 @@ Scan a single MCP server for security vulnerabilities.
 **Request Body:**
 ```json
 {
-  "url": "https://api.example.com/mcp/",
+  "url": "https://api.githubcopilot.com/mcp/",
   "timeout": 180,
   "http_timeout": 30,
   "detailed": true,
@@ -162,7 +162,7 @@ curl -X POST http://localhost:3000/scan \
   -H "Content-Type: application/json" \
   -H "X-Javelin-Apikey: your-javelin-key" \
   -d '{
-    "url": "https://api.example.com/mcp/",
+    "url": "https://api.githubcopilot.com/mcp/",
     "timeout": 60
   }'
 ```
@@ -200,20 +200,20 @@ curl -X POST http://localhost:3000/scan \
 ```json
 {
   "success": true,
-  "result": {
-    "url": "https://api.example.com/mcp/",
-    "status": "Success",
-    "timestamp": "2024-01-01T12:00:00.000Z",
-    "response_time_ms": 1234,
-    "server_info": {
-      "name": "Example MCP Server",
-      "version": "1.0.0",
-      "description": "Example server description",
-      "capabilities": ["tools", "resources", "prompts"],
-      "metadata": {
-        "transport": "http"
-      }
-    },
+      "result": {
+      "url": "https://api.githubcopilot.com/mcp/",
+      "status": "Success",
+      "timestamp": "2024-01-01T12:00:00.000Z",
+      "response_time_ms": 1234,
+      "server_info": {
+        "name": "github-mcp-server",
+        "version": "1.0.0",
+        "description": "GitHub Copilot MCP server for code assistance",
+        "capabilities": ["tools", "resources", "prompts"],
+        "metadata": {
+          "transport": "http"
+        }
+      },
     "tools": [
       {
         "name": "create_file",
@@ -288,7 +288,7 @@ Validate scan configuration without performing actual scan.
 **Request Body:**
 ```json
 {
-  "url": "https://api.example.com/mcp/",
+  "url": "https://api.githubcopilot.com/mcp/",
   "timeout": 60,
   "http_timeout": 30,
   "detailed": false,
@@ -348,7 +348,7 @@ curl -X POST http://localhost:3000/batch-scan \
   -H "Content-Type: application/json" \
   -H "X-Javelin-Apikey: your-javelin-key" \
   -d '{
-    "urls": ["https://api.example.com/mcp/"],
+    "urls": ["https://api.githubcopilot.com/mcp/"],
     "options": {"detailed": true}
   }'
 ```
@@ -421,7 +421,7 @@ curl -X GET http://localhost:3000/health
 curl -X POST http://localhost:3000/scan \
   -H "Content-Type: application/json" \
   -d '{
-    "url": "https://api.example.com/mcp/",
+    "url": "https://api.githubcopilot.com/mcp/",
     "timeout": 60,
     "detailed": true,
     "format": "json",
@@ -448,8 +448,8 @@ curl -X POST http://localhost:3000/batch-scan \
   -H "Content-Type: application/json" \
   -d '{
     "urls": [
-      "https://server1.example.com/mcp/",
-      "https://server2.example.com/mcp/"
+          "https://api.githubcopilot.com/mcp/",
+    "https://api.openai.com/mcp/"
     ],
     "options": {
       "url": "",
@@ -465,7 +465,7 @@ curl -X POST http://localhost:3000/batch-scan \
 curl -X POST http://localhost:3000/validate \
   -H "Content-Type: application/json" \
   -d '{
-    "url": "https://api.example.com/mcp/",
+    "url": "https://api.githubcopilot.com/mcp/",
     "timeout": 60,
     "http_timeout": 30
   }'
