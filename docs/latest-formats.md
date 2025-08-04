@@ -220,7 +220,7 @@ For HTTP-based MCP servers:
 ```json
 {
     "type": "http",
-    "url": "https://api.example.com/mcp/",
+    "url": "https://api.githubcopilot.com/mcp/",
     "gallery": true
 }
 ```

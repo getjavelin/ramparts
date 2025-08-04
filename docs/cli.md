@@ -54,6 +54,7 @@ Options:
                                   Can be specified multiple times
   -o, --output <FORMAT>           Output format [default: table]
                                   [possible values: json, raw, table, text]
+      --report                    Generate detailed markdown report (scan_YYYYMMDD_HHMMSS.md)
   -t, --timeout <SECONDS>         Request timeout in seconds [default: 60]
       --http-timeout <SECONDS>    HTTP timeout in seconds [default: 30]
       --detailed                  Enable detailed output
@@ -68,19 +69,19 @@ Options:
 
 **Basic scan:**
 ```bash
-ramparts scan https://api.example.com/mcp/
+ramparts scan https://api.githubcopilot.com/mcp/
 ```
 
 **Scan with authentication:**
 ```bash
-ramparts scan https://api.example.com/mcp/ \
+ramparts scan https://api.githubcopilot.com/mcp/ \
   --auth-headers "Authorization: Bearer $TOKEN" \
   --auth-headers "X-API-Key: $API_KEY"
 ```
 
 **Detailed JSON output:**
 ```bash
-ramparts scan https://api.example.com/mcp/ \
+ramparts scan https://api.githubcopilot.com/mcp/ \
   --output json \
   --detailed \
   --pretty
@@ -88,10 +89,15 @@ ramparts scan https://api.example.com/mcp/ \
 
 **Custom timeout and severity:**
 ```bash
-ramparts scan https://api.example.com/mcp/ \
+ramparts scan https://api.githubcopilot.com/mcp/ \
   --timeout 120 \
   --http-timeout 45 \
   --min-severity high
+```
+
+**Generate detailed report:**
+```bash
+ramparts scan https://api.githubcopilot.com/mcp/ --report
 ```
 
 **STDIO server scan:**
@@ -117,6 +123,7 @@ Options:
   -a, --auth-headers <HEADERS>    Authentication headers for MCP servers
   -o, --output <FORMAT>           Output format [default: table]
                                   [possible values: json, raw, table, text]
+      --report                    Generate detailed markdown report (scan_YYYYMMDD_HHMMSS.md)
       --config <FILE>             Custom configuration file path
   -h, --help                      Print help information
 ```
@@ -133,6 +140,11 @@ ramparts scan-config
 ramparts scan-config \
   --auth-headers "Authorization: Bearer $TOKEN" \
   --output json
+```
+
+**Generate report:**
+```bash
+ramparts scan-config --report
 ```
 
 ### Supported IDE Configuration Files
@@ -264,7 +276,7 @@ RAMPARTS_CONFIG=/path/to/config.yaml ramparts scan <url>
 ### API Keys
 You can use environment variables in auth headers:
 ```bash
-ramparts scan <url> --auth-headers "Authorization: Bearer $GITHUB_TOKEN"
+ramparts scan <url> --auth-headers "Authorization: Bearer $TOKEN"
 ramparts scan <url> --auth-headers "X-API-Key: $API_KEY"
 ```
 
