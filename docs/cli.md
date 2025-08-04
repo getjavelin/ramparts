@@ -156,7 +156,7 @@ Ramparts automatically discovers and reads MCP server configurations from:
 - **VS Code**: `~/.vscode/mcp.json`
 - **Claude Desktop**: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 - **Claude Code**: `~/.claude/settings.json`
-- **Gemini**: `~/.gemini/mcp_config.json`
+- **Gemini**: `~/.gemini/settings.json`
 - **Neovim**: `~/.config/nvim/mcp.json`
 - **Helix**: `~/.config/helix/mcp.json`
 - **Zed**: `~/.config/zed/mcp.json`
