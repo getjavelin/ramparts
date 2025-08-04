@@ -1445,18 +1445,19 @@ impl MCPConfigManager {
                         return Ok(Self::convert_claude_desktop_config(claude_config));
                     }
                 }
-                // Claude Code uses settings.json files in .claude directory  
-                else if (filename == "settings.json" || filename == "settings.local.json") 
-                && path.to_str().map_or(false, |s| s.contains(".claude")) {
-                    if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
-                        debug!("Parsed as Claude Code configuration format");
-                        return Ok(Self::convert_cursor_config(cursor_config));
-                    }
-                }
                 // Claude mcp.json files use Cursor format
                 else if filename == "mcp.json" {
                     if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
                         debug!("Parsed as Claude MCP configuration format");
+                        return Ok(Self::convert_cursor_config(cursor_config));
+                    }
+                }
+            }
+            Some(MCPClient::ClaudeCode) => {
+                // Claude Code uses settings.json files in .claude directory  
+                if filename == "settings.json" || filename == "settings.local.json" {
+                    if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
+                        debug!("Parsed as Claude Code configuration format");
                         return Ok(Self::convert_cursor_config(cursor_config));
                     }
                 }
