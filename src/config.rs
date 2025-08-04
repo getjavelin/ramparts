@@ -820,6 +820,12 @@ impl MCPConfigManager {
             MCPClient::Windsurf,
         ));
 
+        // Gemini CLI workspace configurations
+        paths.push((
+            current_dir.join(".gemini").join("settings.json"),
+            MCPClient::Gemini,
+        ));
+
         // Also check parent directories up to 3 levels for project root configurations
         let mut parent = current_dir.parent();
         let mut level = 0;
@@ -858,6 +864,12 @@ impl MCPConfigManager {
                 paths.push((
                     dir.join(".windsurf").join("mcp_config.json"),
                     MCPClient::Windsurf,
+                ));
+
+                // Gemini CLI project root configurations
+                paths.push((
+                    dir.join(".gemini").join("settings.json"),
+                    MCPClient::Gemini,
                 ));
 
                 break; // Stop at first project root found
