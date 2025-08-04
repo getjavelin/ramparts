@@ -356,7 +356,9 @@ curl -X POST http://localhost:3000/batch-scan \
 **Request Fields:**
 - `urls` (required): Array of MCP server URLs or STDIO commands
 - `options` (optional): Shared scan configuration. Note: the `url` field in options is ignored and overridden by each URL in the `urls` array
-- **Special Headers**: `X-Javelin-Apikey` header is supported for Javelin MCP server authentication
+
+**Special Headers:**
+- `X-Javelin-Apikey`: When included in request headers, automatically adds appropriate authentication for Javelin MCP servers
 
 **Response (200):**
 ```json
