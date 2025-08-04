@@ -143,6 +143,10 @@ ramparts scan-config --report
   ✓ claude IDE: /Users/user/Library/Application Support/Claude/claude_desktop_config.json
   ✓ cursor IDE: /Users/user/.cursor/mcp.json
 
+📁 vscode IDE config: /Users/user/.vscode/mcp.json (2 servers)
+  └─ github-copilot [HTTP]: https://api.githubcopilot.com/mcp/
+  └─ local-tools [STDIO]: stdio:python[local-mcp-server]
+
 🌍 MCP Servers Security Scan Summary
 ────────────────────────────────────────────────────────────
 📊 Scan Summary:
