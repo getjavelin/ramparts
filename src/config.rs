@@ -1261,8 +1261,8 @@ impl MCPConfigManager {
                     }
                 }
                 "managed-settings.json" => {
-                    // Claude Code enterprise managed settings
-                    if path.to_str().map_or(false, |s| s.contains("ClaudeCode") || s.contains("claude-code")) {
+                    // Claude Code enterprise managed settings (exact component matches)
+                    if components.iter().any(|c| c == "claudecode" || c == "claude-code") {
                         return Some(MCPClient::ClaudeCode);
                     }
                 }
