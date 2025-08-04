@@ -276,7 +276,7 @@ RAMPARTS_CONFIG=/path/to/config.yaml ramparts scan <url>
 ### API Keys
 You can use environment variables in auth headers:
 ```bash
-ramparts scan <url> --auth-headers "Authorization: Bearer $GITHUB_TOKEN"
+ramparts scan <url> --auth-headers "Authorization: Bearer $TOKEN"
 ramparts scan <url> --auth-headers "X-API-Key: $API_KEY"
 ```
 

@@ -67,10 +67,10 @@ cargo install ramparts
 
 **Scan an MCP server**
 ```bash
-ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $GITHUB_TOKEN"
+ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $TOKEN"
 
 # Generate detailed markdown report (scan_YYYYMMDD_HHMMSS.md)
-ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $GITHUB_TOKEN" --report
+ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $TOKEN" --report
 ```
 
 **Scan your IDE's MCP configurations**
