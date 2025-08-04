@@ -1225,7 +1225,40 @@ impl MCPConfigManager {
             .map(str::to_lowercase)
             .collect();
 
-        // Check path components in order of specificity to avoid false matches
+        // Check specific file names FIRST for most precise detection  
+        if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+            match filename {
+                "claude_desktop_config.json" => return Some(MCPClient::Claude),
+                "settings.json" => {
+                    // Check if it's in a Claude Code directory
+                    if components.iter().any(|c| c.contains(".claude")) {
+                        return Some(MCPClient::ClaudeCode);
+                    }
+                    // Check if it's in a VS Code directory
+                    if components
+                        .iter()
+                        .any(|c| c.contains("code") || c.contains("vscode"))
+                    {
+                        return Some(MCPClient::VSCode);
+                    }
+                }
+                "settings.local.json" => {
+                    // Claude Code local settings
+                    if components.iter().any(|c| c.contains(".claude")) {
+                        return Some(MCPClient::ClaudeCode);
+                    }
+                }
+                "managed-settings.json" => {
+                    // Claude Code enterprise managed settings
+                    if path.to_str().map_or(false, |s| s.contains("ClaudeCode") || s.contains("claude-code")) {
+                        return Some(MCPClient::ClaudeCode);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Check path components for broader matching
         for component in &components {
             match component.as_str() {
                 // Exact matches first
@@ -1251,33 +1284,6 @@ impl MCPConfigManager {
                 }
 
                 _ => {} // Keep looking
-            }
-        }
-
-        // Check specific file names for client detection
-        if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-            match filename {
-                "claude_desktop_config.json" => return Some(MCPClient::Claude),
-                "settings.json" => {
-                    // Check if it's in a Claude Code directory
-                    if components.iter().any(|c| c.contains(".claude")) {
-                        return Some(MCPClient::ClaudeCode);
-                    }
-                    // Check if it's in a VS Code directory
-                    if components
-                        .iter()
-                        .any(|c| c.contains("code") || c.contains("vscode"))
-                    {
-                        return Some(MCPClient::VSCode);
-                    }
-                }
-                "settings.local.json" => {
-                    // Claude Code local settings
-                    if components.iter().any(|c| c.contains(".claude")) {
-                        return Some(MCPClient::ClaudeCode);
-                    }
-                }
-                _ => {}
             }
         }
 
