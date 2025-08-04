@@ -848,15 +848,15 @@ impl MCPConfigManager {
                 // Cursor project root configurations
                 paths.push((dir.join(".cursor").join("mcp.json"), MCPClient::Cursor));
 
-                            // Claude Code project root configurations
-            paths.push((
-                dir.join(".claude").join("settings.json"),
-                MCPClient::ClaudeCode,
-            ));
-            paths.push((
-                dir.join(".claude").join("settings.local.json"),
-                MCPClient::ClaudeCode,
-            ));
+                // Claude Code project root configurations
+                paths.push((
+                    dir.join(".claude").join("settings.json"),
+                    MCPClient::ClaudeCode,
+                ));
+                paths.push((
+                    dir.join(".claude").join("settings.local.json"),
+                    MCPClient::ClaudeCode,
+                ));
                 paths.push((dir.join(".claude").join("mcp.json"), MCPClient::Claude));
 
                 // Windsurf project root configurations
@@ -867,10 +867,7 @@ impl MCPConfigManager {
                 ));
 
                 // Gemini CLI project root configurations
-                paths.push((
-                    dir.join(".gemini").join("settings.json"),
-                    MCPClient::Gemini,
-                ));
+                paths.push((dir.join(".gemini").join("settings.json"), MCPClient::Gemini));
 
                 break; // Stop at first project root found
             }
@@ -1015,7 +1012,9 @@ impl MCPConfigManager {
                 // Claude Code enterprise managed settings
                 if let Ok(program_data) = env::var("PROGRAMDATA") {
                     paths.push((
-                        PathBuf::from(program_data).join("ClaudeCode").join("managed-settings.json"),
+                        PathBuf::from(program_data)
+                            .join("ClaudeCode")
+                            .join("managed-settings.json"),
                         MCPClient::ClaudeCode,
                     ));
                 }
@@ -1239,7 +1238,7 @@ impl MCPConfigManager {
             .map(str::to_lowercase)
             .collect();
 
-        // Check specific file names FIRST for most precise detection  
+        // Check specific file names FIRST for most precise detection
         if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
             match filename {
                 "claude_desktop_config.json" => return Some(MCPClient::Claude),
@@ -1264,7 +1263,10 @@ impl MCPConfigManager {
                 }
                 "managed-settings.json" => {
                     // Claude Code enterprise managed settings (exact component matches)
-                    if components.iter().any(|c| c == "claudecode" || c == "claude-code") {
+                    if components
+                        .iter()
+                        .any(|c| c == "claudecode" || c == "claude-code")
+                    {
                         return Some(MCPClient::ClaudeCode);
                     }
                 }
@@ -1289,12 +1291,14 @@ impl MCPConfigManager {
 
                 // Exact path component matches (avoiding false positives)
                 "codeium" | ".codeium" => return Some(MCPClient::Windsurf), // Codeium directory means Windsurf context
-                
+
                 // Partial matches with disambiguation for compound paths
                 c if c.starts_with("cursor") && !c.contains("vscode") => {
                     return Some(MCPClient::Cursor)
                 }
-                c if c == "microsoft vs code" || (c.contains("microsoft") && c.contains("code")) => {
+                c if c == "microsoft vs code"
+                    || (c.contains("microsoft") && c.contains("code")) =>
+                {
                     return Some(MCPClient::VSCode)
                 }
 
@@ -1445,7 +1449,9 @@ impl MCPConfigManager {
         // Try parsing based on client type and file name
         match client {
             Some(MCPClient::Cursor) => {
-                if let Some(config) = Self::try_parse_cursor_compatible_config(&content, "Cursor MCP") {
+                if let Some(config) =
+                    Self::try_parse_cursor_compatible_config(&content, "Cursor MCP")
+                {
                     return Ok(config);
                 }
             }
@@ -1460,15 +1466,19 @@ impl MCPConfigManager {
                 }
                 // Claude mcp.json files use Cursor format
                 else if filename == "mcp.json" {
-                    if let Some(config) = Self::try_parse_cursor_compatible_config(&content, "Claude MCP") {
+                    if let Some(config) =
+                        Self::try_parse_cursor_compatible_config(&content, "Claude MCP")
+                    {
                         return Ok(config);
                     }
                 }
             }
             Some(MCPClient::ClaudeCode) => {
-                // Claude Code uses settings.json files in .claude directory  
+                // Claude Code uses settings.json files in .claude directory
                 if filename == "settings.json" || filename == "settings.local.json" {
-                    if let Some(config) = Self::try_parse_cursor_compatible_config(&content, "Claude Code") {
+                    if let Some(config) =
+                        Self::try_parse_cursor_compatible_config(&content, "Claude Code")
+                    {
                         return Ok(config);
                     }
                 }
@@ -1476,7 +1486,9 @@ impl MCPConfigManager {
             Some(MCPClient::Windsurf) | Some(MCPClient::Gemini) => {
                 // Windsurf and Gemini use Cursor-compatible format
                 let client_name = format!("{} MCP", client.as_ref().unwrap().name());
-                if let Some(config) = Self::try_parse_cursor_compatible_config(&content, &client_name) {
+                if let Some(config) =
+                    Self::try_parse_cursor_compatible_config(&content, &client_name)
+                {
                     return Ok(config);
                 }
             }
@@ -1505,7 +1517,9 @@ impl MCPConfigManager {
             Ok(config) => Ok(config),
             Err(e) => {
                 // Try fallback parsing for different formats
-                if let Some(config) = Self::try_parse_cursor_compatible_config(&content, "Cursor MCP (fallback)") {
+                if let Some(config) =
+                    Self::try_parse_cursor_compatible_config(&content, "Cursor MCP (fallback)")
+                {
                     Ok(config)
                 } else if let Ok(claude_config) =
                     serde_json::from_str::<ClaudeDesktopConfig>(&content)
