@@ -152,11 +152,11 @@ ramparts scan-config --report
 Ramparts automatically discovers and reads MCP server configurations from:
 
 - **Cursor**: `~/.cursor/mcp.json`
-- **Windsurf**: `~/.codium/windsurf/mcp_config.json`
+- **Windsurf**: `~/.codeium/windsurf/mcp_config.json`
 - **VS Code**: `~/.vscode/mcp.json`
 - **Claude Desktop**: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
-- **Claude Code**: `~/.claude-code/mcp.json`
-- **Gemini**: `~/.gemini/mcp_config.json`
+- **Claude Code**: `~/.claude/settings.json`
+- **Gemini CLI**: `~/.gemini/settings.json`, `.gemini/settings.json` (workspace)
 - **Neovim**: `~/.config/nvim/mcp.json`
 - **Helix**: `~/.config/helix/mcp.json`
 - **Zed**: `~/.config/zed/mcp.json`
