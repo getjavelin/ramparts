@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -1277,40 +1276,29 @@ impl MCPConfigManager {
                         continue;
                     }
 
-                    // Only display configs that have servers
-                    let server_count = config.servers.as_ref().map_or(0, Vec::len);
-                    if server_count > 0 {
-                        println!(
-                            "📁 {} IDE config: {} ({} servers)",
-                            client.name().cyan().bold(),
-                            path.display(),
-                            server_count
-                        );
+                    // Display what was found in this config file
+                    let server_count = config.servers.as_ref().map(|s| s.len()).unwrap_or(0);
+                    println!(
+                        "📁 {} IDE config: {} ({} servers)",
+                        client.name(),
+                        path.display(),
+                        server_count
+                    );
 
-                        if let Some(ref servers) = config.servers {
-                            for server in servers {
-                                let server_name = server.name.as_deref().unwrap_or("unnamed");
-                                let (server_type, display_url) = if server.command.is_some() {
-                                    let cmd = server.command.as_deref().unwrap_or("unknown");
-                                    let args = server.args.as_ref()
-                                        .map(|a| a.join(" "))
-                                        .unwrap_or_default();
-                                    let display = if args.is_empty() { 
-                                        format!("({})", cmd) 
-                                    } else { 
-                                        format!("({} {})", cmd, args) 
-                                    };
-                                    ("stdio".to_string(), display)
-                                } else {
-                                    ("http".to_string(), server.url.as_deref().unwrap_or("unknown").to_string())
-                                };
-                                println!(
-                                    "  └─ {} [{}]: {}",
-                                    server_name,
-                                    server_type,
-                                    display_url
-                                );
-                            }
+                    if let Some(ref servers) = config.servers {
+                        for server in servers {
+                            let server_name = server.name.as_deref().unwrap_or("unnamed");
+                            let server_type = if server.command.is_some() {
+                                "STDIO"
+                            } else {
+                                "HTTP"
+                            };
+                            println!(
+                                "  └─ {} [{}]: {}",
+                                server_name,
+                                server_type,
+                                server.to_display_url()
+                            );
                         }
                     }
 
