@@ -351,7 +351,7 @@ pub struct ClaudeServerConfig {
     pub headers: Option<HashMap<String, String>>,
 }
 
-/// Claude Code MCP configuration format (extracted from ~/.claude.json)
+/// Claude Code MCP configuration format (extracted from ~/.claude/settings.json)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClaudeCodeConfig {
     /// MCP servers configuration
@@ -797,7 +797,14 @@ impl MCPConfigManager {
         ));
 
         // Claude Code workspace configurations
-        paths.push((current_dir.join(".claude.json"), MCPClient::ClaudeCode));
+        paths.push((
+            current_dir.join(".claude").join("settings.json"),
+            MCPClient::ClaudeCode,
+        ));
+        paths.push((
+            current_dir.join(".claude").join("settings.local.json"),
+            MCPClient::ClaudeCode,
+        ));
         paths.push((
             current_dir.join(".claude").join("mcp.json"),
             MCPClient::Claude,
@@ -835,8 +842,15 @@ impl MCPConfigManager {
                 // Cursor project root configurations
                 paths.push((dir.join(".cursor").join("mcp.json"), MCPClient::Cursor));
 
-                // Claude Code project root configurations
-                paths.push((dir.join(".claude.json"), MCPClient::ClaudeCode));
+                            // Claude Code project root configurations
+            paths.push((
+                dir.join(".claude").join("settings.json"),
+                MCPClient::ClaudeCode,
+            ));
+            paths.push((
+                dir.join(".claude").join("settings.local.json"),
+                MCPClient::ClaudeCode,
+            ));
                 paths.push((dir.join(".claude").join("mcp.json"), MCPClient::Claude));
 
                 // Windsurf project root configurations
@@ -937,7 +951,10 @@ impl MCPConfigManager {
             paths.push((home_dir.join(".cursor").join("mcp.json"), MCPClient::Cursor));
             paths.push((home_dir.join(".vscode").join("mcp.json"), MCPClient::VSCode));
             paths.push((home_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
-            paths.push((home_dir.join(".claude.json"), MCPClient::ClaudeCode));
+            paths.push((
+                home_dir.join(".claude").join("settings.json"),
+                MCPClient::ClaudeCode,
+            ));
             paths.push((
                 home_dir.join(".gemini").join("settings.json"),
                 MCPClient::Gemini,
@@ -981,6 +998,12 @@ impl MCPConfigManager {
                         .join("Windsurf")
                         .join("mcp_config.json"),
                     MCPClient::Windsurf,
+                ));
+
+                // Claude Code enterprise managed settings
+                paths.push((
+                    PathBuf::from("C:\\ProgramData\\ClaudeCode\\managed-settings.json"),
+                    MCPClient::ClaudeCode,
                 ));
             }
         }
@@ -1061,10 +1084,12 @@ impl MCPConfigManager {
                 MCPClient::Claude,
             ));
 
-            // Claude Code - multiple scopes and file formats
-            paths.push((home_dir.join(".claude.json"), MCPClient::ClaudeCode)); // User/Global scope
+            // Claude Code - User/Global scope
+            paths.push((
+                home_dir.join(".claude").join("settings.json"),
+                MCPClient::ClaudeCode,
+            ));
             paths.push((home_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
-            paths.push((home_dir.join(".claude.json"), MCPClient::ClaudeCode));
             paths.push((
                 home_dir.join(".gemini").join("settings.json"),
                 MCPClient::Gemini,
@@ -1077,6 +1102,12 @@ impl MCPConfigManager {
             paths.push((
                 app_support.join("Zencoder").join("mcp.json"),
                 MCPClient::Zencoder,
+            ));
+
+            // Claude Code enterprise managed settings
+            paths.push((
+                PathBuf::from("/Library/Application Support/ClaudeCode/managed-settings.json"),
+                MCPClient::ClaudeCode,
             ));
 
             // Unix-style configs in home directory
@@ -1132,7 +1163,11 @@ impl MCPConfigManager {
 
             // Claude Desktop
             paths.push((home_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
-            paths.push((home_dir.join(".claude.json"), MCPClient::ClaudeCode));
+            // Claude Code
+            paths.push((
+                home_dir.join(".claude").join("settings.json"),
+                MCPClient::ClaudeCode,
+            ));
             paths.push((
                 home_dir.join(".gemini").join("settings.json"),
                 MCPClient::Gemini,
@@ -1152,8 +1187,7 @@ impl MCPConfigManager {
                 MCPClient::Claude,
             ));
 
-            // Claude Code - multiple scopes and formats
-            paths.push((home_dir.join(".claude.json"), MCPClient::ClaudeCode)); // User/Global scope
+            // Claude Code - User/Global scope already added above
             paths.push((home_dir.join(".claude").join("mcp.json"), MCPClient::Claude));
 
             // Neovim
@@ -1169,6 +1203,12 @@ impl MCPConfigManager {
             paths.push((
                 config_dir.join("zencoder").join("mcp.json"),
                 MCPClient::Zencoder,
+            ));
+
+            // Claude Code enterprise managed settings
+            paths.push((
+                PathBuf::from("/etc/claude-code/managed-settings.json"),
+                MCPClient::ClaudeCode,
             ));
         }
 
@@ -1191,7 +1231,7 @@ impl MCPConfigManager {
                 // Exact matches first
                 "cursor" | ".cursor" => return Some(MCPClient::Cursor),
                 "windsurf" => return Some(MCPClient::Windsurf),
-                ".claude.json" => return Some(MCPClient::ClaudeCode),
+
                 "claude" | ".claude" => return Some(MCPClient::Claude),
                 "gemini" | ".gemini" => return Some(MCPClient::Gemini),
                 "zed" => return Some(MCPClient::Zed),
@@ -1219,12 +1259,22 @@ impl MCPConfigManager {
             match filename {
                 "claude_desktop_config.json" => return Some(MCPClient::Claude),
                 "settings.json" => {
+                    // Check if it's in a Claude Code directory
+                    if components.iter().any(|c| c.contains(".claude")) {
+                        return Some(MCPClient::ClaudeCode);
+                    }
                     // Check if it's in a VS Code directory
                     if components
                         .iter()
                         .any(|c| c.contains("code") || c.contains("vscode"))
                     {
                         return Some(MCPClient::VSCode);
+                    }
+                }
+                "settings.local.json" => {
+                    // Claude Code local settings
+                    if components.iter().any(|c| c.contains(".claude")) {
+                        return Some(MCPClient::ClaudeCode);
                     }
                 }
                 _ => {}
@@ -1377,8 +1427,9 @@ impl MCPConfigManager {
                         return Ok(Self::convert_claude_desktop_config(claude_config));
                     }
                 }
-                // Claude Code uses .claude.json
-                else if filename == ".claude.json" {
+                // Claude Code uses settings.json files in .claude directory  
+                else if (filename == "settings.json" || filename == "settings.local.json") 
+                && path.to_str().map_or(false, |s| s.contains(".claude")) {
                     if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
                         debug!("Parsed as Claude Code configuration format");
                         return Ok(Self::convert_cursor_config(cursor_config));
@@ -1724,7 +1775,7 @@ impl MCPConfigManager {
         Ok(claude_config.into())
     }
 
-    /// Parse Claude Code MCP config format (from ~/.claude.json)
+    /// Parse Claude Code MCP config format (from ~/.claude/settings.json)
     #[allow(dead_code)]
     fn parse_claude_code_config(content: &str) -> Result<MCPConfig> {
         let claude_code_config: ClaudeCodeConfig = serde_json::from_str(content)?;
@@ -3048,7 +3099,11 @@ mod tests {
     fn test_client_path_detection_claude_code() {
         // Test Claude Code vs Claude Desktop path detection
         assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.claude.json"),
+            MCPConfigManager::detect_client("/home/user/.claude/settings.json"),
+            Some(MCPClient::ClaudeCode)
+        );
+        assert_eq!(
+            MCPConfigManager::detect_client("/home/user/.claude/settings.local.json"),
             Some(MCPClient::ClaudeCode)
         );
         assert_eq!(
@@ -3186,7 +3241,7 @@ mod tests {
 
         // Test combined with other path detections
         assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.claude.json"),
+            MCPConfigManager::detect_client("/home/user/.claude/settings.json"),
             Some(MCPClient::ClaudeCode)
         );
         assert_eq!(

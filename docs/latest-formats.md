@@ -39,8 +39,9 @@ Ramparts automatically discovers and parses MCP configurations from the followin
 - `%APPDATA%\Claude\claude_desktop_config.json` (Windows)
 
 ### Claude Code
-- `~/.claude.json`
-- `~/.claude/mcp.json`
+- `~/.claude/settings.json` (User/Global)
+- `.claude/settings.json` (Project shared)
+- `.claude/settings.local.json` (Project personal)
 
 ### Zed
 - `~/Library/Application Support/Zed/mcp.json` (macOS)
