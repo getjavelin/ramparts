@@ -111,13 +111,24 @@ Git Commit: 9d0c37c
 YARA Scan Results
 ================================================================================
 ⚠️ PRE-SCAN - WARNING
-  Context: Pre-scan completed: 2 rules executed on 74 items
-  Items scanned: 74
-  Security matches: 1
+  Context: Pre-scan completed: 5 rules executed on 83 items
+  Items scanned: 83
+  Security matches: 2
+  Rules executed: secrets_leakage:*, command_injection:*, path_traversal:*, sql_injection:*, cross_origin_escalation:*
+  Security issues detected: secrets_leakage:EnvironmentVariableLeakage
+
+🔍 Detailed Results:
+⚠️ get_secret_scanning_alert (tool)
+  Rule: EnvironmentVariableLeakage (MEDIUM)
+  Context: Sensitive environment variable pattern detected in tool
+
+⚠️ list_secret_scanning_alerts (tool)  
+  Rule: EnvironmentVariableLeakage (MEDIUM)
+  Context: Sensitive environment variable pattern detected in tool
 
 Summary:
-  • Tools scanned: 74
-  • Warnings found: 2 tools with 2 total warnings
+  • Tools scanned: 83
+  • Security matches: 2 medium-severity findings
 ================================================================================
 ```
 
