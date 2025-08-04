@@ -342,9 +342,21 @@ Scan multiple MCP servers with shared configuration.
 }
 ```
 
+**Javelin Integration:**
+```bash
+curl -X POST http://localhost:3000/batch-scan \
+  -H "Content-Type: application/json" \
+  -H "X-Javelin-Apikey: your-javelin-key" \
+  -d '{
+    "urls": ["https://api.example.com/mcp/"],
+    "options": {"detailed": true}
+  }'
+```
+
 **Request Fields:**
 - `urls` (required): Array of MCP server URLs or STDIO commands
 - `options` (optional): Shared scan configuration. Note: the `url` field in options is ignored and overridden by each URL in the `urls` array
+- **Special Headers**: `X-Javelin-Apikey` header is supported for Javelin MCP server authentication
 
 **Response (200):**
 ```json
