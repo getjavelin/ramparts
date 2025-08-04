@@ -1104,6 +1104,10 @@ impl MCPConfigManager {
 
             // Windsurf
             paths.push((
+                home_dir.join(".windsurf").join("mcp.json"),
+                MCPClient::Windsurf,
+            ));
+            paths.push((
                 home_dir
                     .join(".codeium")
                     .join("windsurf")
@@ -1374,11 +1378,26 @@ impl MCPConfigManager {
                     }
                 }
                 // Claude Code uses .claude.json
-                if filename == ".claude.json" {
+                else if filename == ".claude.json" {
                     if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
                         debug!("Parsed as Claude Code configuration format");
                         return Ok(Self::convert_cursor_config(cursor_config));
                     }
+                }
+                // Claude mcp.json files use Cursor format
+                else if filename == "mcp.json" {
+                    if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
+                        debug!("Parsed as Claude MCP configuration format");
+                        return Ok(Self::convert_cursor_config(cursor_config));
+                    }
+                }
+            }
+            Some(MCPClient::Windsurf) | Some(MCPClient::Gemini) => {
+                // Windsurf and Gemini use Cursor-compatible format
+                if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
+                    let client_name = client.as_ref().unwrap().name();
+                    debug!("Parsed as {} MCP configuration format", client_name);
+                    return Ok(Self::convert_cursor_config(cursor_config));
                 }
             }
             Some(MCPClient::VSCode) => {
@@ -1439,10 +1458,21 @@ impl MCPConfigManager {
             mcp_servers
                 .into_iter()
                 .filter_map(|(name, server_config)| {
-                    // Use explicit URL first, then build from transport config
-                    let url = if let Some(url) = server_config.url {
-                        url
+                    // Use explicit URL first, then build from transport config, then handle STDIO servers
+                    if let Some(url) = server_config.url {
+                        // HTTP server with explicit URL
+                        Some(MCPServerConfig {
+                            name: Some(name),
+                            url: Some(url),
+                            command: None,
+                            args: None,
+                            env: None,
+                            description: server_config.description,
+                            auth_headers: server_config.headers,
+                            options: None,
+                        })
                     } else if let Some(transport) = &server_config.transport {
+                        // HTTP server with transport configuration
                         let host = transport.host.as_deref().unwrap_or("localhost");
                         let port = transport.port.unwrap_or(8080);
                         #[allow(clippy::match_same_arms)]
@@ -1451,22 +1481,34 @@ impl MCPConfigManager {
                             Some("https") => "https",
                             _ => "http",
                         };
-                        format!("{scheme}://{host}:{port}")
+                        let url = format!("{scheme}://{host}:{port}");
+
+                        Some(MCPServerConfig {
+                            name: Some(name),
+                            url: Some(url),
+                            command: None,
+                            args: None,
+                            env: None,
+                            description: server_config.description,
+                            auth_headers: server_config.headers,
+                            options: None,
+                        })
+                    } else if server_config.command.is_some() {
+                        // STDIO server with command configuration
+                        Some(MCPServerConfig {
+                            name: Some(name.clone()),
+                            url: None, // STDIO servers don't use URLs
+                            command: server_config.command,
+                            args: server_config.args,
+                            env: server_config.env,
+                            description: server_config.description,
+                            auth_headers: server_config.headers,
+                            options: None,
+                        })
                     } else {
                         // Skip servers without proper configuration
-                        return None;
-                    };
-
-                    Some(MCPServerConfig {
-                        name: Some(name),
-                        url: Some(url),
-                        command: None,
-                        args: None,
-                        env: None,
-                        description: server_config.description,
-                        auth_headers: server_config.headers, // Now supports auth headers at server level
-                        options: None, // Could be extended to convert any server-specific options
-                    })
+                        None
+                    }
                 })
                 .collect()
         });
@@ -1528,23 +1570,23 @@ impl MCPConfigManager {
             mcp_servers
                 .into_iter()
                 .filter_map(|(name, server_config)| {
-                    // Use explicit URL if provided, otherwise build from command
-                    let url = if let Some(url) = server_config.url {
-                        url
-                    } else if server_config.command.is_some() {
-                        // For command-based servers, create a placeholder URL
-                        format!("stdio://{name}")
-                    } else {
-                        // Skip servers without explicit configuration
+                    let is_http = server_config.url.is_some();
+                    let is_stdio = server_config.command.is_some();
+
+                    if !is_http && !is_stdio {
                         return None;
-                    };
+                    }
 
                     Some(MCPServerConfig {
                         name: Some(name),
-                        url: Some(url),
-                        command: None,
-                        args: None,
-                        env: None,
+                        url: if is_http { server_config.url } else { None },
+                        command: if is_stdio {
+                            server_config.command
+                        } else {
+                            None
+                        },
+                        args: if is_stdio { server_config.args } else { None },
+                        env: server_config.env,
                         description: None, // VS Code settings don't typically include descriptions
                         auth_headers: None,
                         options: None,
@@ -1566,23 +1608,23 @@ impl MCPConfigManager {
             servers
                 .into_iter()
                 .filter_map(|(name, server_config)| {
-                    // Use explicit URL if provided, otherwise build from command
-                    let url = if let Some(url) = server_config.url {
-                        url
-                    } else if server_config.command.is_some() {
-                        // For command-based servers, create a placeholder URL
-                        format!("stdio://{name}")
-                    } else {
-                        // Skip servers without explicit configuration
+                    let is_http = server_config.url.is_some();
+                    let is_stdio = server_config.command.is_some();
+
+                    if !is_http && !is_stdio {
                         return None;
-                    };
+                    }
 
                     Some(MCPServerConfig {
                         name: Some(name),
-                        url: Some(url),
-                        command: None,
-                        args: None,
-                        env: None,
+                        url: if is_http { server_config.url } else { None },
+                        command: if is_stdio {
+                            server_config.command
+                        } else {
+                            None
+                        },
+                        args: if is_stdio { server_config.args } else { None },
+                        env: server_config.env,
                         description: None, // VS Code MCP format doesn't include descriptions
                         auth_headers: server_config.headers,
                         options: None,
