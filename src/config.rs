@@ -1205,7 +1205,7 @@ impl MCPConfigManager {
                     return Some(MCPClient::Cursor)
                 }
                 c if c.contains("windsurf") => return Some(MCPClient::Windsurf),
-                c if c.contains("codium") => return Some(MCPClient::Windsurf), // Codium usually means Windsurf context
+                c if c.contains("codeium") => return Some(MCPClient::Windsurf), // Codeium usually means Windsurf context
                 c if c.contains("microsoft") && c.contains("code") => {
                     return Some(MCPClient::VSCode)
                 }
@@ -2322,7 +2322,7 @@ mod tests {
             Some(MCPClient::Cursor)
         );
         assert_eq!(
-            MCPConfigManager::detect_client("/home/user/.codium/windsurf/mcp_config.json"),
+            MCPConfigManager::detect_client("/home/user/.codeium/windsurf/mcp_config.json"),
             Some(MCPClient::Windsurf)
         );
         assert_eq!(

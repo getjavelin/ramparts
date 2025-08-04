@@ -111,7 +111,7 @@ enum Commands {
         report: bool,
     },
 
-    /// Scan MCP servers from IDE configuration files (~/.cursor/mcp.json, ~/.`codium/windsurf/mcp_config.json`)
+    /// Scan MCP servers from IDE configuration files (~/.cursor/mcp.json, ~/.codeium/windsurf/mcp_config.json)
     ScanConfig {
         /// Authentication headers for the MCP servers (format: "Header: Value")
         #[arg(long, value_delimiter = ',')]

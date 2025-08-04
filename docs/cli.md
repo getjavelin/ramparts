@@ -152,7 +152,7 @@ ramparts scan-config --report
 Ramparts automatically discovers and reads MCP server configurations from:
 
 - **Cursor**: `~/.cursor/mcp.json`
-- **Windsurf**: `~/.codium/windsurf/mcp_config.json`
+- **Windsurf**: `~/.codeium/windsurf/mcp_config.json`
 - **VS Code**: `~/.vscode/mcp.json`
 - **Claude Desktop**: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 - **Claude Code**: `~/.claude-code/mcp.json`
