@@ -1392,17 +1392,11 @@ impl MCPConfigManager {
                     }
                 }
             }
-            Some(MCPClient::Windsurf) => {
-                // Windsurf uses Cursor-compatible format
+            Some(MCPClient::Windsurf) | Some(MCPClient::Gemini) => {
+                // Windsurf and Gemini use Cursor-compatible format
                 if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
-                    debug!("Parsed as Windsurf MCP configuration format");
-                    return Ok(Self::convert_cursor_config(cursor_config));
-                }
-            }
-            Some(MCPClient::Gemini) => {
-                // Gemini uses Cursor-compatible format
-                if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
-                    debug!("Parsed as Gemini MCP configuration format");
+                    let client_name = client.as_ref().unwrap().name();
+                    debug!("Parsed as {} MCP configuration format", client_name);
                     return Ok(Self::convert_cursor_config(cursor_config));
                 }
             }
@@ -1576,34 +1570,27 @@ impl MCPConfigManager {
             mcp_servers
                 .into_iter()
                 .filter_map(|(name, server_config)| {
-                    if let Some(url) = server_config.url {
-                        // HTTP server with explicit URL
-                        Some(MCPServerConfig {
-                            name: Some(name),
-                            url: Some(url),
-                            command: None,
-                            args: None,
-                            env: server_config.env,
-                            description: None, // VS Code settings don't typically include descriptions
-                            auth_headers: None,
-                            options: None,
-                        })
-                    } else if server_config.command.is_some() {
-                        // STDIO server with command configuration
-                        Some(MCPServerConfig {
-                            name: Some(name),
-                            url: None, // STDIO servers don't use URLs
-                            command: server_config.command,
-                            args: server_config.args,
-                            env: server_config.env,
-                            description: None, // VS Code settings don't typically include descriptions
-                            auth_headers: None,
-                            options: None,
-                        })
-                    } else {
-                        // Skip servers without proper configuration
-                        None
+                    let is_http = server_config.url.is_some();
+                    let is_stdio = server_config.command.is_some();
+
+                    if !is_http && !is_stdio {
+                        return None;
                     }
+
+                    Some(MCPServerConfig {
+                        name: Some(name),
+                        url: if is_http { server_config.url } else { None },
+                        command: if is_stdio {
+                            server_config.command
+                        } else {
+                            None
+                        },
+                        args: if is_stdio { server_config.args } else { None },
+                        env: server_config.env,
+                        description: None, // VS Code settings don't typically include descriptions
+                        auth_headers: None,
+                        options: None,
+                    })
                 })
                 .collect()
         });
@@ -1621,34 +1608,27 @@ impl MCPConfigManager {
             servers
                 .into_iter()
                 .filter_map(|(name, server_config)| {
-                    if let Some(url) = server_config.url {
-                        // HTTP server with explicit URL
-                        Some(MCPServerConfig {
-                            name: Some(name),
-                            url: Some(url),
-                            command: None,
-                            args: None,
-                            env: server_config.env,
-                            description: None, // VS Code MCP format doesn't include descriptions
-                            auth_headers: server_config.headers,
-                            options: None,
-                        })
-                    } else if server_config.command.is_some() {
-                        // STDIO server with command configuration
-                        Some(MCPServerConfig {
-                            name: Some(name),
-                            url: None, // STDIO servers don't use URLs
-                            command: server_config.command,
-                            args: server_config.args,
-                            env: server_config.env,
-                            description: None, // VS Code MCP format doesn't include descriptions
-                            auth_headers: server_config.headers,
-                            options: None,
-                        })
-                    } else {
-                        // Skip servers without proper configuration
-                        None
+                    let is_http = server_config.url.is_some();
+                    let is_stdio = server_config.command.is_some();
+
+                    if !is_http && !is_stdio {
+                        return None;
                     }
+
+                    Some(MCPServerConfig {
+                        name: Some(name),
+                        url: if is_http { server_config.url } else { None },
+                        command: if is_stdio {
+                            server_config.command
+                        } else {
+                            None
+                        },
+                        args: if is_stdio { server_config.args } else { None },
+                        env: server_config.env,
+                        description: None, // VS Code MCP format doesn't include descriptions
+                        auth_headers: server_config.headers,
+                        options: None,
+                    })
                 })
                 .collect()
         });
