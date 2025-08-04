@@ -1242,21 +1242,21 @@ impl MCPConfigManager {
             match filename {
                 "claude_desktop_config.json" => return Some(MCPClient::Claude),
                 "settings.json" => {
-                    // Check if it's in a Claude Code directory
-                    if components.iter().any(|c| c.contains(".claude")) {
+                    // Check if it's in a Claude Code directory (exact match)
+                    if components.iter().any(|c| c == ".claude") {
                         return Some(MCPClient::ClaudeCode);
                     }
-                    // Check if it's in a VS Code directory
+                    // Check if it's in a VS Code directory (exact matches)
                     if components
                         .iter()
-                        .any(|c| c.contains("code") || c.contains("vscode"))
+                        .any(|c| c == "code" || c == "vscode" || c == ".vscode")
                     {
                         return Some(MCPClient::VSCode);
                     }
                 }
                 "settings.local.json" => {
-                    // Claude Code local settings
-                    if components.iter().any(|c| c.contains(".claude")) {
+                    // Claude Code local settings (exact match)
+                    if components.iter().any(|c| c == ".claude") {
                         return Some(MCPClient::ClaudeCode);
                     }
                 }
@@ -1285,13 +1285,14 @@ impl MCPConfigManager {
                 "nvim" | "neovim" => return Some(MCPClient::Neovim),
                 "code" | "vscode" | ".vscode" => return Some(MCPClient::VSCode),
 
-                // Partial matches with disambiguation
-                c if c.contains("cursor") && !c.contains("vscode") => {
+                // Exact path component matches (avoiding false positives)
+                "codeium" | ".codeium" => return Some(MCPClient::Windsurf), // Codeium directory means Windsurf context
+                
+                // Partial matches with disambiguation for compound paths
+                c if c.starts_with("cursor") && !c.contains("vscode") => {
                     return Some(MCPClient::Cursor)
                 }
-                c if c.contains("windsurf") => return Some(MCPClient::Windsurf),
-                c if c.contains("codeium") => return Some(MCPClient::Windsurf), // Codeium usually means Windsurf context
-                c if c.contains("microsoft") && c.contains("code") => {
+                c if c == "microsoft vs code" || (c.contains("microsoft") && c.contains("code")) => {
                     return Some(MCPClient::VSCode)
                 }
 
