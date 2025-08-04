@@ -1415,6 +1415,17 @@ impl MCPConfigManager {
         merged_config
     }
 
+    /// Helper function to parse Cursor-compatible MCP configuration format
+    /// Used by Claude, Claude Code, Cursor, Windsurf, and Gemini
+    fn try_parse_cursor_compatible_config(content: &str, client_name: &str) -> Option<MCPConfig> {
+        if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(content) {
+            debug!("Parsed as {} configuration format", client_name);
+            Some(Self::convert_cursor_config(cursor_config))
+        } else {
+            None
+        }
+    }
+
     /// Load configuration from a specific IDE config path
     pub fn load_config_from_path(path: &Path) -> Result<MCPConfig> {
         if !path.exists() {
@@ -1434,9 +1445,8 @@ impl MCPConfigManager {
         // Try parsing based on client type and file name
         match client {
             Some(MCPClient::Cursor) => {
-                if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
-                    debug!("Parsed as Cursor MCP configuration format");
-                    return Ok(Self::convert_cursor_config(cursor_config));
+                if let Some(config) = Self::try_parse_cursor_compatible_config(&content, "Cursor MCP") {
+                    return Ok(config);
                 }
             }
             Some(MCPClient::Claude) => {
@@ -1450,27 +1460,24 @@ impl MCPConfigManager {
                 }
                 // Claude mcp.json files use Cursor format
                 else if filename == "mcp.json" {
-                    if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
-                        debug!("Parsed as Claude MCP configuration format");
-                        return Ok(Self::convert_cursor_config(cursor_config));
+                    if let Some(config) = Self::try_parse_cursor_compatible_config(&content, "Claude MCP") {
+                        return Ok(config);
                     }
                 }
             }
             Some(MCPClient::ClaudeCode) => {
                 // Claude Code uses settings.json files in .claude directory  
                 if filename == "settings.json" || filename == "settings.local.json" {
-                    if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
-                        debug!("Parsed as Claude Code configuration format");
-                        return Ok(Self::convert_cursor_config(cursor_config));
+                    if let Some(config) = Self::try_parse_cursor_compatible_config(&content, "Claude Code") {
+                        return Ok(config);
                     }
                 }
             }
             Some(MCPClient::Windsurf) | Some(MCPClient::Gemini) => {
                 // Windsurf and Gemini use Cursor-compatible format
-                if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
-                    let client_name = client.as_ref().unwrap().name();
-                    debug!("Parsed as {} MCP configuration format", client_name);
-                    return Ok(Self::convert_cursor_config(cursor_config));
+                let client_name = format!("{} MCP", client.as_ref().unwrap().name());
+                if let Some(config) = Self::try_parse_cursor_compatible_config(&content, &client_name) {
+                    return Ok(config);
                 }
             }
             Some(MCPClient::VSCode) => {
@@ -1498,9 +1505,8 @@ impl MCPConfigManager {
             Ok(config) => Ok(config),
             Err(e) => {
                 // Try fallback parsing for different formats
-                if let Ok(cursor_config) = serde_json::from_str::<CursorMCPConfig>(&content) {
-                    debug!("Parsed as Cursor MCP configuration format (fallback)");
-                    Ok(Self::convert_cursor_config(cursor_config))
+                if let Some(config) = Self::try_parse_cursor_compatible_config(&content, "Cursor MCP (fallback)") {
+                    Ok(config)
                 } else if let Ok(claude_config) =
                     serde_json::from_str::<ClaudeDesktopConfig>(&content)
                 {
