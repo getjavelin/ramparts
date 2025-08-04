@@ -68,12 +68,18 @@ cargo install ramparts
 **Scan an MCP server**
 ```bash
 ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $GITHUB_TOKEN"
+
+# Generate detailed markdown report (scan_YYYYMMDD_HHMMSS.md)
+ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $GITHUB_TOKEN" --report
 ```
 
 **Scan your IDE's MCP configurations**
 ```bash
-# Automatically discovers and scans MCP servers from Cursor, Windsurf, VS Code, Claude Code
+# Automatically discovers and scans MCP servers from Cursor, Windsurf, VS Code, Claude Desktop, Claude Code
 ramparts scan-config
+
+# With detailed report generation
+ramparts scan-config --report
 ```
 
 > **💡 Did you know you can start Ramparts as a server?** Run `ramparts server` to get a REST API for continuous monitoring and CI/CD integration. See 📚 **[Ramparts Server Mode](docs/api.md)** 

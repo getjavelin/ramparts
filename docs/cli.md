@@ -54,6 +54,7 @@ Options:
                                   Can be specified multiple times
   -o, --output <FORMAT>           Output format [default: table]
                                   [possible values: json, raw, table, text]
+      --report                    Generate detailed markdown report (scan_YYYYMMDD_HHMMSS.md)
   -t, --timeout <SECONDS>         Request timeout in seconds [default: 60]
       --http-timeout <SECONDS>    HTTP timeout in seconds [default: 30]
       --detailed                  Enable detailed output
@@ -94,6 +95,11 @@ ramparts scan https://api.example.com/mcp/ \
   --min-severity high
 ```
 
+**Generate detailed report:**
+```bash
+ramparts scan https://api.example.com/mcp/ --report
+```
+
 **STDIO server scan:**
 ```bash
 ramparts scan "stdio:///usr/local/bin/mcp-server"
@@ -117,6 +123,7 @@ Options:
   -a, --auth-headers <HEADERS>    Authentication headers for MCP servers
   -o, --output <FORMAT>           Output format [default: table]
                                   [possible values: json, raw, table, text]
+      --report                    Generate detailed markdown report (scan_YYYYMMDD_HHMMSS.md)
       --config <FILE>             Custom configuration file path
   -h, --help                      Print help information
 ```
@@ -133,6 +140,11 @@ ramparts scan-config
 ramparts scan-config \
   --auth-headers "Authorization: Bearer $TOKEN" \
   --output json
+```
+
+**Generate report:**
+```bash
+ramparts scan-config --report
 ```
 
 ### Supported IDE Configuration Files
