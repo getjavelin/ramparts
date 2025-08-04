@@ -1013,10 +1013,12 @@ impl MCPConfigManager {
                 ));
 
                 // Claude Code enterprise managed settings
-                paths.push((
-                    PathBuf::from("C:\\ProgramData\\ClaudeCode\\managed-settings.json"),
-                    MCPClient::ClaudeCode,
-                ));
+                if let Ok(program_data) = env::var("PROGRAMDATA") {
+                    paths.push((
+                        PathBuf::from(program_data).join("ClaudeCode").join("managed-settings.json"),
+                        MCPClient::ClaudeCode,
+                    ));
+                }
             }
         }
 
