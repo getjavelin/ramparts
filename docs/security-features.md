@@ -126,7 +126,14 @@ Ramparts uses a three-layer approach to catch these security issues:
 
 **Static Analysis** catches the obvious stuff—tools with suspicious parameter names, dangerous function calls, and clear mismatches between descriptions and capabilities.
 
-**YARA-X Pattern Matching** looks for known vulnerability patterns, secret formats (like AWS keys or GitHub tokens), and suspicious code structures that might indicate security issues.
+**YARA-X Pattern Matching** looks for known vulnerability patterns, secret formats (like AWS keys or GitHub tokens), and suspicious code structures that might indicate security issues. Each YARA rule includes comprehensive metadata that provides rich context for security findings:
+
+- **Severity Assessment**: Every rule has a severity level (CRITICAL, HIGH, MEDIUM, LOW) based on the security impact
+- **Detailed Attribution**: Rule author, version, and comprehensive descriptions help you understand the finding
+- **Categorization**: Tags like `secrets`, `command-injection`, `path-traversal` help you filter and organize results
+- **Context Explanations**: Human-readable messages explain exactly what was detected and why it matters
+
+This metadata makes it easy to prioritize security findings and understand their impact on your specific environment.
 
 **LLM-Powered Analysis** is where things get interesting. Ramparts uses AI models to understand the semantic meaning of tools and catch subtle issues that static analysis might miss. It can detect when a tool's description doesn't match its actual behavior, identify tools that might be designed to be deceptive, and spot complex attack patterns that require understanding context.
 

@@ -253,14 +253,39 @@ curl -X POST http://localhost:3000/scan \
     },
     "yara_results": [
       {
+        "target_type": "tool",
+        "target_name": "create_file",
+        "rule_name": "PathTraversalVulnerability",
+        "rule_file": "path_traversal",
+        "context": "Path traversal vulnerability detected in tool",
+        "rule_metadata": {
+          "name": "Path Traversal Detection",
+          "author": "Ramparts Security Team",
+          "version": "1.0",
+          "description": "Detects potential path traversal vulnerabilities in file operations",
+          "severity": "HIGH",
+          "category": "path-traversal,security,file-access"
+        },
+        "status": "warning"
+      },
+      {
         "target_type": "summary",
         "target_name": "pre-scan",
-        "rule_name": "PreScanSummary",
-        "context": "Pre-scan completed: 2 rules executed on 1 items",
+        "rule_name": "YARA_PRE_SCAN_SUMMARY",
+        "context": "Pre-scan completed: 5 rules executed on 1 items",
+        "phase": "pre-scan",
+        "rules_executed": [
+          "command_injection:*",
+          "cross_origin_escalation:*", 
+          "secrets_leakage:*",
+          "sql_injection:*",
+          "path_traversal:*"
+        ],
+        "security_issues_detected": [
+          "path_traversal:PathTraversalVulnerability"
+        ],
         "total_items_scanned": 1,
         "total_matches": 1,
-        "rules_executed": ["secrets_leakage", "path_traversal"],
-        "security_issues_detected": ["path_traversal:PathTraversalVulnerability"],
         "status": "warning"
       }
     ],

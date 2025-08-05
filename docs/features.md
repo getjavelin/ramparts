@@ -32,6 +32,27 @@ ramparts scan https://your-mcp-server.com --config custom-rules.yaml
 
 Under the hood, Ramparts uses YARA-X rules to catch security patterns that static analysis might miss. We ship with rules for common vulnerabilities, MCP-specific attack vectors, and secret detection (AWS keys, GitHub tokens, etc.).
 
+**Rich Security Context**: Each YARA rule includes comprehensive metadata to help you understand and prioritize security findings:
+
+- **Severity Levels**: CRITICAL, HIGH, MEDIUM, LOW based on the security impact
+- **Rule Details**: Name, author, version, and detailed descriptions
+- **Categorization**: Tags like `secrets`, `path-traversal`, `command-injection` for filtering
+- **Context Messages**: Human-readable explanations of what was detected
+
+```json
+{
+  "rule_metadata": {
+    "name": "Environment Variable Leakage",
+    "author": "Ramparts Security Team",
+    "version": "1.0", 
+    "description": "Detects exposure of sensitive environment variables and API keys",
+    "severity": "HIGH",
+    "category": "environment,secrets,api-keys,credentials"
+  },
+  "status": "warning"
+}
+```
+
 But here's where it gets interesting for your specific environment—you can write custom rules for your organization's unique security requirements. Maybe you have internal APIs that should never be exposed, or specific secret formats that need detection. Just drop your `.yar` files in the `rules/` directory and Ramparts will pick them up automatically.
 
 The best part? Rules hot-reload, so you can iterate on your security policies without restarting anything. It's all pure Rust under the hood, so there are no system dependencies to manage.
