@@ -206,12 +206,14 @@ use std::sync::Arc;
 #[cfg(feature = "yara-x-scanning")]
 pub struct YaraMatchInfo {
     pub rule_name: String,
+    pub metadata: Option<crate::types::YaraRuleMetadata>,
 }
 
 /// Enhanced YARA match with rule metadata (non-YARA fallback)
 #[cfg(not(feature = "yara-x-scanning"))]
 pub struct YaraMatchInfo {
     pub rule_name: String,
+    pub metadata: Option<crate::types::YaraRuleMetadata>,
 }
 
 /// Threat detection rules engine that loads YARA-X rules from directory structure
@@ -395,6 +397,63 @@ impl ThreatRules {
         Ok(rules)
     }
 
+    /// Extract metadata from a YARA-X rule match
+    #[cfg(feature = "yara-x-scanning")]
+    fn extract_rule_metadata(rule_match: &yara_x::Rule) -> Option<crate::types::YaraRuleMetadata> {
+        let metadata_iter = rule_match.metadata();
+        let metadata_vec: Vec<(&str, yara_x::MetaValue)> = metadata_iter.collect();
+
+        if metadata_vec.is_empty() {
+            return None;
+        }
+
+        let mut rule_metadata = crate::types::YaraRuleMetadata {
+            name: None,
+            author: None,
+            date: None,
+            version: None,
+            description: None,
+            severity: None,
+            category: None,
+            confidence: None,
+            tags: Vec::new(),
+        };
+
+        // Helper function to convert MetaValue to String
+        let meta_value_to_string = |value: &yara_x::MetaValue| -> String {
+            match value {
+                yara_x::MetaValue::Integer(i) => i.to_string(),
+                yara_x::MetaValue::Float(f) => f.to_string(),
+                yara_x::MetaValue::Bool(b) => b.to_string(),
+                yara_x::MetaValue::String(s) => (*s).to_string(),
+                yara_x::MetaValue::Bytes(b) => String::from_utf8_lossy(b).to_string(),
+            }
+        };
+
+        // Extract metadata fields
+        for (key, value) in &metadata_vec {
+            match *key {
+                "name" => rule_metadata.name = Some(meta_value_to_string(value)),
+                "author" => rule_metadata.author = Some(meta_value_to_string(value)),
+                "date" => rule_metadata.date = Some(meta_value_to_string(value)),
+                "version" => rule_metadata.version = Some(meta_value_to_string(value)),
+                "description" => rule_metadata.description = Some(meta_value_to_string(value)),
+                "severity" => rule_metadata.severity = Some(meta_value_to_string(value)),
+                "category" => rule_metadata.category = Some(meta_value_to_string(value)),
+                "confidence" => rule_metadata.confidence = Some(meta_value_to_string(value)),
+                "tags" => {
+                    // Handle tags as comma-separated string or array
+                    let tags_str = meta_value_to_string(value);
+                    rule_metadata.tags =
+                        tags_str.split(',').map(|s| s.trim().to_string()).collect();
+                }
+                _ => {} // Ignore unknown metadata fields
+            }
+        }
+
+        Some(rule_metadata)
+    }
+
     /// Consolidated method to scan text with rules and return enhanced match information
     #[cfg(feature = "yara-x-scanning")]
     fn scan_with_rules_enhanced_internal(
@@ -412,6 +471,7 @@ impl ThreatRules {
                     for m in scan_results.matching_rules() {
                         all_matches.push(YaraMatchInfo {
                             rule_name: m.identifier().to_string(),
+                            metadata: Self::extract_rule_metadata(&m),
                         });
                     }
                 }
@@ -573,7 +633,7 @@ impl YaraScanner {
                 // Store YARA results for each match with metadata
                 for match_info in enhanced_matches {
                     let yara_result =
-                        Self::create_yara_result_with_metadata::<T>(item, &match_info.rule_name);
+                        Self::create_yara_result_with_metadata::<T>(item, &match_info);
                     results.push(yara_result);
                 }
             }
@@ -592,18 +652,18 @@ impl YaraScanner {
     }
 
     /// Create a YARA scan result with original rule metadata
-    fn create_yara_result_with_metadata<T>(item: &T, rule_name: &str) -> YaraScanResult
+    fn create_yara_result_with_metadata<T>(item: &T, match_info: &YaraMatchInfo) -> YaraScanResult
     where
         T: crate::security::BatchScannableItem,
     {
         YaraScanResult {
             target_type: T::item_type().to_string(),
             target_name: item.name().to_string(),
-            rule_name: rule_name.to_string(),
-            rule_file: rule_name_to_file_name(rule_name),
+            rule_name: match_info.rule_name.clone(),
+            rule_file: rule_name_to_file_name(&match_info.rule_name),
             matched_text: None,
-            context: generate_context_message(T::item_type(), rule_name),
-            rule_metadata: None,
+            context: generate_context_message(T::item_type(), &match_info.rule_name),
+            rule_metadata: match_info.metadata.clone(),
             phase: None,
             rules_executed: None,
             security_issues_detected: None,

@@ -119,16 +119,24 @@ YARA Scan Results
 
 🔍 Detailed Results:
 ⚠️ get_secret_scanning_alert (tool)
-  Rule: EnvironmentVariableLeakage (MEDIUM)
+  Rule: EnvironmentVariableLeakage (HIGH)
+  Name: Environment Variable Leakage
+  Description: Detects exposure of sensitive environment variables and API keys
+  Author: Ramparts Security Team
+  Version: 1.0
   Context: Sensitive environment variable pattern detected in tool
 
 ⚠️ list_secret_scanning_alerts (tool)  
-  Rule: EnvironmentVariableLeakage (MEDIUM)
+  Rule: EnvironmentVariableLeakage (HIGH)
+  Name: Environment Variable Leakage
+  Description: Detects exposure of sensitive environment variables and API keys
+  Author: Ramparts Security Team
+  Version: 1.0
   Context: Sensitive environment variable pattern detected in tool
 
 Summary:
   • Tools scanned: 83
-  • Security matches: 2 medium-severity findings
+  • Security matches: 2 high-severity findings
 ================================================================================
 ```
 
