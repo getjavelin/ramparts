@@ -425,7 +425,7 @@ impl ThreatRules {
                 yara_x::MetaValue::Integer(i) => i.to_string(),
                 yara_x::MetaValue::Float(f) => f.to_string(),
                 yara_x::MetaValue::Bool(b) => b.to_string(),
-                yara_x::MetaValue::String(s) => s.to_string(),
+                yara_x::MetaValue::String(s) => (*s).to_string(),
                 yara_x::MetaValue::Bytes(b) => String::from_utf8_lossy(b).to_string(),
             }
         };
