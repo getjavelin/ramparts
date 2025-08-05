@@ -402,11 +402,11 @@ impl ThreatRules {
     fn extract_rule_metadata(rule_match: &yara_x::Rule) -> Option<crate::types::YaraRuleMetadata> {
         let metadata_iter = rule_match.metadata();
         let metadata_vec: Vec<(&str, yara_x::MetaValue)> = metadata_iter.collect();
-        
+
         if metadata_vec.is_empty() {
             return None;
         }
-        
+
         let mut rule_metadata = crate::types::YaraRuleMetadata {
             name: None,
             author: None,
@@ -418,7 +418,7 @@ impl ThreatRules {
             confidence: None,
             tags: Vec::new(),
         };
-        
+
         // Helper function to convert MetaValue to String
         let meta_value_to_string = |value: &yara_x::MetaValue| -> String {
             match value {
@@ -429,7 +429,7 @@ impl ThreatRules {
                 yara_x::MetaValue::Bytes(b) => String::from_utf8_lossy(b).to_string(),
             }
         };
-        
+
         // Extract metadata fields
         for (key, value) in &metadata_vec {
             match *key {
@@ -444,12 +444,13 @@ impl ThreatRules {
                 "tags" => {
                     // Handle tags as comma-separated string or array
                     let tags_str = meta_value_to_string(value);
-                    rule_metadata.tags = tags_str.split(',').map(|s| s.trim().to_string()).collect();
+                    rule_metadata.tags =
+                        tags_str.split(',').map(|s| s.trim().to_string()).collect();
                 }
                 _ => {} // Ignore unknown metadata fields
             }
         }
-        
+
         Some(rule_metadata)
     }
 
