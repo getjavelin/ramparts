@@ -93,8 +93,28 @@ impl MCPScannerCore {
                     .unwrap_or(scanner_config.scanner.format),
             );
 
+        // Handle auth headers with minimal conversion for Javelin API key
         if let Some(auth_headers) = &request.auth_headers {
-            builder = builder.auth_headers(Some(auth_headers.clone()));
+            let mut headers = auth_headers.clone();
+
+            // If we have x-javelin-api-key, add the formats that work with Javelin MCP
+            if let Some(api_key) = auth_headers.get("x-javelin-api-key") {
+                // Only proceed if the API key is not empty
+                if !api_key.trim().is_empty() {
+                    // Add x-javelin-apikey format
+                    headers.insert("x-javelin-apikey".to_string(), api_key.clone());
+
+                    // Only add authorization header if one doesn't already exist (case-insensitive check)
+                    let has_auth_header = headers
+                        .keys()
+                        .any(|key| key.to_lowercase() == "authorization");
+                    if !has_auth_header {
+                        headers.insert("authorization".to_string(), format!("Bearer {api_key}"));
+                    }
+                }
+            }
+
+            builder = builder.auth_headers(Some(headers));
         }
 
         builder.build()
@@ -138,7 +158,7 @@ impl MCPScannerCore {
     pub fn validate_config(&self, request: &ScanRequest) -> ValidationResponse {
         let timestamp = chrono::Utc::now().to_rfc3339();
 
-        let options = self.parse_scan_options(request);
+        let options = self.parse_scan_options(request); // No conversion for validation
         match config_utils::validate_scan_config(&options) {
             Ok(()) => ValidationResponse {
                 success: true,
@@ -176,7 +196,7 @@ impl MCPScannerCore {
         let failed = results.len() - successful;
 
         BatchScanResponse {
-            success: true,
+            success: failed == 0, // Set success to false if any scans failed
             results,
             total: request.urls.len(),
             successful,
@@ -298,7 +318,7 @@ mod tests {
         ];
 
         let response = BatchScanResponse {
-            success: true,
+            success: false, // Should be false when there are failures
             results: results.clone(),
             total: 2,
             successful: 1,
@@ -306,11 +326,44 @@ mod tests {
             timestamp: "2024-01-01T00:00:02Z".to_string(),
         };
 
-        assert!(response.success);
+        assert!(!response.success); // Should be false when there are failures
         assert_eq!(response.results.len(), 2);
         assert_eq!(response.total, 2);
         assert_eq!(response.successful, 1);
         assert_eq!(response.failed, 1);
+    }
+
+    #[test]
+    fn test_batch_scan_response_all_successful() {
+        let results = vec![
+            ScanResponse {
+                success: true,
+                result: Some(ScanResult::new("http://example1.com".to_string())),
+                error: None,
+                timestamp: "2024-01-01T00:00:00Z".to_string(),
+            },
+            ScanResponse {
+                success: true,
+                result: Some(ScanResult::new("http://example2.com".to_string())),
+                error: None,
+                timestamp: "2024-01-01T00:00:01Z".to_string(),
+            },
+        ];
+
+        let response = BatchScanResponse {
+            success: true, // Should be true when all scans are successful
+            results: results.clone(),
+            total: 2,
+            successful: 2,
+            failed: 0,
+            timestamp: "2024-01-01T00:00:02Z".to_string(),
+        };
+
+        assert!(response.success); // Should be true when all scans are successful
+        assert_eq!(response.results.len(), 2);
+        assert_eq!(response.total, 2);
+        assert_eq!(response.successful, 2);
+        assert_eq!(response.failed, 0);
     }
 
     #[test]
@@ -363,7 +416,7 @@ mod tests {
             )])),
         };
 
-        let options = core.parse_scan_options(&request);
+        let options = core.parse_scan_options(&request); // No conversion for test
         assert_eq!(options.timeout, 120);
         assert_eq!(options.http_timeout, 60);
         assert!(options.detailed);
@@ -383,8 +436,8 @@ mod tests {
             auth_headers: None,
         };
 
-        let options = core.parse_scan_options(&request);
-        // These will use default values from config
+        let options = core.parse_scan_options(&request); // No conversion for test
+                                                         // These will use default values from config
         assert!(options.timeout > 0);
         assert!(options.http_timeout > 0);
         assert!(!options.detailed); // Default is false

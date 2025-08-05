@@ -67,40 +67,38 @@ cargo install ramparts
 
 **Scan an MCP server**
 ```bash
-ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $GITHUB_TOKEN"
+ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $TOKEN"
+
+# Generate detailed markdown report (scan_YYYYMMDD_HHMMSS.md)
+ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $TOKEN" --report
 ```
 
 **Scan your IDE's MCP configurations**
 ```bash
-# Automatically discovers and scans MCP servers from Cursor, Windsurf, VS Code, Claude Code
+# Automatically discovers and scans MCP servers from Cursor, Windsurf, VS Code, Claude Desktop, Claude Code
 ramparts scan-config
+
+# With detailed report generation
+ramparts scan-config --report
 ```
 
 > **💡 Did you know you can start Ramparts as a server?** Run `ramparts server` to get a REST API for continuous monitoring and CI/CD integration. See 📚 **[Ramparts Server Mode](docs/api.md)** 
 
 ## Example Output
 
+**Single server scan:**
+```bash
+ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $TOKEN"
 ```
-================================================================================
-MCP Server Scan Result
-================================================================================
-URL: https://api.githubcopilot.com/mcp/
-Status: Success
-Response Time: 1234ms
-Timestamp: 2024-01-01T12:00:00.000Z
 
-Server Information:
-  Name: GitHub Copilot MCP Server
-  Version: 1.0.0
-  Description: GitHub Copilot MCP server for code assistance
-  Capabilities: tools, resources, prompts
+```
+RAMPARTS
+MCP Security Scanner
 
-Tools: 74
-Resources: 0
-Prompts: 0
+Version: 0.6.7
+Current Time: 2025-08-04 07:32:19 UTC
+Git Commit: 9d0c37c
 
-Security Assessment Results
-================================================================================
 🌐 GitHub Copilot MCP Server
   ✅ All tools passed security checks
 
@@ -109,31 +107,54 @@ Security Assessment Results
       📋 Analysis: Standard GitHub file creation/update functionality
       ├── HIGH: Tool allowing directory traversal attacks: Potential Path Traversal Vulnerability
       │   Details: The tool accepts a 'path' parameter without proper validation, allowing potential path traversal attacks.
-  └── delete_file warning
-      📋 Analysis: Standard GitHub file deletion functionality
-      ├── HIGH: Tool allowing directory traversal attacks: Potential Path Traversal Vulnerability
-      │   Details: The tool allows the deletion of a file from a GitHub repository and accepts parameters like branch, message, owner, path, and repo. If path validation is not implemented properly, an attacker could manipulate the path to access files outside the intended directory.
 
 YARA Scan Results
 ================================================================================
 ⚠️ PRE-SCAN - WARNING
-  Context: Pre-scan completed: 2 rules executed on 74 items
-  Items scanned: 74
-  Security matches: 1
-  Rules executed: secrets_leakage:*, cross_origin_escalation:*
-  Security issues detected: cross_origin_escalation:CrossDomainContamination
+  Context: Pre-scan completed: 5 rules executed on 83 items
+  Items scanned: 83
+  Security matches: 2
+  Rules executed: secrets_leakage:*, command_injection:*, path_traversal:*, sql_injection:*, cross_origin_escalation:*
+  Security issues detected: secrets_leakage:EnvironmentVariableLeakage
 
 🔍 Detailed Results:
-⚠️ domain-analysis (domain-analysis)
-  Rule: CrossDomainContamination (HIGH)
-  Description: Detected tools and resources spanning multiple domains, indicating potential cross-origin escalation risk
-  Matched: Cross-domain contamination detected across 2 domains: api.github.com, webhooks.github.com
-  Context: Found tools and resources spanning 2 different root domains
+⚠️ get_secret_scanning_alert (tool)
+  Rule: EnvironmentVariableLeakage (MEDIUM)
+  Context: Sensitive environment variable pattern detected in tool
+
+⚠️ list_secret_scanning_alerts (tool)  
+  Rule: EnvironmentVariableLeakage (MEDIUM)
+  Context: Sensitive environment variable pattern detected in tool
 
 Summary:
-  • Tools scanned: 74
-  • Warnings found: 2 tools with 2 total warnings
+  • Tools scanned: 83
+  • Security matches: 2 medium-severity findings
 ================================================================================
+```
+
+**IDE configuration scan:**
+```bash
+ramparts scan-config --report
+```
+
+```
+🔍 Found 3 IDE config files:
+  ✓ vscode IDE: /Users/user/.vscode/mcp.json
+  ✓ claude IDE: /Users/user/Library/Application Support/Claude/claude_desktop_config.json
+  ✓ cursor IDE: /Users/user/.cursor/mcp.json
+
+📁 vscode IDE config: /Users/user/.vscode/mcp.json (2 servers)
+  └─ github-copilot [HTTP]: https://api.githubcopilot.com/mcp/
+  └─ local-tools [STDIO]: stdio:python[local-mcp-server]
+
+🌍 MCP Servers Security Scan Summary
+────────────────────────────────────────────────────────────
+📊 Scan Summary:
+  • Servers: 2 total (2 ✅ successful, 0 ❌ failed)
+  • Resources: 81 tools, 0 resources, 2 prompts
+  • Security: ✅ All servers passed security checks
+
+📄 Detailed report generated: scan_20250804_073225.md
 ```
 
 ## Contributing

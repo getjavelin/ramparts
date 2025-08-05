@@ -2,6 +2,8 @@ use crate::security::SecurityIssue;
 use crate::types::{ScanResult, ScanStatus};
 use anyhow::{anyhow, Result};
 use colored::Colorize;
+use std::fs::File;
+use std::io::Write;
 use std::time::Instant;
 use tracing::{debug, warn};
 
@@ -304,7 +306,7 @@ fn add_errors_info(
 
 #[allow(clippy::too_many_lines)]
 fn print_table_result(result: &ScanResult, detailed: bool) {
-    println!("MCP Server Scan Result");
+    println!("Ramparts MCP Server Scan Result");
 
     // Server Info
     println!("URL: {}", result.url.blue());
@@ -695,6 +697,9 @@ fn format_status(status: &ScanStatus) -> String {
         ScanStatus::Failed(msg) => format!("FAILED: {msg}").red().to_string(),
         ScanStatus::Timeout => "TIMEOUT".yellow().to_string(),
         ScanStatus::ConnectionError(msg) => format!("CONNECTION ERROR: {msg}").red().to_string(),
+        ScanStatus::AuthenticationError(msg) => {
+            format!("AUTHENTICATION ERROR: {msg}").red().to_string()
+        }
     }
 }
 
@@ -852,6 +857,689 @@ fn print_enhanced_security_table(result: &ScanResult) {
     }
 }
 
+// ============================================================================
+// MULTI-SERVER PRINTING FUNCTIONS
+// ============================================================================
+
+/// Print results from multiple MCP servers
+pub fn print_multi_server_results(results: &[ScanResult], format: &str, detailed: bool) {
+    match format.to_lowercase().as_str() {
+        "json" => print_multi_server_json(results),
+        "table" => print_multi_server_tree(results, detailed),
+        "text" => print_multi_server_text(results),
+        "raw" => print_multi_server_raw_json(results),
+        _ => {
+            eprintln!("Unknown format: {format}. Using tree view format.");
+            print_multi_server_tree(results, detailed);
+        }
+    }
+}
+
+/// Enhanced tree view for multiple MCP servers grouped by IDE
+#[allow(clippy::too_many_lines)]
+fn print_multi_server_tree(results: &[ScanResult], _detailed: bool) {
+    // Group results by IDE source
+    let mut results_by_ide: std::collections::HashMap<String, Vec<&ScanResult>> =
+        std::collections::HashMap::new();
+
+    for result in results {
+        let ide_name = result
+            .ide_source
+            .as_deref()
+            .unwrap_or("UNKNOWN IDE")
+            .to_string();
+        results_by_ide.entry(ide_name).or_default().push(result);
+    }
+
+    // Print overall summary header
+    println!("\n{}", "🌍 MCP Servers Security Scan Summary".bold());
+    println!("{}", "─".repeat(60));
+
+    let total_servers = results.len();
+    let mut successful_servers = 0;
+    let mut failed_servers = 0;
+    let mut total_tools = 0;
+    let mut total_resources = 0;
+    let mut total_prompts = 0;
+    let mut total_warnings = 0;
+    let mut servers_with_warnings = 0;
+
+    // Calculate summary statistics
+    for result in results {
+        match &result.status {
+            crate::types::ScanStatus::Success => successful_servers += 1,
+            _ => failed_servers += 1,
+        }
+
+        total_tools += result.tools.len();
+        total_resources += result.resources.len();
+        total_prompts += result.prompts.len();
+
+        if let Some(security_issues) = &result.security_issues {
+            let server_warnings = security_issues.tool_issues.len()
+                + security_issues.prompt_issues.len()
+                + security_issues.resource_issues.len();
+            if server_warnings > 0 {
+                servers_with_warnings += 1;
+                total_warnings += server_warnings;
+            }
+        }
+    }
+
+    // Print scan summary statistics
+    println!("📊 Scan Summary:");
+    println!(
+        "  • Servers: {total_servers} total ({successful_servers} ✅ successful, {failed_servers} ❌ failed)"
+    );
+    println!(
+        "  • Resources: {total_tools} tools, {total_resources} resources, {total_prompts} prompts"
+    );
+    if total_warnings > 0 {
+        println!(
+            "  • Security: ⚠️  {servers_with_warnings} servers with {total_warnings} total warnings"
+        );
+    } else {
+        println!("  • Security: ✅ All servers passed security checks");
+    }
+
+    println!("\n{}", "📋 Results by IDE:".bold());
+
+    // Sort IDE names for consistent output
+    let mut ide_names: Vec<&String> = results_by_ide.keys().collect();
+    ide_names.sort();
+
+    // Print results grouped by IDE
+    for (ide_index, ide_name) in ide_names.iter().enumerate() {
+        let ide_results = &results_by_ide[*ide_name];
+        let is_last_ide = ide_index == ide_names.len() - 1;
+        let ide_prefix = if is_last_ide {
+            "└── "
+        } else {
+            "├── "
+        };
+        let ide_continuation = if is_last_ide { "    " } else { "│   " };
+
+        println!("\n{}{} {}", ide_prefix, "🏢".bold(), ide_name.bold());
+
+        // Print each server within this IDE
+        for (i, result) in ide_results.iter().enumerate() {
+            let is_last = i == ide_results.len() - 1;
+            let prefix = if is_last { "└── " } else { "├── " };
+            let continuation = if is_last { "    " } else { "│   " };
+
+            // Server name and status
+            let server_name = result
+                .server_info
+                .as_ref()
+                .map_or_else(|| "Unknown Server".to_string(), |info| info.name.clone());
+
+            let status_emoji = match &result.status {
+                crate::types::ScanStatus::Success => "✅",
+                crate::types::ScanStatus::Failed(_) => "❌",
+                crate::types::ScanStatus::Timeout => "⏱️ ",
+                crate::types::ScanStatus::ConnectionError(_) => "🔌",
+                crate::types::ScanStatus::AuthenticationError(_) => "🔐",
+            };
+
+            println!(
+                "{}{}{} {} ({})",
+                ide_continuation,
+                prefix,
+                status_emoji,
+                server_name.bold(),
+                result.url
+            );
+
+            // Show basic stats and detailed results for successful scans
+            if matches!(result.status, crate::types::ScanStatus::Success) {
+                println!(
+                    "{}{}📋 {} tools, {} resources, {} prompts",
+                    ide_continuation,
+                    continuation,
+                    result.tools.len(),
+                    result.resources.len(),
+                    result.prompts.len()
+                );
+
+                // Show individual tool results with security status
+                if !result.tools.is_empty() {
+                    println!("{ide_continuation}{continuation}🔧 Tools:");
+                    if let Some(security_issues) = &result.security_issues {
+                        for tool in &result.tools {
+                            let tool_issues: Vec<&crate::security::SecurityIssue> = security_issues
+                                .tool_issues
+                                .iter()
+                                .filter(|issue| issue.tool_name.as_ref() == Some(&tool.name))
+                                .collect();
+
+                            if tool_issues.is_empty() {
+                                println!(
+                                    "{}{}    ├── {} ✅",
+                                    ide_continuation, continuation, tool.name
+                                );
+                            } else {
+                                println!(
+                                    "{}{}    ├── {} ⚠️  {} warning{}",
+                                    ide_continuation,
+                                    continuation,
+                                    tool.name.bold(),
+                                    tool_issues.len(),
+                                    if tool_issues.len() == 1 { "" } else { "s" }
+                                );
+                                for (i, issue) in tool_issues.iter().enumerate() {
+                                    let severity = issue.issue_type.default_severity();
+                                    let severity_color = match severity {
+                                        "CRITICAL" => "🔴 CRITICAL".red(),
+                                        "HIGH" => "🟠 HIGH".red(),
+                                        "MEDIUM" => "🟡 MEDIUM".yellow(),
+                                        _ => "🟢 LOW".green(),
+                                    };
+                                    let item_prefix = if i == tool_issues.len() - 1 {
+                                        "└──"
+                                    } else {
+                                        "├──"
+                                    };
+                                    println!(
+                                        "{}{}    │   {} {}: {}",
+                                        ide_continuation,
+                                        continuation,
+                                        item_prefix,
+                                        severity_color,
+                                        issue.description
+                                    );
+                                }
+                            }
+                        }
+                    } else {
+                        // No security analysis available
+                        for tool in &result.tools {
+                            println!(
+                                "{}{}    ├── {} ✅",
+                                ide_continuation, continuation, tool.name
+                            );
+                        }
+                    }
+                }
+
+                // Show resources if any
+                if !result.resources.is_empty() {
+                    println!("{ide_continuation}{continuation}📄 Resources:");
+                    for resource in &result.resources {
+                        println!(
+                            "{}{}    ├── {} ✅",
+                            ide_continuation, continuation, resource.name
+                        );
+                    }
+                }
+
+                // Show prompts if any
+                if !result.prompts.is_empty() {
+                    println!("{ide_continuation}{continuation}💬 Prompts:");
+                    for prompt in &result.prompts {
+                        println!(
+                            "{}{}    ├── {} ✅",
+                            ide_continuation, continuation, prompt.name
+                        );
+                    }
+                }
+
+                // YARA scan results summary
+                if !result.yara_results.is_empty() {
+                    let yara_matches: usize = result
+                        .yara_results
+                        .iter()
+                        .map(|r| r.total_matches.unwrap_or(0))
+                        .sum();
+                    if yara_matches > 0 {
+                        println!(
+                            "{ide_continuation}{continuation}⚠️  YARA: {yara_matches} security issues detected"
+                        );
+                    } else {
+                        println!(
+                            "{ide_continuation}{continuation}✅ YARA: No security issues detected"
+                        );
+                    }
+                }
+            } else {
+                // Show error details for failed scans
+                match &result.status {
+                    crate::types::ScanStatus::Failed(err) => {
+                        println!("{ide_continuation}{continuation}❌ Error: {err}");
+                    }
+                    crate::types::ScanStatus::ConnectionError(err) => {
+                        println!("{ide_continuation}{continuation}🔌 Connection Error: {err}");
+                    }
+                    crate::types::ScanStatus::AuthenticationError(err) => {
+                        println!("{ide_continuation}{continuation}🔐 Authentication Error: {err}");
+                    }
+                    crate::types::ScanStatus::Timeout => {
+                        println!("{ide_continuation}{continuation}⏱️  Timeout occurred");
+                    }
+                    crate::types::ScanStatus::Success => {}
+                }
+            }
+        }
+    }
+
+    println!(); // Final newline
+}
+
+/// JSON format for multiple servers
+fn print_multi_server_json(results: &[ScanResult]) {
+    let json_output = serde_json::json!({
+        "scan_type": "multi_server",
+        "total_servers": results.len(),
+        "results": results
+    });
+
+    match serde_json::to_string_pretty(&json_output) {
+        Ok(json) => println!("{json}"),
+        Err(e) => eprintln!("Error serializing multi-server results to JSON: {e}"),
+    }
+}
+
+/// Raw JSON format for multiple servers
+fn print_multi_server_raw_json(results: &[ScanResult]) {
+    for result in results {
+        print_raw_json_result(result);
+    }
+}
+
+/// Text format for multiple servers
+fn print_multi_server_text(results: &[ScanResult]) {
+    println!("Multi-Server Scan Results");
+    println!("========================");
+    println!("Total servers scanned: {}", results.len());
+    println!();
+
+    for (i, result) in results.iter().enumerate() {
+        println!("Server {}: {}", i + 1, result.url);
+        print_text_result(result);
+        println!();
+    }
+}
+
+/// Generate a detailed markdown report from scan results
+#[allow(clippy::too_many_lines)]
+pub fn generate_markdown_report(results: &[ScanResult]) -> Result<String> {
+    use chrono::Utc;
+    use std::fmt::Write;
+
+    let timestamp = Utc::now();
+    let mut report = String::new();
+
+    // Header
+    writeln!(report, "# MCP Security Scan Report")?;
+    writeln!(report)?;
+    writeln!(
+        report,
+        "**Generated:** {}",
+        timestamp.format("%Y-%m-%d %H:%M:%S UTC")
+    )?;
+    writeln!(report, "**Scanner:** Ramparts MCP Security Scanner")?;
+    writeln!(report)?;
+
+    // Executive Summary
+    writeln!(report, "## Executive Summary")?;
+    writeln!(report)?;
+
+    let total_servers = results.len();
+    let successful_scans = results
+        .iter()
+        .filter(|r| matches!(r.status, ScanStatus::Success))
+        .count();
+    let failed_scans = total_servers - successful_scans;
+
+    // Count security issues by severity
+    let mut critical_count = 0;
+    let mut high_count = 0;
+    let mut medium_count = 0;
+    let mut low_count = 0;
+
+    for result in results {
+        if let Some(ref security_issues) = result.security_issues {
+            for issue in &security_issues.tool_issues {
+                match issue.severity.as_str() {
+                    "CRITICAL" => critical_count += 1,
+                    "HIGH" => high_count += 1,
+                    "MEDIUM" => medium_count += 1,
+                    _ => low_count += 1,
+                }
+            }
+            for issue in &security_issues.prompt_issues {
+                match issue.severity.as_str() {
+                    "CRITICAL" => critical_count += 1,
+                    "HIGH" => high_count += 1,
+                    "MEDIUM" => medium_count += 1,
+                    _ => low_count += 1,
+                }
+            }
+            for issue in &security_issues.resource_issues {
+                match issue.severity.as_str() {
+                    "CRITICAL" => critical_count += 1,
+                    "HIGH" => high_count += 1,
+                    "MEDIUM" => medium_count += 1,
+                    _ => low_count += 1,
+                }
+            }
+        }
+    }
+
+    writeln!(report, "- **Total Servers Scanned:** {total_servers}")?;
+    writeln!(report, "- **Successful Scans:** {successful_scans}")?;
+    writeln!(report, "- **Failed Scans:** {failed_scans}")?;
+    writeln!(report)?;
+    writeln!(report, "### Security Issues Summary")?;
+    if critical_count + high_count + medium_count + low_count == 0 {
+        writeln!(report, "✅ **No security issues detected**")?;
+    } else {
+        writeln!(report, "| Severity | Count |")?;
+        writeln!(report, "|----------|-------|")?;
+        writeln!(report, "| 🔴 **CRITICAL** | {critical_count} |")?;
+        writeln!(report, "| 🟠 **HIGH** | {high_count} |")?;
+        writeln!(report, "| 🟡 **MEDIUM** | {medium_count} |")?;
+        writeln!(report, "| 🟢 **LOW** | {low_count} |")?;
+    }
+    writeln!(report)?;
+
+    // Detailed Results
+    writeln!(report, "## Detailed Scan Results")?;
+
+    for (i, result) in results.iter().enumerate() {
+        writeln!(report, "### Server {} - {}", i + 1, result.url)?;
+
+        // Server Info
+        if let Some(ref server_info) = result.server_info {
+            writeln!(report, "**Server Information:**")?;
+            writeln!(report, "- **Name:** {}", server_info.name)?;
+            writeln!(report, "- **Version:** {}", server_info.version)?;
+            if let Some(ref description) = server_info.description {
+                writeln!(report, "- **Description:** {description}")?;
+            }
+        }
+
+        // Scan Status
+        match &result.status {
+            ScanStatus::Success => {
+                writeln!(report, "**Status:** ✅ Success")?;
+                writeln!(report, "**Response Time:** {}ms", result.response_time_ms)?;
+            }
+            ScanStatus::Failed(error) => {
+                writeln!(report, "**Status:** ❌ Failed")?;
+                writeln!(report, "**Error:** {error}")?;
+                writeln!(report)?;
+                continue;
+            }
+            ScanStatus::Timeout => {
+                writeln!(report, "**Status:** ⏰ Timeout")?;
+                writeln!(report)?;
+                continue;
+            }
+            ScanStatus::ConnectionError(error) => {
+                writeln!(report, "**Status:** ❌ Connection Error")?;
+                writeln!(report, "**Error:** {error}")?;
+                writeln!(report)?;
+                continue;
+            }
+            ScanStatus::AuthenticationError(error) => {
+                writeln!(report, "**Status:** 🔐 Authentication Error")?;
+                writeln!(report, "**Error:** {error}")?;
+                writeln!(report)?;
+                continue;
+            }
+        }
+        writeln!(report)?;
+
+        // Tools - only show tools with security issues
+        if let Some(ref security_issues) = result.security_issues {
+            let tools_with_issues: Vec<_> = result
+                .tools
+                .iter()
+                .filter(|tool| {
+                    security_issues
+                        .tool_issues
+                        .iter()
+                        .any(|issue| issue.tool_name.as_ref() == Some(&tool.name))
+                })
+                .collect();
+
+            if !tools_with_issues.is_empty() {
+                writeln!(
+                    report,
+                    "#### Tools with Security Issues ({} of {} total)",
+                    tools_with_issues.len(),
+                    result.tools.len()
+                )?;
+                writeln!(report)?;
+
+                for tool in tools_with_issues {
+                    writeln!(report, "##### {}", tool.name)?;
+
+                    if let Some(ref description) = tool.description {
+                        writeln!(report, "{description}")?;
+                        writeln!(report)?;
+                    }
+
+                    let tool_issues: Vec<_> = security_issues
+                        .tool_issues
+                        .iter()
+                        .filter(|issue| issue.tool_name.as_ref() == Some(&tool.name))
+                        .collect();
+
+                    writeln!(report, "**Security Issues:**")?;
+                    for issue in tool_issues {
+                        let severity_emoji = match issue.severity.as_str() {
+                            "CRITICAL" => "🔴",
+                            "HIGH" => "🟠",
+                            "MEDIUM" => "🟡",
+                            _ => "🟢",
+                        };
+                        writeln!(
+                            report,
+                            "- {} **{}:** {}",
+                            severity_emoji, issue.severity, issue.description
+                        )?;
+                        if let Some(ref details) = issue.details {
+                            writeln!(report, "  - *Details:* {details}")?;
+                        }
+                    }
+                    writeln!(report)?;
+                }
+            } else if !result.tools.is_empty() {
+                writeln!(report, "#### Tools")?;
+                writeln!(report)?;
+                writeln!(
+                    report,
+                    "✅ All {} tools passed security checks",
+                    result.tools.len()
+                )?;
+                writeln!(report)?;
+            }
+        } else if !result.tools.is_empty() {
+            writeln!(report, "#### Tools")?;
+            writeln!(report)?;
+            writeln!(
+                report,
+                "⚠️ {} tools found but no security analysis available",
+                result.tools.len()
+            )?;
+            writeln!(report)?;
+        }
+
+        // Resources - only show resources with security issues
+        if let Some(ref security_issues) = result.security_issues {
+            let resources_with_issues: Vec<_> = result
+                .resources
+                .iter()
+                .filter(|resource| {
+                    security_issues
+                        .resource_issues
+                        .iter()
+                        .any(|issue| issue.resource_uri.as_ref() == Some(&resource.uri))
+                })
+                .collect();
+
+            if !resources_with_issues.is_empty() {
+                writeln!(
+                    report,
+                    "#### Resources with Security Issues ({} of {} total)",
+                    resources_with_issues.len(),
+                    result.resources.len()
+                )?;
+                writeln!(report)?;
+
+                for resource in resources_with_issues {
+                    writeln!(report, "##### {}", resource.name)?;
+                    writeln!(report, "- **URI:** {}", resource.uri)?;
+                    if let Some(ref description) = resource.description {
+                        writeln!(report, "- **Description:** {description}")?;
+                    }
+
+                    let resource_issues: Vec<_> = security_issues
+                        .resource_issues
+                        .iter()
+                        .filter(|issue| issue.resource_uri.as_ref() == Some(&resource.uri))
+                        .collect();
+
+                    writeln!(report)?;
+                    writeln!(report, "**Security Issues:**")?;
+                    for issue in resource_issues {
+                        let severity_emoji = match issue.severity.as_str() {
+                            "CRITICAL" => "🔴",
+                            "HIGH" => "🟠",
+                            "MEDIUM" => "🟡",
+                            _ => "🟢",
+                        };
+                        writeln!(
+                            report,
+                            "- {} **{}:** {}",
+                            severity_emoji, issue.severity, issue.description
+                        )?;
+                    }
+                    writeln!(report)?;
+                }
+            } else if !result.resources.is_empty() {
+                writeln!(report, "#### Resources")?;
+                writeln!(report)?;
+                writeln!(
+                    report,
+                    "✅ All {} resources passed security checks",
+                    result.resources.len()
+                )?;
+                writeln!(report)?;
+            }
+        } else if !result.resources.is_empty() {
+            writeln!(report, "#### Resources")?;
+            writeln!(report)?;
+            writeln!(
+                report,
+                "⚠️ {} resources found but no security analysis available",
+                result.resources.len()
+            )?;
+            writeln!(report)?;
+        }
+
+        // Prompts - only show prompts with security issues
+        if let Some(ref security_issues) = result.security_issues {
+            let prompts_with_issues: Vec<_> = result
+                .prompts
+                .iter()
+                .filter(|prompt| {
+                    security_issues
+                        .prompt_issues
+                        .iter()
+                        .any(|issue| issue.prompt_name.as_ref() == Some(&prompt.name))
+                })
+                .collect();
+
+            if !prompts_with_issues.is_empty() {
+                writeln!(
+                    report,
+                    "#### Prompts with Security Issues ({} of {} total)",
+                    prompts_with_issues.len(),
+                    result.prompts.len()
+                )?;
+                writeln!(report)?;
+
+                for prompt in prompts_with_issues {
+                    writeln!(report, "##### {}", prompt.name)?;
+                    if let Some(ref description) = prompt.description {
+                        writeln!(report, "{description}")?;
+                        writeln!(report)?;
+                    }
+
+                    let prompt_issues: Vec<_> = security_issues
+                        .prompt_issues
+                        .iter()
+                        .filter(|issue| issue.prompt_name.as_ref() == Some(&prompt.name))
+                        .collect();
+
+                    writeln!(report, "**Security Issues:**")?;
+                    for issue in prompt_issues {
+                        let severity_emoji = match issue.severity.as_str() {
+                            "CRITICAL" => "🔴",
+                            "HIGH" => "🟠",
+                            "MEDIUM" => "🟡",
+                            _ => "🟢",
+                        };
+                        writeln!(
+                            report,
+                            "- {} **{}:** {}",
+                            severity_emoji, issue.severity, issue.description
+                        )?;
+                    }
+                    writeln!(report)?;
+                }
+            } else if !result.prompts.is_empty() {
+                writeln!(report, "#### Prompts")?;
+                writeln!(report)?;
+                writeln!(
+                    report,
+                    "✅ All {} prompts passed security checks",
+                    result.prompts.len()
+                )?;
+                writeln!(report)?;
+            }
+        } else if !result.prompts.is_empty() {
+            writeln!(report, "#### Prompts")?;
+            writeln!(report)?;
+            writeln!(
+                report,
+                "⚠️ {} prompts found but no security analysis available",
+                result.prompts.len()
+            )?;
+            writeln!(report)?;
+        }
+
+        writeln!(report, "---")?;
+        writeln!(report)?;
+    }
+
+    // Footer
+    writeln!(report, "## Report Information")?;
+    writeln!(report)?;
+    writeln!(report, "This report was generated by [Ramparts](https://github.com/getjavelin/ramparts), an MCP security scanner.")?;
+    writeln!(report)?;
+    writeln!(report, "For more information about security issues and remediation, see the [Ramparts documentation](https://github.com/getjavelin/ramparts/blob/main/docs/security-features.md).")?;
+
+    Ok(report)
+}
+
+/// Write markdown report to file with timestamp
+pub fn write_markdown_report(results: &[ScanResult]) -> Result<String> {
+    let report_content = generate_markdown_report(results)?;
+    let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+    let filename = format!("scan_{timestamp}.md");
+
+    let mut file = File::create(&filename)
+        .map_err(|e| anyhow!("Failed to create report file {}: {}", filename, e))?;
+
+    file.write_all(report_content.as_bytes())
+        .map_err(|e| anyhow!("Failed to write report to {}: {}", filename, e))?;
+
+    Ok(filename)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{error_utils, format_status, Timer};
@@ -909,5 +1597,9 @@ mod tests {
         ));
         assert!(connection_error.contains("CONNECTION ERROR"));
         assert!(connection_error.contains("Connection failed"));
+
+        let auth_error = format_status(&ScanStatus::AuthenticationError("Auth failed".to_string()));
+        assert!(auth_error.contains("AUTHENTICATION ERROR"));
+        assert!(auth_error.contains("Auth failed"));
     }
 }

@@ -181,6 +181,9 @@ pub struct ScanResult {
     pub security_issues: Option<SecurityScanResult>,
     pub yara_results: Vec<YaraScanResult>,
     pub errors: Vec<String>,
+    /// IDE source that provided this server configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ide_source: Option<String>,
 }
 
 /// Scan status enumeration
@@ -190,6 +193,7 @@ pub enum ScanStatus {
     Failed(String),
     Timeout,
     ConnectionError(String),
+    AuthenticationError(String),
 }
 
 impl ScanResult {
@@ -206,6 +210,7 @@ impl ScanResult {
             security_issues: None,
             yara_results: Vec::new(),
             errors: Vec::new(),
+            ide_source: None,
         }
     }
 
