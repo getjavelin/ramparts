@@ -1098,8 +1098,8 @@ mod tests {
 
         let scanner = SecurityScanner::with_config(config);
 
-        // Verify the endpoint construction preserves the query parameter
-        let expected_endpoint = "https://my-resource.openai.azure.com/openai/deployments/gpt-4?api-version=2024-02-15-preview/chat/completions";
+        // Verify the endpoint uses base_url as-is (no automatic appending)
+        let expected_endpoint = azure_base_url;
         assert_eq!(scanner.model_endpoint.as_ref().unwrap(), expected_endpoint);
 
         // Verify LLM config extraction works
@@ -1164,30 +1164,21 @@ mod tests {
 
         let scanner = SecurityScanner::with_config(config);
 
-        // Verify standard endpoint construction
-        let expected_endpoint = "https://api.openai.com/v1/chat/completions";
+        // Verify standard endpoint uses base_url as-is (no automatic appending)
+        let expected_endpoint = openai_base_url;
         assert_eq!(scanner.model_endpoint.as_ref().unwrap(), expected_endpoint);
     }
 
     #[test]
     fn test_various_query_parameter_scenarios() {
-        // Test various URL formats with query parameters to ensure they're preserved
+        // Test various URL formats to ensure they're used as-is (no automatic appending)
         let test_cases = vec![
-            (
-                "https://api.example.com/v1?api_key=test123",
-                "https://api.example.com/v1?api_key=test123/chat/completions"
-            ),
-            (
-                "https://my-azure.openai.azure.com/openai/deployments/gpt-4?api-version=2024-02-15-preview&extra=param",
-                "https://my-azure.openai.azure.com/openai/deployments/gpt-4?api-version=2024-02-15-preview&extra=param/chat/completions"
-            ),
-            (
-                "https://local.ai:8080/v1?model=custom&timeout=30",
-                "https://local.ai:8080/v1?model=custom&timeout=30/chat/completions"
-            ),
+            "https://api.example.com/v1?api_key=test123",
+            "https://my-azure.openai.azure.com/openai/deployments/gpt-4?api-version=2024-02-15-preview&extra=param",
+            "https://local.ai:8080/v1?model=custom&timeout=30",
         ];
 
-        for (base_url, expected_endpoint) in test_cases {
+        for base_url in test_cases {
             let config = crate::config::ScannerConfig {
                 llm: crate::config::LLMConfig {
                     provider: "openai".to_string(),
@@ -1238,7 +1229,7 @@ mod tests {
             let scanner = SecurityScanner::with_config(config);
             assert_eq!(
                 scanner.model_endpoint.as_ref().unwrap(),
-                expected_endpoint,
+                base_url,
                 "Failed for base_url: {base_url}"
             );
         }

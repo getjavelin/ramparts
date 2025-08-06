@@ -576,26 +576,6 @@ impl McpClient {
     ) -> Result<MCPSession> {
         debug!("Smart connecting to MCP server at: {}", url);
 
-        // STDIO transport: Use rmcp (perfect implementation)
-        if url.starts_with("stdio:") {
-            // Parse STDIO URL format: stdio:executable:args...
-            let parts: Vec<&str> = url.splitn(3, ':').collect();
-            if parts.len() >= 2 {
-                let args = if parts.len() > 2 {
-                    parts[2].split_whitespace().map(|s| s.to_string()).collect()
-                } else {
-                    vec![]
-                };
-                return self
-                    .connect_subprocess(parts[1], &args, auth_headers.as_ref())
-                    .await;
-            } else {
-                return Err(anyhow!(
-                    "Invalid STDIO URL format. Expected: stdio:executable:args"
-                ));
-            }
-        }
-
         // HTTP transport: Try all transports with validation
         let mut best_session = None;
         let mut partial_session = None;
@@ -700,7 +680,7 @@ impl McpClient {
                 "capabilities": {},
                 "clientInfo": {
                     "name": "ramparts",
-                    "version": "0.6.8"
+                    "version": env!("CARGO_PKG_VERSION")
                 }
             }
         });
