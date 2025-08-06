@@ -252,6 +252,8 @@ pub struct MCPTool {
 pub struct MCPSession {
     pub server_info: Option<MCPServerInfo>,
     pub endpoint_url: String, // Store the successful endpoint URL for reuse
+    pub auth_headers: Option<HashMap<String, String>>, // Store auth headers for reuse
+    pub session_id: Option<String>, // Store session ID for stateful MCP servers (e.g., GitHub Copilot)
 }
 
 /// MCP resource definition

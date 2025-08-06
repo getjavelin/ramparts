@@ -1239,8 +1239,7 @@ mod tests {
             assert_eq!(
                 scanner.model_endpoint.as_ref().unwrap(),
                 expected_endpoint,
-                "Failed for base_url: {}",
-                base_url
+                "Failed for base_url: {base_url}"
             );
         }
     }

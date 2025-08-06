@@ -34,20 +34,17 @@ impl McpClient {
         }
     }
 
-    /// Try to connect using streamable HTTP transport
-    async fn try_streamable_http_connection(
-        &self,
-        url: &str,
-        auth_headers: Option<&HashMap<String, String>>,
-    ) -> Result<MCPSession> {
-        debug!("Attempting streamable HTTP connection to: {}", url);
-
-        // Create streamable HTTP transport with auth headers if provided
-        let transport = if let Some(headers) = auth_headers {
-            debug!("Creating HTTP client with {} auth headers", headers.len());
-            let mut header_map = HeaderMap::new();
-
-            for (key, value) in headers {
+    /// Centralized HTTP client factory with consistent auth header handling
+    /// 
+    /// This is the single source of truth for creating HTTP clients throughout the MCP client.
+    /// All HTTP client creation should go through this method to ensure consistent auth handling.
+    fn create_http_client(&self, auth_headers: Option<&HashMap<String, String>>) -> Result<HttpClient> {
+        let mut headers = HeaderMap::new();
+        
+        if let Some(auth_headers) = auth_headers {
+            debug!("Creating HTTP client with {} auth headers", auth_headers.len());
+            
+            for (key, value) in auth_headers {
                 debug!("Processing header: {} = {}", key, value);
                 match (
                     HeaderName::from_bytes(key.as_bytes()),
@@ -55,7 +52,7 @@ impl McpClient {
                 ) {
                     (Ok(name), Ok(val)) => {
                         debug!("Successfully added header: {}", key);
-                        header_map.insert(name, val);
+                        headers.insert(name, val);
                     }
                     (Err(e), _) => {
                         warn!("Failed to parse header name '{}': {}", key, e);
@@ -65,11 +62,28 @@ impl McpClient {
                     }
                 }
             }
+        } else {
+            debug!("Creating HTTP client without auth headers");
+        }
 
-            let client = HttpClient::builder()
-                .default_headers(header_map)
-                .build()
-                .expect("Failed to build HTTP client");
+        HttpClient::builder()
+            .default_headers(headers)
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| anyhow!("Failed to build HTTP client: {}", e))
+    }
+
+    /// Try to connect using streamable HTTP transport
+    async fn try_streamable_http_connection(
+        &self,
+        url: &str,
+        auth_headers: Option<&HashMap<String, String>>,
+    ) -> Result<MCPSession> {
+        debug!("Attempting streamable HTTP connection to: {}", url);
+
+        // Create streamable HTTP transport using centralized HTTP client factory
+        let transport = if auth_headers.is_some() {
+            let client = self.create_http_client(auth_headers)?;
             let config =
                 rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig {
                     uri: url.into(),
@@ -137,6 +151,8 @@ impl McpClient {
         let session = MCPSession {
             server_info: Some(server_info),
             endpoint_url: url.to_string(),
+            auth_headers: auth_headers.cloned(),
+            session_id: None, // rmcp transports handle sessions internally
         };
 
         Ok(session)
@@ -150,34 +166,10 @@ impl McpClient {
     ) -> Result<MCPSession> {
         debug!("Attempting SSE connection to: {}", url);
 
-        // Create SSE transport with auth headers if provided
-        let transport = if let Some(headers) = auth_headers {
-            debug!("Creating SSE client with {} auth headers", headers.len());
-            let mut header_map = HeaderMap::new();
-
-            for (key, value) in headers {
-                debug!("Processing SSE header: {} = {}", key, value);
-                match (
-                    HeaderName::from_bytes(key.as_bytes()),
-                    HeaderValue::from_str(value),
-                ) {
-                    (Ok(name), Ok(val)) => {
-                        debug!("Successfully added SSE header: {}", key);
-                        header_map.insert(name, val);
-                    }
-                    (Err(e), _) => {
-                        warn!("Failed to parse SSE header name '{}': {}", key, e);
-                    }
-                    (_, Err(e)) => {
-                        warn!("Failed to parse SSE header value for '{}': {}", key, e);
-                    }
-                }
-            }
-
-            let client = HttpClient::builder()
-                .default_headers(header_map)
-                .build()
-                .expect("Failed to build HTTP client");
+        // Create SSE transport using centralized HTTP client factory
+        let transport = if auth_headers.is_some() {
+            debug!("Creating SSE client with auth headers");
+            let client = self.create_http_client(auth_headers)?;
             let config = rmcp::transport::sse_client::SseClientConfig {
                 sse_endpoint: url.into(),
                 ..Default::default()
@@ -248,6 +240,8 @@ impl McpClient {
         let session = MCPSession {
             server_info: Some(server_info),
             endpoint_url: url.to_string(),
+            auth_headers: auth_headers.cloned(),
+            session_id: None, // rmcp transports handle sessions internally
         };
 
         Ok(session)
@@ -359,6 +353,8 @@ impl McpClient {
         let session = MCPSession {
             server_info: Some(server_info),
             endpoint_url: endpoint,
+            auth_headers: None, // Subprocess doesn't use HTTP auth headers
+            session_id: None, // Subprocess doesn't use HTTP sessions
         };
 
         Ok(session)
@@ -543,7 +539,24 @@ impl McpClient {
         }
     }
 
-    /// Smart connect method - tries the best transport for each scenario
+    /// Validate session by testing actual API functionality
+    async fn validate_session(&self, session: &MCPSession) -> bool {
+        debug!("Validating session functionality for: {}", session.endpoint_url);
+        
+        // Try to fetch tools as a basic functionality test
+        match self.list_tools(session).await {
+            Ok(tools) => {
+                debug!("Session validation successful: {} tools retrieved", tools.len());
+                true
+            }
+            Err(e) => {
+                debug!("Session validation failed: {}", e);
+                false
+            }
+        }
+    }
+
+    /// Smart connect method - tries all transports with comprehensive fallback strategy
     pub async fn connect_smart(
         &self,
         url: &str,
@@ -571,22 +584,29 @@ impl McpClient {
             }
         }
 
-        // HTTP transport: Try simple HTTP first, rmcp as fallback
+        // HTTP transport: Try all transports with validation
+        let mut best_session = None;
+        let mut partial_session = None;
+        let mut last_error = None;
 
-        // Step 1: Try simple HTTP (works with most servers)
+        // Step 1: Try simple HTTP (works with most servers, now with session support)
         match self
             .try_simple_http_connection(url, auth_headers.as_ref())
             .await
         {
             Ok(session) => {
-                debug!("Successfully connected via simple HTTP");
-                return Ok(session);
+                debug!("Simple HTTP connection established, validating...");
+                if self.validate_session(&session).await {
+                    debug!("Simple HTTP session fully validated - using it");
+                    return Ok(session);
+                } else {
+                    debug!("Simple HTTP session has API issues - keeping as fallback");
+                    partial_session = Some(session);
+                }
             }
             Err(e) => {
-                debug!(
-                    "Simple HTTP connection failed: {}, trying rmcp transports",
-                    e
-                );
+                debug!("Simple HTTP connection failed: {}", e);
+                last_error = Some(e);
             }
         }
 
@@ -596,27 +616,54 @@ impl McpClient {
             .await
         {
             Ok(session) => {
-                debug!("Successfully connected via rmcp streamable HTTP");
-                return Ok(session);
+                debug!("rmcp streamable HTTP connection established, validating...");
+                if self.validate_session(&session).await {
+                    debug!("rmcp streamable HTTP session fully validated - using it");
+                    return Ok(session);
+                } else {
+                    debug!("rmcp streamable HTTP session has API issues");
+                    if best_session.is_none() {
+                        best_session = Some(session);
+                    }
+                }
             }
             Err(e) => {
-                debug!("rmcp streamable HTTP connection failed: {}, trying SSE", e);
+                debug!("rmcp streamable HTTP connection failed: {}", e);
+                last_error = Some(e);
             }
         }
 
         // Step 3: Try rmcp SSE transport (final fallback)
         match self.try_sse_connection(url, auth_headers.as_ref()).await {
             Ok(session) => {
-                debug!("Successfully connected via rmcp SSE");
-                Ok(session)
+                debug!("rmcp SSE connection established, validating...");
+                if self.validate_session(&session).await {
+                    debug!("rmcp SSE session fully validated - using it");
+                    return Ok(session);
+                } else {
+                    debug!("rmcp SSE session has API issues");
+                    if best_session.is_none() {
+                        best_session = Some(session);
+                    }
+                }
             }
             Err(e) => {
-                warn!("All transport methods failed. Last error: {}", e);
-                Err(anyhow!(
-                    "Failed to connect via simple HTTP, streamable HTTP, and SSE: {}",
-                    e
-                ))
+                debug!("rmcp SSE connection failed: {}", e);
+                last_error = Some(e);
             }
+        }
+
+        // Return best available session or error
+        if let Some(session) = best_session.or(partial_session) {
+            warn!("Using partially working session - some API calls may fail");
+            Ok(session)
+        } else {
+            let error = last_error.unwrap_or_else(|| anyhow!("Unknown error"));
+            warn!("All transport methods failed. Last error: {}", error);
+            Err(anyhow!(
+                "Failed to connect via simple HTTP, streamable HTTP, and SSE: {}",
+                error
+            ))
         }
     }
 
@@ -628,28 +675,8 @@ impl McpClient {
     ) -> Result<MCPSession> {
         debug!("Attempting simple HTTP connection to: {}", url);
 
-        // Build HTTP client with auth headers
-        let mut headers = HeaderMap::new();
-        if let Some(auth_headers) = auth_headers {
-            for (key, value) in auth_headers {
-                match (
-                    HeaderName::from_bytes(key.as_bytes()),
-                    HeaderValue::from_str(value),
-                ) {
-                    (Ok(name), Ok(val)) => {
-                        headers.insert(name, val);
-                    }
-                    _ => {
-                        warn!("Failed to parse header: {} = {}", key, value);
-                    }
-                }
-            }
-        }
-
-        let client = HttpClient::builder()
-            .default_headers(headers)
-            .timeout(std::time::Duration::from_secs(30))
-            .build()?;
+        // Use centralized HTTP client factory
+        let client = self.create_http_client(auth_headers)?;
 
         // Step 1: Initialize connection
         let init_request = json!({
@@ -672,6 +699,16 @@ impl McpClient {
         if !response.status().is_success() {
             return Err(anyhow!("Initialize failed: HTTP {}", response.status()));
         }
+
+        // Extract session ID from response headers (for stateful servers like GitHub Copilot)
+        let session_id = response
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| {
+                debug!("Extracted session ID from server: {}", s);
+                s.to_string()
+            });
 
         let init_response: Value = response.json().await?;
         debug!("Initialize response: {:?}", init_response);
@@ -724,6 +761,8 @@ impl McpClient {
         Ok(MCPSession {
             server_info,
             endpoint_url: url.to_string(),
+            auth_headers: auth_headers.cloned(),
+            session_id,
         })
     }
 
@@ -735,7 +774,7 @@ impl McpClient {
         );
 
         let tools_response = self
-            .json_rpc_request(&session.endpoint_url, "tools/list", json!({}))
+            .json_rpc_request(&session.endpoint_url, "tools/list", json!({}), session.auth_headers.as_ref(), session.session_id.as_ref())
             .await?;
 
         let tools_array = tools_response
@@ -781,7 +820,7 @@ impl McpClient {
         );
 
         let resources_response = self
-            .json_rpc_request(&session.endpoint_url, "resources/list", json!({}))
+            .json_rpc_request(&session.endpoint_url, "resources/list", json!({}), session.auth_headers.as_ref(), session.session_id.as_ref())
             .await?;
 
         let resources_array = resources_response
@@ -832,7 +871,7 @@ impl McpClient {
         );
 
         let prompts_response = self
-            .json_rpc_request(&session.endpoint_url, "prompts/list", json!({}))
+            .json_rpc_request(&session.endpoint_url, "prompts/list", json!({}), session.auth_headers.as_ref(), session.session_id.as_ref())
             .await?;
 
         let prompts_array = prompts_response
@@ -866,8 +905,22 @@ impl McpClient {
     }
 
     /// Generic JSON-RPC request helper for simple HTTP transport
-    async fn json_rpc_request(&self, url: &str, method: &str, params: Value) -> Result<Value> {
-        let client = HttpClient::new();
+    async fn json_rpc_request(&self, url: &str, method: &str, params: Value, auth_headers: Option<&HashMap<String, String>>, session_id: Option<&String>) -> Result<Value> {
+        // Use centralized HTTP client factory with session support
+        let mut client_headers = HashMap::new();
+        
+        // Add auth headers
+        if let Some(auth_headers) = auth_headers {
+            client_headers.extend(auth_headers.clone());
+        }
+        
+        // Add session ID header for stateful servers (e.g., GitHub Copilot)
+        if let Some(session_id) = session_id {
+            debug!("Adding session ID to request: {}", session_id);
+            client_headers.insert("Mcp-Session-Id".to_string(), session_id.clone());
+        }
+        
+        let client = self.create_http_client(if client_headers.is_empty() { None } else { Some(&client_headers) })?;
 
         let request = json!({
             "jsonrpc": "2.0",
@@ -909,11 +962,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_centralized_http_client_factory() {
+        let client = McpClient::new();
+        
+        // Test client creation without auth headers
+        let client_no_auth = client.create_http_client(None);
+        assert!(client_no_auth.is_ok(), "Should create HTTP client without auth headers");
+        
+        // Test client creation with auth headers
+        let mut auth_headers = HashMap::new();
+        auth_headers.insert("Authorization".to_string(), "Bearer test-token".to_string());
+        auth_headers.insert("X-API-Key".to_string(), "test-api-key".to_string());
+        
+        let client_with_auth = client.create_http_client(Some(&auth_headers));
+        assert!(client_with_auth.is_ok(), "Should create HTTP client with auth headers");
+        
+        // Test invalid header handling
+        let mut invalid_headers = HashMap::new();
+        invalid_headers.insert("Invalid\x00Header".to_string(), "value".to_string());
+        
+        let client_invalid = client.create_http_client(Some(&invalid_headers));
+        assert!(client_invalid.is_ok(), "Should handle invalid headers gracefully");
+    }
+
+    #[tokio::test]
     async fn test_http_connection() {
         let client = McpClient::new();
         // This will likely fail in tests since there's no server running
         // but we can at least test that the method exists and can be called
-        let result = client.connect("http://localhost:8124", None).await;
+        let result = client.connect_smart("http://localhost:8124", None).await;
         // We expect this to fail in the test environment, but not panic
         assert!(result.is_err() || result.is_ok());
     }
