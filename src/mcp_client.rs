@@ -35,15 +35,21 @@ impl McpClient {
     }
 
     /// Centralized HTTP client factory with consistent auth header handling
-    /// 
+    ///
     /// This is the single source of truth for creating HTTP clients throughout the MCP client.
     /// All HTTP client creation should go through this method to ensure consistent auth handling.
-    fn create_http_client(&self, auth_headers: Option<&HashMap<String, String>>) -> Result<HttpClient> {
+    fn create_http_client(
+        &self,
+        auth_headers: Option<&HashMap<String, String>>,
+    ) -> Result<HttpClient> {
         let mut headers = HeaderMap::new();
-        
+
         if let Some(auth_headers) = auth_headers {
-            debug!("Creating HTTP client with {} auth headers", auth_headers.len());
-            
+            debug!(
+                "Creating HTTP client with {} auth headers",
+                auth_headers.len()
+            );
+
             for (key, value) in auth_headers {
                 debug!("Processing header: {} = {}", key, value);
                 match (
@@ -354,7 +360,7 @@ impl McpClient {
             server_info: Some(server_info),
             endpoint_url: endpoint,
             auth_headers: None, // Subprocess doesn't use HTTP auth headers
-            session_id: None, // Subprocess doesn't use HTTP sessions
+            session_id: None,   // Subprocess doesn't use HTTP sessions
         };
 
         Ok(session)
@@ -541,12 +547,18 @@ impl McpClient {
 
     /// Validate session by testing actual API functionality
     async fn validate_session(&self, session: &MCPSession) -> bool {
-        debug!("Validating session functionality for: {}", session.endpoint_url);
-        
+        debug!(
+            "Validating session functionality for: {}",
+            session.endpoint_url
+        );
+
         // Try to fetch tools as a basic functionality test
         match self.list_tools(session).await {
             Ok(tools) => {
-                debug!("Session validation successful: {} tools retrieved", tools.len());
+                debug!(
+                    "Session validation successful: {} tools retrieved",
+                    tools.len()
+                );
                 true
             }
             Err(e) => {
@@ -774,7 +786,13 @@ impl McpClient {
         );
 
         let tools_response = self
-            .json_rpc_request(&session.endpoint_url, "tools/list", json!({}), session.auth_headers.as_ref(), session.session_id.as_ref())
+            .json_rpc_request(
+                &session.endpoint_url,
+                "tools/list",
+                json!({}),
+                session.auth_headers.as_ref(),
+                session.session_id.as_ref(),
+            )
             .await?;
 
         let tools_array = tools_response
@@ -820,7 +838,13 @@ impl McpClient {
         );
 
         let resources_response = self
-            .json_rpc_request(&session.endpoint_url, "resources/list", json!({}), session.auth_headers.as_ref(), session.session_id.as_ref())
+            .json_rpc_request(
+                &session.endpoint_url,
+                "resources/list",
+                json!({}),
+                session.auth_headers.as_ref(),
+                session.session_id.as_ref(),
+            )
             .await?;
 
         let resources_array = resources_response
@@ -871,7 +895,13 @@ impl McpClient {
         );
 
         let prompts_response = self
-            .json_rpc_request(&session.endpoint_url, "prompts/list", json!({}), session.auth_headers.as_ref(), session.session_id.as_ref())
+            .json_rpc_request(
+                &session.endpoint_url,
+                "prompts/list",
+                json!({}),
+                session.auth_headers.as_ref(),
+                session.session_id.as_ref(),
+            )
             .await?;
 
         let prompts_array = prompts_response
@@ -905,22 +935,33 @@ impl McpClient {
     }
 
     /// Generic JSON-RPC request helper for simple HTTP transport
-    async fn json_rpc_request(&self, url: &str, method: &str, params: Value, auth_headers: Option<&HashMap<String, String>>, session_id: Option<&String>) -> Result<Value> {
+    async fn json_rpc_request(
+        &self,
+        url: &str,
+        method: &str,
+        params: Value,
+        auth_headers: Option<&HashMap<String, String>>,
+        session_id: Option<&String>,
+    ) -> Result<Value> {
         // Use centralized HTTP client factory with session support
         let mut client_headers = HashMap::new();
-        
+
         // Add auth headers
         if let Some(auth_headers) = auth_headers {
             client_headers.extend(auth_headers.clone());
         }
-        
+
         // Add session ID header for stateful servers (e.g., GitHub Copilot)
         if let Some(session_id) = session_id {
             debug!("Adding session ID to request: {}", session_id);
             client_headers.insert("Mcp-Session-Id".to_string(), session_id.clone());
         }
-        
-        let client = self.create_http_client(if client_headers.is_empty() { None } else { Some(&client_headers) })?;
+
+        let client = self.create_http_client(if client_headers.is_empty() {
+            None
+        } else {
+            Some(&client_headers)
+        })?;
 
         let request = json!({
             "jsonrpc": "2.0",
@@ -964,25 +1005,34 @@ mod tests {
     #[tokio::test]
     async fn test_centralized_http_client_factory() {
         let client = McpClient::new();
-        
+
         // Test client creation without auth headers
         let client_no_auth = client.create_http_client(None);
-        assert!(client_no_auth.is_ok(), "Should create HTTP client without auth headers");
-        
+        assert!(
+            client_no_auth.is_ok(),
+            "Should create HTTP client without auth headers"
+        );
+
         // Test client creation with auth headers
         let mut auth_headers = HashMap::new();
         auth_headers.insert("Authorization".to_string(), "Bearer test-token".to_string());
         auth_headers.insert("X-API-Key".to_string(), "test-api-key".to_string());
-        
+
         let client_with_auth = client.create_http_client(Some(&auth_headers));
-        assert!(client_with_auth.is_ok(), "Should create HTTP client with auth headers");
-        
+        assert!(
+            client_with_auth.is_ok(),
+            "Should create HTTP client with auth headers"
+        );
+
         // Test invalid header handling
         let mut invalid_headers = HashMap::new();
         invalid_headers.insert("Invalid\x00Header".to_string(), "value".to_string());
-        
+
         let client_invalid = client.create_http_client(Some(&invalid_headers));
-        assert!(client_invalid.is_ok(), "Should handle invalid headers gracefully");
+        assert!(
+            client_invalid.is_ok(),
+            "Should handle invalid headers gracefully"
+        );
     }
 
     #[tokio::test]

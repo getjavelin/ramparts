@@ -35,10 +35,12 @@ MCP servers expose powerful capabilities—file systems, databases, APIs, and sy
 Ramparts provides **security scanning** of MCP servers by:
 
 1. **Discovering Capabilities**: Scans all MCP endpoints to identify available tools, resources, and prompts
-2. **Static Analysis**: Performs yara-based checks for common vulnerabilities
-3. **Cross-Origin Analysis**: Detects when tools span multiple domains, which could enable context hijacking or injection attacks
-4. **LLM-Powered Analysis**: Uses AI models to detect sophisticated security issues
-5. **Risk Assessment**: Categorizes findings by severity and provides actionable recommendations
+2. **Multi-Transport Support**: Supports HTTP, SSE, stdio, and subprocess transports with intelligent fallback
+3. **Session Management**: Handles stateful MCP servers with automatic session ID management
+4. **Static Analysis**: Performs yara-based checks for common vulnerabilities
+5. **Cross-Origin Analysis**: Detects when tools span multiple domains, which could enable context hijacking or injection attacks
+6. **LLM-Powered Analysis**: Uses AI models to detect sophisticated security issues
+7. **Risk Assessment**: Categorizes findings by severity and provides actionable recommendations
 >
 > **💡 Jump directly to detailed Rampart features?**
 > [**📚 Detailed Features**](docs/features.md)
@@ -71,6 +73,10 @@ ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: 
 
 # Generate detailed markdown report (scan_YYYYMMDD_HHMMSS.md)
 ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $TOKEN" --report
+
+# Scan stdio/subprocess MCP servers
+ramparts scan "stdio:npx:mcp-server-commands"
+ramparts scan "stdio:python3:/path/to/mcp_server.py"
 ```
 
 **Scan your IDE's MCP configurations**
@@ -95,7 +101,7 @@ ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: 
 RAMPARTS
 MCP Security Scanner
 
-Version: 0.6.7
+Version: 0.6.9
 Current Time: 2025-08-04 07:32:19 UTC
 Git Commit: 9d0c37c
 

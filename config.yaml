@@ -1,7 +1,7 @@
 llm:
   provider: openai
   model: gpt-4o
-  base_url: https://api.openai.com/v1
+  base_url: https://api.openai.com/v1/chat/completions
   api_key: ${OPENAI_API_KEY}
   timeout: 30
   max_tokens: 4000

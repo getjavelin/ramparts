@@ -72,9 +72,11 @@ Get detailed MCP protocol information and supported capabilities.
       "http": "supported",
       "features": [
         "JSON-RPC 2.0",
-        "Session Management",
-        "Protocol Version Headers",
+        "Stateful Session Management",
+        "Protocol Version Headers", 
         "STDIO Process Communication",
+        "Intelligent Transport Fallback",
+        "rmcp Library Integration",
         "Multi-Transport Support"
       ]
     },
@@ -115,7 +117,8 @@ Get interactive API documentation with examples.
   "transports": {
     "http": {
       "supported": true,
-      "description": "HTTP/HTTPS transport for remote MCP servers",
+      "description": "HTTP/HTTPS transport with intelligent fallback (simple HTTP, rmcp streamable, SSE)",
+      "features": ["session_management", "authentication_headers", "automatic_fallback"],
       "examples": [
         "http://localhost:3000",
         "https://api.githubcopilot.com/mcp"
@@ -123,10 +126,12 @@ Get interactive API documentation with examples.
     },
     "stdio": {
       "supported": true,
-      "description": "STDIO transport for local MCP server processes",
+      "description": "STDIO transport for local MCP server processes using rmcp subprocess implementation",
+      "features": ["process_management", "argument_parsing", "concurrent_execution"],
       "examples": [
-        "stdio:///usr/local/bin/mcp-server",
-        "stdio://node /path/to/mcp-server.js"
+        "stdio:npx:mcp-server-commands",
+        "stdio:python3:/path/to/server.py",
+        "stdio:///usr/local/bin/mcp-server"
       ]
     }
   }

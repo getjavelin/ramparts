@@ -75,11 +75,35 @@ The server handles concurrent requests, so your team can run multiple scans simu
 
 📚 **[Complete API Documentation](api.md)** covers all the endpoints with examples and integration patterns.
 
-### Multiple Transport Support
+### Advanced Transport Support with Intelligent Fallback
 
-Ramparts talks to MCP servers however they're set up. Most of the time that's HTTP/HTTPS for remote servers, but it also handles STDIO communication for local executables. You don't need to think about it much—Ramparts figures out the right transport based on your URL.
+Ramparts supports multiple MCP transport methods with intelligent fallback strategies to ensure maximum compatibility:
 
-So whether you're scanning `https://api.githubcopilot.com/mcp/` or `stdio:///usr/local/bin/mcp-server`, it just works.
+**Transport Methods:**
+- **Simple HTTP**: Custom implementation optimized for most MCP servers
+- **rmcp Streamable HTTP**: Standards-compliant streaming HTTP transport
+- **rmcp SSE**: Server-Sent Events for real-time communication
+- **STDIO/Subprocess**: Local executable communication
+
+**Smart Connection Strategy:**
+Ramparts automatically tries multiple transport methods and selects the most reliable one. For HTTP servers, it tests simple HTTP first, then falls back to rmcp streamable HTTP and SSE if needed. Each transport is validated with actual API calls to ensure full functionality before being selected.
+
+**Session Management:**
+For stateful MCP servers (like GitHub Copilot), Ramparts automatically handles session management:
+- Extracts `mcp-session-id` from server responses
+- Maintains session state across multiple API calls
+- Ensures authentication headers are properly propagated
+- Validates session functionality before proceeding
+
+**Examples:**
+```bash
+# HTTP servers with automatic transport selection
+ramparts scan https://api.githubcopilot.com/mcp/ --auth-headers "Authorization: Bearer $TOKEN"
+
+# STDIO servers with multiple format support
+ramparts scan "stdio:npx:mcp-server-commands"
+ramparts scan "stdio:///usr/local/bin/python3:/path/to/server.py"
+```
 
 **STDIO servers get the same comprehensive security scanning as HTTP servers** - including YARA rule analysis, vulnerability detection, and detailed reporting. The `scan-config` command automatically detects and clearly labels STDIO vs HTTP servers from your IDE configurations.
 
