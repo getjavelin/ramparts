@@ -1048,7 +1048,7 @@ mod tests {
     fn test_azure_openai_endpoint_construction_with_api_version() {
         // Test that Azure OpenAI URLs with api-version query parameter are handled correctly
         let azure_base_url = "https://my-resource.openai.azure.com/openai/deployments/gpt-4?api-version=2024-02-15-preview";
-        
+
         let config = crate::config::ScannerConfig {
             llm: crate::config::LLMConfig {
                 provider: "openai".to_string(),
@@ -1097,11 +1097,11 @@ mod tests {
         };
 
         let scanner = SecurityScanner::with_config(config);
-        
+
         // Verify the endpoint construction preserves the query parameter
         let expected_endpoint = "https://my-resource.openai.azure.com/openai/deployments/gpt-4?api-version=2024-02-15-preview/chat/completions";
         assert_eq!(scanner.model_endpoint.as_ref().unwrap(), expected_endpoint);
-        
+
         // Verify LLM config extraction works
         let llm_config = scanner.get_llm_config();
         assert!(llm_config.is_ok());
@@ -1114,7 +1114,7 @@ mod tests {
     fn test_standard_openai_endpoint_construction() {
         // Test that standard OpenAI URLs work as expected (baseline test)
         let openai_base_url = "https://api.openai.com/v1";
-        
+
         let config = crate::config::ScannerConfig {
             llm: crate::config::LLMConfig {
                 provider: "openai".to_string(),
@@ -1163,7 +1163,7 @@ mod tests {
         };
 
         let scanner = SecurityScanner::with_config(config);
-        
+
         // Verify standard endpoint construction
         let expected_endpoint = "https://api.openai.com/v1/chat/completions";
         assert_eq!(scanner.model_endpoint.as_ref().unwrap(), expected_endpoint);
