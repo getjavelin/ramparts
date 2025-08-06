@@ -1415,10 +1415,10 @@ impl MCPScanner {
     async fn perform_scan_with_rmcp(&self, url: &str, options: &ScanOptions) -> Result<ScanData> {
         let mut scan_data = ScanData::new();
 
-        // Connect to MCP server using rmcp SDK
+        // Connect to MCP server using smart transport selection
         let session = self
             .mcp_client
-            .connect(url, options.auth_headers.clone())
+            .connect_smart(url, options.auth_headers.clone())
             .await?;
 
         // Add a small delay to allow the server to fully complete initialization

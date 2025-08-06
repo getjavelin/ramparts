@@ -1,8 +1,8 @@
 llm:
   provider: openai
-  model: gpt-4o
-  base_url: https://api.openai.com/v1
-  api_key: ''
+  model: gpt35
+  base_url: https://javelinpreview.openai.azure.com/openai/deployments/gpt35/chat/completions?api-version=2024-02-15-preview
+  api_key: 4b17cb97a16043e59963870587f1d028
   timeout: 30
   max_tokens: 4000
   temperature: 0.1

@@ -8,6 +8,8 @@ use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     Client as HttpClient,
 };
+use serde_json::{json, Value};
+use rand;
 use rmcp::{
     service::RunningService,
     transport::{SseClientTransport, StreamableHttpClientTransport, TokioChildProcess},
@@ -404,6 +406,16 @@ impl McpClient {
     pub async fn list_tools(&self, session: &MCPSession) -> Result<Vec<MCPTool>> {
         debug!("Fetching tools from MCP server: {}", session.endpoint_url);
 
+        // Check if this is a simple HTTP session
+        if let Some(server_info) = &session.server_info {
+            if let Some(transport_type) = server_info.metadata.get("transport") {
+                if transport_type.as_str() == Some("simple_http") {
+                    return self.list_tools_simple_http(session).await;
+                }
+            }
+        }
+
+        // Use rmcp transport for other sessions
         let services = self.services.lock().await;
         if let Some(service) = services.get(&session.endpoint_url) {
             match service.list_tools(Option::default()).await {
@@ -454,6 +466,16 @@ impl McpClient {
             session.endpoint_url
         );
 
+        // Check if this is a simple HTTP session
+        if let Some(server_info) = &session.server_info {
+            if let Some(transport_type) = server_info.metadata.get("transport") {
+                if transport_type.as_str() == Some("simple_http") {
+                    return self.list_resources_simple_http(session).await;
+                }
+            }
+        }
+
+        // Use rmcp transport for other sessions
         let services = self.services.lock().await;
         if let Some(service) = services.get(&session.endpoint_url) {
             match service.list_resources(Option::default()).await {
@@ -500,6 +522,16 @@ impl McpClient {
     pub async fn list_prompts(&self, session: &MCPSession) -> Result<Vec<MCPPrompt>> {
         debug!("Fetching prompts from MCP server: {}", session.endpoint_url);
 
+        // Check if this is a simple HTTP session
+        if let Some(server_info) = &session.server_info {
+            if let Some(transport_type) = server_info.metadata.get("transport") {
+                if transport_type.as_str() == Some("simple_http") {
+                    return self.list_prompts_simple_http(session).await;
+                }
+            }
+        }
+
+        // Use rmcp transport for other sessions
         let services = self.services.lock().await;
         if let Some(service) = services.get(&session.endpoint_url) {
             match service.list_prompts(Option::default()).await {
@@ -547,6 +579,346 @@ impl McpClient {
             warn!("No active MCP service found for: {}", session.endpoint_url);
             Ok(vec![])
         }
+    }
+
+    /// Smart connect method - tries the best transport for each scenario
+    pub async fn connect_smart(
+        &self,
+        url: &str,
+        auth_headers: Option<HashMap<String, String>>,
+    ) -> Result<MCPSession> {
+        debug!("Smart connecting to MCP server at: {}", url);
+
+        // STDIO transport: Use rmcp (perfect implementation)
+        if url.starts_with("stdio:") {
+            // Parse STDIO URL format: stdio:executable:args...
+            let parts: Vec<&str> = url.splitn(3, ':').collect();
+            if parts.len() >= 2 {
+                let args = if parts.len() > 2 {
+                    parts[2].split_whitespace().map(|s| s.to_string()).collect()
+                } else {
+                    vec![]
+                };
+                return self.connect_subprocess(parts[1], &args, auth_headers.as_ref()).await;
+            } else {
+                return Err(anyhow!("Invalid STDIO URL format. Expected: stdio:executable:args"));
+            }
+        }
+
+        // HTTP transport: Try simple HTTP first, rmcp as fallback
+        
+        // Step 1: Try simple HTTP (works with most servers)
+        match self.try_simple_http_connection(url, auth_headers.as_ref()).await {
+            Ok(session) => {
+                debug!("Successfully connected via simple HTTP");
+                return Ok(session);
+            }
+            Err(e) => {
+                debug!("Simple HTTP connection failed: {}, trying rmcp transports", e);
+            }
+        }
+
+        // Step 2: Try rmcp streamable HTTP (for advanced servers)
+        match self.try_streamable_http_connection(url, auth_headers.as_ref()).await {
+            Ok(session) => {
+                debug!("Successfully connected via rmcp streamable HTTP");
+                return Ok(session);
+            }
+            Err(e) => {
+                debug!("rmcp streamable HTTP connection failed: {}, trying SSE", e);
+            }
+        }
+
+        // Step 3: Try rmcp SSE transport (final fallback)
+        match self.try_sse_connection(url, auth_headers.as_ref()).await {
+            Ok(session) => {
+                debug!("Successfully connected via rmcp SSE");
+                Ok(session)
+            }
+            Err(e) => {
+                warn!("All transport methods failed. Last error: {}", e);
+                Err(anyhow!(
+                    "Failed to connect via simple HTTP, streamable HTTP, and SSE: {}",
+                    e
+                ))
+            }
+        }
+    }
+
+    /// Try to connect using simple HTTP JSON-RPC (compatible with most servers)
+    async fn try_simple_http_connection(
+        &self,
+        url: &str,
+        auth_headers: Option<&HashMap<String, String>>,
+    ) -> Result<MCPSession> {
+        debug!("Attempting simple HTTP connection to: {}", url);
+
+        // Build HTTP client with auth headers
+        let mut headers = HeaderMap::new();
+        if let Some(auth_headers) = auth_headers {
+            for (key, value) in auth_headers {
+                match (HeaderName::from_bytes(key.as_bytes()), HeaderValue::from_str(value)) {
+                    (Ok(name), Ok(val)) => {
+                        headers.insert(name, val);
+                    }
+                    _ => {
+                        warn!("Failed to parse header: {} = {}", key, value);
+                    }
+                }
+            }
+        }
+
+        let client = HttpClient::builder()
+            .default_headers(headers)
+            .timeout(std::time::Duration::from_secs(30))
+            .build()?;
+
+        // Step 1: Initialize connection
+        let init_request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "ramparts",
+                    "version": "0.6.8"
+                }
+            }
+        });
+
+        debug!("Sending initialize request to: {}", url);
+        let response = client
+            .post(url)
+            .json(&init_request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow!("Initialize failed: HTTP {}", response.status()));
+        }
+
+        let init_response: Value = response.json().await?;
+        debug!("Initialize response: {:?}", init_response);
+
+        // Check for JSON-RPC error
+        if let Some(error) = init_response.get("error") {
+            return Err(anyhow!("Initialize error: {:?}", error));
+        }
+
+        // Step 2: Send initialized notification (if server expects it)
+        let notify_request = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        });
+
+        // Send notification but don't fail if it doesn't work (some servers don't expect it)
+        let _ = client
+            .post(url)
+            .json(&notify_request)
+            .send()
+            .await;
+
+        // Extract server info from initialize response
+        let server_info = init_response
+            .get("result")
+            .and_then(|r| r.get("serverInfo"))
+            .map(|info| MCPServerInfo {
+                name: info.get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("Unknown")
+                    .to_string(),
+                version: info.get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown")
+                    .to_string(),
+                description: None,
+                capabilities: vec![
+                    "tools".to_string(),
+                    "resources".to_string(),
+                    "prompts".to_string(),
+                ],
+                metadata: {
+                    let mut map = HashMap::new();
+                    map.insert(
+                        "transport".to_string(),
+                        serde_json::Value::String("simple_http".to_string()),
+                    );
+                    map
+                },
+            });
+
+        Ok(MCPSession {
+            server_info,
+            endpoint_url: url.to_string(),
+        })
+    }
+
+    /// Check if this looks like a simple HTTP server (heuristic)
+    async fn is_simple_http_server(&self, url: &str) -> bool {
+        // Simple heuristic: if it's HTTP/HTTPS and responds to basic requests, it's likely simple
+        if !url.starts_with("http") {
+            return false;
+        }
+
+        // Quick test: try a basic GET request
+        if let Ok(client) = HttpClient::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+        {
+            if let Ok(response) = client.get(url).send().await {
+                // If it responds with anything other than complex transport headers, it's likely simple
+                return !response.headers().contains_key("x-transport-type") 
+                    && !response.headers().contains_key("x-stream-protocol");
+            }
+        }
+
+        // Default to trying simple HTTP first
+        true
+    }
+
+    /// List tools using simple HTTP JSON-RPC
+    async fn list_tools_simple_http(&self, session: &MCPSession) -> Result<Vec<MCPTool>> {
+        debug!("Fetching tools via simple HTTP from: {}", session.endpoint_url);
+
+        let tools_response = self.json_rpc_request(&session.endpoint_url, "tools/list", json!({})).await?;
+        
+        let tools_array = tools_response
+            .get("tools")
+            .and_then(|t| t.as_array())
+            .ok_or_else(|| anyhow!("Invalid tools response format"))?;
+
+        let mut mcp_tools = Vec::new();
+        for tool in tools_array {
+            let mcp_tool = MCPTool {
+                name: tool.get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                description: tool.get("description")
+                    .and_then(|d| d.as_str())
+                    .map(|s| s.to_string()),
+                input_schema: tool.get("inputSchema").cloned(),
+                output_schema: None,
+                parameters: HashMap::new(),
+                category: None,
+                tags: vec![],
+                deprecated: false,
+                raw_json: Some(tool.clone()),
+            };
+            mcp_tools.push(mcp_tool);
+        }
+
+        debug!("Successfully fetched {} tools via simple HTTP", mcp_tools.len());
+        Ok(mcp_tools)
+    }
+
+    /// List resources using simple HTTP JSON-RPC
+    async fn list_resources_simple_http(&self, session: &MCPSession) -> Result<Vec<MCPResource>> {
+        debug!("Fetching resources via simple HTTP from: {}", session.endpoint_url);
+
+        let resources_response = self.json_rpc_request(&session.endpoint_url, "resources/list", json!({})).await?;
+        
+        let resources_array = resources_response
+            .get("resources")
+            .and_then(|r| r.as_array())
+            .ok_or_else(|| anyhow!("Invalid resources response format"))?;
+
+        let mut mcp_resources = Vec::new();
+        for resource in resources_array {
+            let mcp_resource = MCPResource {
+                uri: resource.get("uri")
+                    .and_then(|u| u.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                name: resource.get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                description: resource.get("description")
+                    .and_then(|d| d.as_str())
+                    .map(|s| s.to_string()),
+                mime_type: resource.get("mimeType")
+                    .and_then(|m| m.as_str())
+                    .map(|s| s.to_string()),
+                size: resource.get("size")
+                    .and_then(|s| s.as_u64()),
+                metadata: HashMap::new(), // Could be populated from resource data if needed
+                raw_json: Some(resource.clone()),
+            };
+            mcp_resources.push(mcp_resource);
+        }
+
+        debug!("Successfully fetched {} resources via simple HTTP", mcp_resources.len());
+        Ok(mcp_resources)
+    }
+
+    /// List prompts using simple HTTP JSON-RPC
+    async fn list_prompts_simple_http(&self, session: &MCPSession) -> Result<Vec<MCPPrompt>> {
+        debug!("Fetching prompts via simple HTTP from: {}", session.endpoint_url);
+
+        let prompts_response = self.json_rpc_request(&session.endpoint_url, "prompts/list", json!({})).await?;
+        
+        let prompts_array = prompts_response
+            .get("prompts")
+            .and_then(|p| p.as_array())
+            .ok_or_else(|| anyhow!("Invalid prompts response format"))?;
+
+        let mut mcp_prompts = Vec::new();
+        for prompt in prompts_array {
+            let mcp_prompt = MCPPrompt {
+                name: prompt.get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                description: prompt.get("description")
+                    .and_then(|d| d.as_str())
+                    .map(|s| s.to_string()),
+                arguments: None, // Could be extracted if needed
+                raw_json: Some(prompt.clone()),
+            };
+            mcp_prompts.push(mcp_prompt);
+        }
+
+        debug!("Successfully fetched {} prompts via simple HTTP", mcp_prompts.len());
+        Ok(mcp_prompts)
+    }
+
+    /// Generic JSON-RPC request helper for simple HTTP transport
+    async fn json_rpc_request(&self, url: &str, method: &str, params: Value) -> Result<Value> {
+        let client = HttpClient::new();
+        
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": rand::random::<u32>(),
+            "method": method,
+            "params": params
+        });
+
+        debug!("Sending JSON-RPC request to {}: {}", url, method);
+        let response = client
+            .post(url)
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow!("HTTP request failed: {}", response.status()));
+        }
+
+        let json_response: Value = response.json().await?;
+        
+        // Check for JSON-RPC error
+        if let Some(error) = json_response.get("error") {
+            return Err(anyhow!("JSON-RPC error: {:?}", error));
+        }
+
+        // Extract result
+        json_response
+            .get("result")
+            .cloned()
+            .ok_or_else(|| anyhow!("Missing result in JSON-RPC response"))
     }
 }
 

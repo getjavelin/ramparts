@@ -3417,7 +3417,7 @@ impl Default for ScannerConfig {
             llm: LLMConfig {
                 provider: "openai".to_string(),
                 model: "gpt-4o".to_string(),
-                base_url: "https://api.openai.com/v1".to_string(),
+                base_url: "https://api.openai.com/v1/chat/completions".to_string(),
                 api_key: String::new(),
                 timeout: 30,
                 max_tokens: 4000,

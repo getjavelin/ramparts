@@ -34,7 +34,7 @@ Ramparts looks for configuration files in the following order:
 llm:
   provider: "openai"                    # LLM provider: "openai"
   model: "gpt-4o"                      # Model name
-  base_url: "https://api.openai.com/v1" # API base URL
+  base_url: "https://api.openai.com/v1/chat/completions" # Complete API endpoint URL
   api_key: ""                          # API key (use environment variable OPENAI_API_KEY)
   timeout: 30                          # Request timeout in seconds
   max_tokens: 4000                     # Maximum tokens in response
@@ -92,7 +92,7 @@ The `llm` section configures AI-powered security analysis:
 llm:
   provider: "openai"
   model: "gpt-4o"
-  base_url: "https://api.openai.com/v1"
+  base_url: "https://api.openai.com/v1/chat/completions"  # Complete endpoint URL
   api_key: ""  # Use OPENAI_API_KEY environment variable
   timeout: 30
   max_tokens: 4000
@@ -108,7 +108,23 @@ llm:
 
 Currently supported:
 - **OpenAI**: GPT-4, GPT-4 Turbo, GPT-3.5 Turbo
+- **Azure OpenAI**: Azure-hosted OpenAI models with api-version support
 - **OpenAI-compatible APIs**: Any API that follows OpenAI's format
+
+#### Azure OpenAI Configuration
+
+For Azure OpenAI, provide the complete endpoint URL including the api-version parameter:
+
+```yaml
+llm:
+  provider: "openai"
+  model: "gpt-4"  # Your Azure deployment name
+  base_url: "https://your-resource.openai.azure.com/openai/deployments/your-deployment/chat/completions?api-version=2024-02-15-preview"
+  api_key: "your-azure-api-key"
+  timeout: 30
+  max_tokens: 4000
+  temperature: 0.1
+```
 
 #### Model Recommendations
 

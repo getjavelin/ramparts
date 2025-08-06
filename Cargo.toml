@@ -87,6 +87,9 @@ yara-x = { version = "1.4", optional = true }
 # Official Rust MCP SDK
 rmcp = { version = "0.3.2", features = ["client", "reqwest", "transport-child-process", "transport-streamable-http-client", "transport-sse-client", "transport-worker"] }
 
+# Random number generation for request IDs
+rand = "0.8"
+
 [build-dependencies]
 chrono = "0.4"
 

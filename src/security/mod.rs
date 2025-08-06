@@ -285,7 +285,8 @@ impl SecurityScanner {
             Some(config.llm.api_key.clone())
         };
 
-        let model_endpoint = Some(format!("{}/chat/completions", config.llm.base_url));
+        // Option 2: Use complete URLs as-is, never append anything
+        let model_endpoint = Some(config.llm.base_url.clone());
 
         Self {
             model_endpoint,
@@ -1041,5 +1042,206 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("LLM not configured"));
+    }
+
+    #[test]
+    fn test_azure_openai_endpoint_construction_with_api_version() {
+        // Test that Azure OpenAI URLs with api-version query parameter are handled correctly
+        let azure_base_url = "https://my-resource.openai.azure.com/openai/deployments/gpt-4?api-version=2024-02-15-preview";
+        
+        let config = crate::config::ScannerConfig {
+            llm: crate::config::LLMConfig {
+                provider: "openai".to_string(),
+                model: "gpt-4".to_string(),
+                base_url: azure_base_url.to_string(),
+                api_key: "test-key".to_string(),
+                timeout: 30,
+                max_tokens: 4000,
+                temperature: 0.1,
+            },
+            scanner: crate::config::ScannerSettings {
+                http_timeout: 30,
+                scan_timeout: 60,
+                detailed: false,
+                format: "table".to_string(),
+                parallel: true,
+                max_retries: 3,
+                retry_delay_ms: 1000,
+                llm_batch_size: 10,
+                enable_yara: true,
+            },
+            security: crate::config::SecurityConfig {
+                enabled: true,
+                min_severity: "low".to_string(),
+                checks: crate::config::SecurityChecks {
+                    tool_poisoning: true,
+                    secrets_leakage: true,
+                    sql_injection: true,
+                    command_injection: true,
+                    path_traversal: true,
+                    auth_bypass: true,
+                    prompt_injection: true,
+                    pii_leakage: true,
+                    jailbreak: true,
+                },
+            },
+            logging: crate::config::LoggingConfig {
+                level: "info".to_string(),
+                colored: true,
+                timestamps: true,
+            },
+            performance: crate::config::PerformanceConfig {
+                tracking: true,
+                slow_threshold_ms: 5000,
+            },
+        };
+
+        let scanner = SecurityScanner::with_config(config);
+        
+        // Verify the endpoint construction preserves the query parameter
+        let expected_endpoint = "https://my-resource.openai.azure.com/openai/deployments/gpt-4?api-version=2024-02-15-preview/chat/completions";
+        assert_eq!(scanner.model_endpoint.as_ref().unwrap(), expected_endpoint);
+        
+        // Verify LLM config extraction works
+        let llm_config = scanner.get_llm_config();
+        assert!(llm_config.is_ok());
+        let (endpoint, api_key) = llm_config.unwrap();
+        assert_eq!(endpoint, expected_endpoint);
+        assert_eq!(api_key, "test-key");
+    }
+
+    #[test]
+    fn test_standard_openai_endpoint_construction() {
+        // Test that standard OpenAI URLs work as expected (baseline test)
+        let openai_base_url = "https://api.openai.com/v1";
+        
+        let config = crate::config::ScannerConfig {
+            llm: crate::config::LLMConfig {
+                provider: "openai".to_string(),
+                model: "gpt-4o".to_string(),
+                base_url: openai_base_url.to_string(),
+                api_key: "test-key".to_string(),
+                timeout: 30,
+                max_tokens: 4000,
+                temperature: 0.1,
+            },
+            scanner: crate::config::ScannerSettings {
+                http_timeout: 30,
+                scan_timeout: 60,
+                detailed: false,
+                format: "table".to_string(),
+                parallel: true,
+                max_retries: 3,
+                retry_delay_ms: 1000,
+                llm_batch_size: 10,
+                enable_yara: true,
+            },
+            security: crate::config::SecurityConfig {
+                enabled: true,
+                min_severity: "low".to_string(),
+                checks: crate::config::SecurityChecks {
+                    tool_poisoning: true,
+                    secrets_leakage: true,
+                    sql_injection: true,
+                    command_injection: true,
+                    path_traversal: true,
+                    auth_bypass: true,
+                    prompt_injection: true,
+                    pii_leakage: true,
+                    jailbreak: true,
+                },
+            },
+            logging: crate::config::LoggingConfig {
+                level: "info".to_string(),
+                colored: true,
+                timestamps: true,
+            },
+            performance: crate::config::PerformanceConfig {
+                tracking: true,
+                slow_threshold_ms: 5000,
+            },
+        };
+
+        let scanner = SecurityScanner::with_config(config);
+        
+        // Verify standard endpoint construction
+        let expected_endpoint = "https://api.openai.com/v1/chat/completions";
+        assert_eq!(scanner.model_endpoint.as_ref().unwrap(), expected_endpoint);
+    }
+
+    #[test]
+    fn test_various_query_parameter_scenarios() {
+        // Test various URL formats with query parameters to ensure they're preserved
+        let test_cases = vec![
+            (
+                "https://api.example.com/v1?api_key=test123",
+                "https://api.example.com/v1?api_key=test123/chat/completions"
+            ),
+            (
+                "https://my-azure.openai.azure.com/openai/deployments/gpt-4?api-version=2024-02-15-preview&extra=param",
+                "https://my-azure.openai.azure.com/openai/deployments/gpt-4?api-version=2024-02-15-preview&extra=param/chat/completions"
+            ),
+            (
+                "https://local.ai:8080/v1?model=custom&timeout=30",
+                "https://local.ai:8080/v1?model=custom&timeout=30/chat/completions"
+            ),
+        ];
+
+        for (base_url, expected_endpoint) in test_cases {
+            let config = crate::config::ScannerConfig {
+                llm: crate::config::LLMConfig {
+                    provider: "openai".to_string(),
+                    model: "test-model".to_string(),
+                    base_url: base_url.to_string(),
+                    api_key: "test-key".to_string(),
+                    timeout: 30,
+                    max_tokens: 4000,
+                    temperature: 0.1,
+                },
+                scanner: crate::config::ScannerSettings {
+                    http_timeout: 30,
+                    scan_timeout: 60,
+                    detailed: false,
+                    format: "table".to_string(),
+                    parallel: true,
+                    max_retries: 3,
+                    retry_delay_ms: 1000,
+                    llm_batch_size: 10,
+                    enable_yara: true,
+                },
+                security: crate::config::SecurityConfig {
+                    enabled: true,
+                    min_severity: "low".to_string(),
+                    checks: crate::config::SecurityChecks {
+                        tool_poisoning: true,
+                        secrets_leakage: true,
+                        sql_injection: true,
+                        command_injection: true,
+                        path_traversal: true,
+                        auth_bypass: true,
+                        prompt_injection: true,
+                        pii_leakage: true,
+                        jailbreak: true,
+                    },
+                },
+                logging: crate::config::LoggingConfig {
+                    level: "info".to_string(),
+                    colored: true,
+                    timestamps: true,
+                },
+                performance: crate::config::PerformanceConfig {
+                    tracking: true,
+                    slow_threshold_ms: 5000,
+                },
+            };
+
+            let scanner = SecurityScanner::with_config(config);
+            assert_eq!(
+                scanner.model_endpoint.as_ref().unwrap(),
+                expected_endpoint,
+                "Failed for base_url: {}",
+                base_url
+            );
+        }
     }
 }
