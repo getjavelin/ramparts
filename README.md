@@ -90,6 +90,14 @@ ramparts scan-config --report
 
 > **💡 Did you know you can start Ramparts as a server?** Run `ramparts server` to get a REST API for continuous monitoring and CI/CD integration. See 📚 **[Ramparts Server Mode](docs/api.md)** 
 
+### Run as an MCP server (stdio)
+
+```bash
+ramparts mcp-stdio
+```
+
+When publishing to Docker MCP Toolkit, configure the container command to `ramparts mcp-stdio` so the toolkit connects via stdio. Use `MCP-Dockerfile` to make this the default.
+
 ## Example Output
 
 **Single server scan:**

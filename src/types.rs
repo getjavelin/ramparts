@@ -67,6 +67,8 @@ pub struct ScanConfigBuilder {
     detailed: bool,
     format: String,
     auth_headers: Option<HashMap<String, String>>,
+    // When true, do not call the LLM; instead, return the prompts that would be used
+    return_prompts: bool,
 }
 
 impl Default for ScanConfigBuilder {
@@ -77,6 +79,7 @@ impl Default for ScanConfigBuilder {
             detailed: false,
             format: "text".to_string(),
             auth_headers: None,
+            return_prompts: false,
         }
     }
 }
@@ -111,6 +114,11 @@ impl ScanConfigBuilder {
         self
     }
 
+    pub fn return_prompts(mut self, return_prompts: bool) -> Self {
+        self.return_prompts = return_prompts;
+        self
+    }
+
     pub fn build(self) -> ScanOptions {
         ScanOptions {
             timeout: self.timeout,
@@ -118,6 +126,7 @@ impl ScanConfigBuilder {
             detailed: self.detailed,
             format: self.format,
             auth_headers: self.auth_headers,
+            return_prompts: self.return_prompts,
         }
     }
 }
@@ -153,6 +162,8 @@ pub struct ScanOptions {
     pub detailed: bool,
     pub format: String,
     pub auth_headers: Option<HashMap<String, String>>,
+    /// When true, do not call the LLM; instead, return prompts to the caller
+    pub return_prompts: bool,
 }
 
 impl Default for ScanOptions {
@@ -163,6 +174,7 @@ impl Default for ScanOptions {
             detailed: false,
             format: "text".to_string(),
             auth_headers: None,
+            return_prompts: false,
         }
     }
 }
@@ -184,6 +196,28 @@ pub struct ScanResult {
     /// IDE source that provided this server configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ide_source: Option<String>,
+    /// If set, LLM calls were deferred and these are the prompts per batch
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_prompts: Option<Vec<LlmPrompt>>,
+}
+
+/// Exported prompt bundle for deferring LLM calls to the caller
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmPrompt {
+    /// One of: "tool", "prompt", "resource"
+    pub target_type: String,
+    /// Zero-based batch index
+    pub batch_index: usize,
+    /// The full prompt text that would be sent to the LLM
+    pub prompt: String,
+    /// Full request body that Ramparts would send to the LLM API (OpenAI-compatible)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_body: Option<serde_json::Value>,
+    /// The LLM endpoint that would be used (if configured)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    /// Names of items included in this batch (tool names, prompt names, or resource names)
+    pub item_names: Vec<String>,
 }
 
 /// Scan status enumeration
@@ -211,6 +245,7 @@ impl ScanResult {
             yara_results: Vec::new(),
             errors: Vec::new(),
             ide_source: None,
+            llm_prompts: None,
         }
     }
 
