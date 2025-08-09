@@ -522,7 +522,7 @@ impl SecurityScanner {
     }
 
     /// Create tools analysis prompt
-    fn create_tools_analysis_prompt(tools_info: &str) -> String {
+    pub fn create_tools_analysis_prompt(tools_info: &str) -> String {
         format!(
             "ROLE
 You are a Senior Application Security Engineer reviewing MCP tool definitions for real security issues. MCP tools run within an authenticated server context — do not flag missing auth parameters unless there's a clear bypass.
@@ -579,7 +579,7 @@ Be accurate. Flag only real risks — don't overreport."
     }
 
     /// Create prompts analysis prompt
-    fn create_prompts_analysis_prompt(prompts_info: &str) -> String {
+    pub fn create_prompts_analysis_prompt(prompts_info: &str) -> String {
         format!(
             "Analyze these MCP prompts for ALL potential security vulnerabilities in a single comprehensive assessment.
 
@@ -634,7 +634,7 @@ If no genuine security issues found, return empty array []."
     }
 
     /// Create resources analysis prompt
-    fn create_resources_analysis_prompt(resources_info: &str) -> String {
+    pub fn create_resources_analysis_prompt(resources_info: &str) -> String {
         format!(
             "Analyze these MCP resources for ALL potential security vulnerabilities in a single comprehensive assessment.
 
@@ -655,6 +655,30 @@ Respond with a JSON array of issues, each with:
 
 If no genuine security issues found, return empty array []."
         )
+    }
+
+    /// Build the exact LLM request body (without sending it) using current config
+    pub fn build_llm_request_body(&self, prompt: &str) -> Value {
+        let temperature = self.config.as_ref().map_or(0.1, |c| c.llm.temperature);
+        let max_tokens = self.config.as_ref().map_or(4000, |c| c.llm.max_tokens);
+
+        json!({
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a security analyst specializing in detecting vulnerabilities in MCP (Model Context Protocol) tools, prompts, and resources. Your job is to identify potential security risks, even if they seem minor. Look for any security issues that could be exploited or lead to unauthorized access.\n\nCRITICAL: You must respond with ONLY a valid JSON array. Do not include any explanatory text, markdown formatting, or other content outside the JSON array. \n\nIMPORTANT: You must analyze EVERY tool and include it in your response, even if no security issues are found. For tools with no issues, set found_issue: false and provide details about why no issues were found.\n\nExample valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"issues\": [{\"issue_type\": \"SQLInjection\", \"severity\": \"HIGH\", \"message\": \"Brief description\", \"details\": \"Detailed explanation\"}], \"details\": \"Additional context\"}]"
+                },
+                { "role": "user", "content": prompt }
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        })
+    }
+
+    /// Get the configured LLM endpoint (if any)
+    pub fn get_endpoint(&self) -> Option<String> {
+        self.model_endpoint.clone()
     }
 
     /// Query the LLM with the given prompt

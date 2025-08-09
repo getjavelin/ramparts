@@ -14,6 +14,8 @@ pub struct ScanRequest {
     pub detailed: Option<bool>,
     pub format: Option<String>,
     pub auth_headers: Option<HashMap<String, String>>,
+    /// If true, do not call the LLM; return prompts instead
+    pub return_prompts: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,6 +117,10 @@ impl MCPScannerCore {
             }
 
             builder = builder.auth_headers(Some(headers));
+        }
+
+        if let Some(rp) = request.return_prompts {
+            builder = builder.return_prompts(rp);
         }
 
         builder.build()

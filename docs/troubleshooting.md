@@ -162,6 +162,19 @@ ramparts scan "stdio:npx:mcp-server-commands"
 ramparts scan "stdio:python3:/path/to/server.py:--port:8080"
 ```
 
+### MCP stdio server exits immediately
+**Issue:**
+```bash
+Error: ConnectionClosed("initialized request")
+```
+
+**Cause:**
+- The MCP stdio server expects an MCP client to speak JSON-RPC over stdin/stdout. When run directly in a terminal, no `initialize` request is sent.
+
+**Fix:**
+- Run `ramparts mcp-stdio` under an MCP host (e.g., Docker MCP Toolkit, Cursor, Claude Desktop).
+- For local testing, use an MCP inspector or a small client that spawns the binary and sends `initialize`.
+
 **Issue: Environment variable issues**
 ```bash
 error: Missing required environment variables

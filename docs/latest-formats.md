@@ -216,6 +216,16 @@ For command-line MCP servers:
 }
 ```
 
+### Containerized Servers (Docker MCP Toolkit)
+For servers running inside containers (e.g., Docker MCP Toolkit):
+```json
+{
+    "image": "ghcr.io/getjavelin/ramparts:latest",
+    "command": ["/app/ramparts", "mcp-stdio"],
+    "description": "Ramparts MCP server over stdio"
+}
+```
+
 ### HTTP Servers
 For HTTP-based MCP servers:
 ```json

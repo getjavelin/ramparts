@@ -46,6 +46,7 @@ futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
+schemars = "1"
 
 # Logging
 tracing = "0.1"
@@ -80,13 +81,33 @@ spinners = "4.1.1"
 # Web framework for microservice
 axum = { version = "0.7", features = ["macros"] }
 tower-http = { version = "0.5", features = ["cors", "trace"] }
+tower = "0.4"
 
 # JSON-RPC handling for microservice
 jsonrpc-core = "18.0"
 yara-x = { version = "1.4", optional = true }
 
 # Official Rust MCP SDK
-rmcp = { version = "0.3.2", features = ["client", "reqwest", "transport-child-process", "transport-streamable-http-client", "transport-sse-client", "transport-worker"] }
+# Official Rust MCP SDK (client + server)
+# Enable server + macros and server stdio transport for MCP server implementation
+rmcp = { version = "0.3.2", features = [
+    "client",
+    "server",
+    "macros",
+    "schemars",
+    "reqwest",
+    # client transports already used by scanner
+    "transport-child-process",
+    "transport-streamable-http-client",
+    "transport-sse-client",
+    "transport-worker",
+    # server transports for MCP server (starting with stdio)
+    "transport-io",
+    # add SSE and streamable HTTP server transports
+    "transport-sse-server",
+    "transport-streamable-http-server",
+    "transport-streamable-http-server-session"
+] }
 
 # Random number generation for request IDs
 rand = "0.8"

@@ -9,6 +9,7 @@ mod config;
 mod constants;
 mod core;
 mod mcp_client;
+mod mcp_server;
 mod scanner;
 mod security;
 mod server;
@@ -143,12 +144,38 @@ enum Commands {
         #[arg(long, default_value = "0.0.0.0")]
         host: String,
     },
+
+    /// Run Ramparts as an MCP server over stdio (for MCP hosts / Docker MCP Toolkit)
+    McpStdio,
+
+    /// Run Ramparts as an MCP server over SSE (HTTP SSE endpoint)
+    McpSse {
+        /// Host to bind the server to
+        #[arg(long, default_value = "0.0.0.0")]
+        host: String,
+        /// Port to run the SSE server on
+        #[arg(short, long, default_value = "8000")]
+        port: u16,
+    },
+
+    /// Run Ramparts as an MCP server over streamable HTTP
+    McpHttp {
+        /// Host to bind the server to
+        #[arg(long, default_value = "0.0.0.0")]
+        host: String,
+        /// Port to run the HTTP server on
+        #[arg(short, long, default_value = "8081")]
+        port: u16,
+    },
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    display_banner();
+    // Do not print banner when running as stdio MCP server to avoid corrupting JSON-RPC stdout
+    if !matches!(cli.command, Commands::McpStdio) {
+        display_banner();
+    }
 
     let scanner_config = load_scanner_config();
     setup_logging(&cli, &scanner_config);
@@ -204,6 +231,8 @@ fn setup_logging(cli: &Cli, scanner_config: &ScannerConfig) {
         .with_target(false)
         .with_thread_ids(false)
         .with_thread_names(false)
+        // Ensure logs go to stderr, not stdout (stdout reserved for MCP stdio JSON-RPC)
+        .with_writer(std::io::stderr)
         .init();
 }
 
@@ -263,6 +292,9 @@ async fn execute_command(
             Ok(())
         }
         Commands::Server { port, host } => handle_server_command(port, host).await,
+        Commands::McpStdio => handle_mcp_stdio_command().await,
+        Commands::McpSse { host, port } => handle_mcp_sse_command(host, port).await,
+        Commands::McpHttp { host, port } => handle_mcp_http_command(host, port).await,
     }
 }
 
@@ -404,6 +436,19 @@ async fn handle_server_command(port: u16, host: String) -> Result<(), Box<dyn st
             std::process::exit(1);
         }
     }
+}
+
+/// Handles the mcp-stdio command
+async fn handle_mcp_stdio_command() -> Result<(), Box<dyn std::error::Error>> {
+    mcp_server::run_stdio_server().await
+}
+
+async fn handle_mcp_sse_command(host: String, port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    mcp_server::run_sse_server(&host, port).await
+}
+
+async fn handle_mcp_http_command(host: String, port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    mcp_server::run_streamable_http_server(&host, port).await
 }
 
 /// Builds scan options from configuration and parameters
