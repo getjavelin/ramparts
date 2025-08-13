@@ -3,8 +3,6 @@ on:
   push:
     branches:
       - "trigger-cicd"
-    #paths-ignore:
-#  workflow_dispatch:
     
 jobs:
   trigger-private-workflow:
