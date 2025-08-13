@@ -6,6 +6,9 @@ on:
 jobs:
   trigger-private-workflow:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      workflows: write
     steps:
       - name: Install GitHub CLI
         run: |
