@@ -1,29 +1,55 @@
-name: CICD Build - Javelin Ramparts 
+name: CICD Build - Javelin Ramparts Server
+
 on:
   push:
     branches:
-      - "main"
+      - "main"  
+    paths-ignore:
+      - "**/*CHANGELOG.md"
+      - "*CHANGELOG.md"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEVOPS_REPO: "javelin-cloud"
+  DEVOPS_BRANCH: "main"
+  CICD_TRIGGER: "enable"
+  CICD_WORKFLOW: "manual-deploy-ramparts-server.yml"
+
 jobs:
-  trigger-private-workflow:
+  reusable-vars:
+    permissions:
+      contents: 'read'
     runs-on: ubuntu-24.04
+    steps:
+      - name: reusable variables
+        run: echo "Exposing env vars"
+    outputs:
+      CICD_TRIGGER: ${{ env.CICD_TRIGGER }}
+
+  javelin-trigger:
+    needs:
+      - reusable-vars
     permissions:
       contents: 'read'
       id-token: 'write'
+    runs-on: ubuntu-24.04
+    if: (needs.reusable-vars.outputs.CICD_TRIGGER == 'enable')
     steps:
-      - name: Install GitHub CLI
-        run: |
-          type -p curl >/dev/null || sudo apt install curl -y
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt update
-          sudo apt install gh -y
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Authenticate with GitHub CLI
-        run: echo "${{ secrets.DEVOPS_GITHUB_TOKEN }}" | gh auth login --with-token
+      - name: Install GitHub CLI
+        run: sudo apt install gh -y
 
       - name: Trigger private repo workflow
+        env:
+          GITHUB_TOKEN: ${{ secrets.DEVOPS_GITHUB_TOKEN }}
         run: |
-          gh workflow run "manual-deploy-ramparts-server.yml" \
-            --repo getjavelin/javelin-cloud \
-            --ref main
+          gh workflow run ${{ env.CICD_WORKFLOW }} \
+            --repo ${{ github.repository_owner }}/${{ env.DEVOPS_REPO }} \
+            --ref ${{ env.DEVOPS_BRANCH }}
