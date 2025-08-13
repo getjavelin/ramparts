@@ -4,13 +4,26 @@ on:
     branches:
       - "trigger-cicd"
     #paths-ignore:
-  workflow_dispatch:
-
+#  workflow_dispatch:
+    
 jobs:
-  reusable-workflow:
-    permissions:
-      contents: 'write'
-      id-token: 'write'
-    uses: getjavelin/javelin-cloud/.github/workflows/manual-deploy-ramparts-server.yml@v1.0
-    secrets:
-      DEVOPS_GITHUB_TOKEN: ${{ secrets.REUSABLE_GITHUB_TOKEN }}
+  trigger-private-workflow:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install GitHub CLI
+        run: |
+          type -p curl >/dev/null || sudo apt install curl -y
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh -y
+
+      - name: Authenticate with GitHub CLI
+        run: echo "${{ secrets.DEVOPS_GITHUB_TOKEN }}" | gh auth login --with-token
+
+      - name: Trigger private repo workflow
+        run: |
+          gh workflow run "manual-deploy-ramparts-server.yml" \
+            --repo getjavelin/javelin-cloud \
+            --ref main
