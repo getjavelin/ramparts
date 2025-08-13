@@ -2,13 +2,13 @@ name: CICD Build - Javelin Ramparts
 on:
   push:
     branches:
-      - "trigger-cicd"  
+      - "main"  
 jobs:
   trigger-private-workflow:
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
-      workflows: write
+      contents: 'read'
+      id-token: 'write'
     steps:
       - name: Install GitHub CLI
         run: |
