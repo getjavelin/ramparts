@@ -1,0 +1,16 @@
+name: CICD Build - Javelin Ramparts 
+on:
+  push:
+    branches:
+      - "trigger-cicd"
+    #paths-ignore:
+  workflow_dispatch:
+    
+jobs:
+  reusable-workflow:
+    permissions:
+      contents: 'write'
+      id-token: 'write'
+    uses: getjavelin/javelin-cloud/.github/workflows/manual-deploy-ramparts-server.yml@v1.0
+    secrets:
+      DEVOPS_GITHUB_TOKEN: ${{ secrets.DEVOPS_GITHUB_TOKEN }}
