@@ -2,7 +2,7 @@ name: CICD Build - Javelin Ramparts
 on:
   push:
     branches:
-      - "trigger-cicd"
+      - "main"
 jobs:
   trigger-private-workflow:
     runs-on: ubuntu-24.04
