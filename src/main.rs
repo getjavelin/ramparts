@@ -216,12 +216,20 @@ fn setup_logging(cli: &Cli, scanner_config: &ScannerConfig) {
         }
         _ => {
             // For info/warn/error, only show ramparts at the configured level
-            // and suppress INFO from external crates
-            tracing_subscriber::EnvFilter::new("warn").add_directive(
-                format!("ramparts={level}")
-                    .parse()
-                    .expect("Failed to parse logging directive for ramparts level"),
-            )
+            // and suppress INFO from external crates. Also suppress noisy rmcp errors
+            // like "fail to delete session" during normal operation.
+            tracing_subscriber::EnvFilter::new("warn")
+                .add_directive(
+                    format!("ramparts={level}")
+                        .parse()
+                        .expect("Failed to parse logging directive for ramparts level"),
+                )
+                // Suppress rmcp logs by default; enable with --debug when needed
+                .add_directive(
+                    "rmcp=off"
+                        .parse()
+                        .expect("Failed to parse logging directive for rmcp level"),
+                )
         }
     };
 

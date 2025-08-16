@@ -922,8 +922,33 @@ impl McpClient {
         let mut services = self.services.lock().await;
         if let Some(service) = services.remove(&session.endpoint_url) {
             debug!("Shutting down MCP service for: {}", session.endpoint_url);
-            // The service will be dropped and cleaned up automatically
-            drop(service);
+
+            // Add timeout and error handling for service cleanup to prevent hanging
+            // and handle servers that don't properly support session deletion
+            let cleanup_result = tokio::time::timeout(
+                std::time::Duration::from_millis(
+                    crate::constants::timeouts::DEFAULT_CLEANUP_TIMEOUT_MS,
+                ),
+                async move {
+                    // The service will be dropped and cleaned up automatically
+                    // This may trigger session deletion requests to the server
+                    drop(service);
+                },
+            )
+            .await;
+
+            match cleanup_result {
+                Ok(_) => debug!(
+                    "Successfully cleaned up MCP service for: {}",
+                    session.endpoint_url
+                ),
+                Err(_) => {
+                    debug!(
+                        "Cleanup timeout for MCP service: {} - this is usually harmless",
+                        session.endpoint_url
+                    );
+                }
+            }
         }
 
         Ok(())
@@ -939,14 +964,25 @@ impl McpClient {
         for endpoint in endpoints {
             if let Some(service) = services.remove(&endpoint) {
                 debug!("Shutting down MCP service for: {}", endpoint);
-                // Add timeout for cleanup to prevent hanging
-                let cleanup_timeout =
-                    tokio::time::timeout(std::time::Duration::from_millis(500), async move {
-                        drop(service);
-                    });
 
-                if cleanup_timeout.await.is_err() {
-                    warn!("Cleanup timeout for MCP service: {}", endpoint);
+                // Add timeout for cleanup to prevent hanging and handle servers
+                // that don't properly support session deletion
+                let cleanup_result =
+                    tokio::time::timeout(std::time::Duration::from_millis(1000), async move {
+                        // The service will be dropped and cleaned up automatically
+                        // This may trigger session deletion requests to the server
+                        drop(service);
+                    })
+                    .await;
+
+                match cleanup_result {
+                    Ok(_) => debug!("Successfully cleaned up MCP service for: {}", endpoint),
+                    Err(_) => {
+                        warn!(
+                            "Cleanup timeout for MCP service: {} - this is usually harmless",
+                            endpoint
+                        );
+                    }
                 }
             }
         }

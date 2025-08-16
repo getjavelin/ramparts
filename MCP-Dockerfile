@@ -2,33 +2,51 @@ FROM rustlang/rust:nightly-slim AS builder
 
 WORKDIR /app
 
-# Cache deps and build
-COPY Cargo.toml Cargo.lock* ./
+# Install build dependencies for faster compilation
+RUN apt-get update && apt-get install -y \
+    pkg-config libssl-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy dependency files first for better caching
+COPY Cargo.toml Cargo.lock ./
+
+# Create dummy src to cache dependencies
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+
+# Build dependencies only (this layer will be cached)
+RUN cargo build --release && rm -rf src target/release/deps/ramparts*
+
+# Copy actual source code
 COPY src ./src
 COPY rules ./rules
 COPY assets ./assets
 COPY build.rs ./
 
+# Build the actual application (only this rebuilds when source changes)
 RUN cargo build --release
 
-FROM ubuntu:24.04
+# Use smaller base image for runtime
+FROM debian:bookworm-slim
 
-# Install Docker CLI only (will use host Docker daemon via socket)
-RUN apt-get update && apt-get install -y \
+# Install minimal runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    curl \
-    gnupg \
-    lsb-release \
-    && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
-    && apt-get update \
-    && apt-get install -y docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user for security
+RUN useradd -m -u 10001 ramparts
+
 WORKDIR /app
-COPY --from=builder /app/target/release/ramparts /app/
+
+# Copy binary and required files
+COPY --from=builder /app/target/release/ramparts /app/ramparts
 COPY --from=builder /app/rules /app/rules
+
+# Set ownership and make executable
+RUN chown -R ramparts:ramparts /app && chmod +x /app/ramparts
+
+# Switch to non-root user
+USER ramparts
 
 # Default: run as MCP stdio server (MCP Toolkit/hosts connect over stdio)
 ENTRYPOINT ["/app/ramparts", "mcp-stdio"]

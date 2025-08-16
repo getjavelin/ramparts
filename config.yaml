@@ -2,7 +2,8 @@ llm:
   provider: openai
   model: gpt-4o
   base_url: https://api.openai.com/v1/chat/completions
-  api_key: your-openai-api-key-here
+  # Use environment variable to provide API key at runtime
+  api_key: ${OPENAI_API_KEY:-}
   timeout: 30
   max_tokens: 4000
   temperature: 0.1

@@ -1339,7 +1339,11 @@ impl MCPConfigManager {
             .filter(|(path, _)| path.exists())
             .collect();
 
-        if !existing_configs.is_empty() {
+        if !existing_configs.is_empty()
+            && !std::env::var("RAMPARTS_MCP_STDIO")
+                .unwrap_or_default()
+                .eq("1")
+        {
             println!("🔍 Found {} IDE config files:", existing_configs.len());
             for (path, client) in existing_configs {
                 println!("  ✓ {} IDE: {}", client.name(), path.display());
@@ -1362,14 +1366,19 @@ impl MCPConfigManager {
                         continue;
                     }
 
-                    // Display what was found in this config file
+                    // Display what was found in this config file (only if not in MCP stdio mode)
                     let server_count = config.servers.as_ref().map(|s| s.len()).unwrap_or(0);
-                    println!(
-                        "📁 {} IDE config: {} ({} servers)",
-                        client.name(),
-                        path.display(),
-                        server_count
-                    );
+                    if !std::env::var("RAMPARTS_MCP_STDIO")
+                        .unwrap_or_default()
+                        .eq("1")
+                    {
+                        println!(
+                            "📁 {} IDE config: {} ({} servers)",
+                            client.name(),
+                            path.display(),
+                            server_count
+                        );
+                    }
 
                     if let Some(ref servers) = config.servers {
                         for server in servers {
@@ -1379,12 +1388,17 @@ impl MCPConfigManager {
                             } else {
                                 "HTTP"
                             };
-                            println!(
-                                "  └─ {} [{}]: {}",
-                                server_name,
-                                server_type,
-                                server.to_display_url()
-                            );
+                            if !std::env::var("RAMPARTS_MCP_STDIO")
+                                .unwrap_or_default()
+                                .eq("1")
+                            {
+                                println!(
+                                    "  └─ {} [{}]: {}",
+                                    server_name,
+                                    server_type,
+                                    server.to_display_url()
+                                );
+                            }
                         }
                     }
 

@@ -766,7 +766,11 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
             "max_tokens": max_tokens
         });
 
-        if show_details {
+        if show_details
+            && !std::env::var("RAMPARTS_MCP_STDIO")
+                .unwrap_or_default()
+                .eq("1")
+        {
             println!("\n🔍 LLM Request:");
             println!(
                 "{}",
@@ -942,7 +946,11 @@ Example valid response: [{\"tool_name\": \"example\", \"found_issue\": true, \"i
             content.len()
         );
 
-        if show_details {
+        if show_details
+            && !std::env::var("RAMPARTS_MCP_STDIO")
+                .unwrap_or_default()
+                .eq("1")
+        {
             println!("\n🤖 LLM Response:");
             println!("{content}");
         }

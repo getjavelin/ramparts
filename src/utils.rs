@@ -98,6 +98,14 @@ pub mod performance {
 // ============================================================================
 
 pub fn print_result(result: &ScanResult, format: &str, detailed: bool) {
+    // Don't print anything in MCP stdio mode
+    if std::env::var("RAMPARTS_MCP_STDIO")
+        .unwrap_or_default()
+        .eq("1")
+    {
+        return;
+    }
+
     match format.to_lowercase().as_str() {
         "json" => print_json_result(result),
         "table" => print_table_result(result, detailed),
@@ -111,6 +119,14 @@ pub fn print_result(result: &ScanResult, format: &str, detailed: bool) {
 }
 
 fn print_json_result(result: &ScanResult) {
+    // Don't print anything in MCP stdio mode
+    if std::env::var("RAMPARTS_MCP_STDIO")
+        .unwrap_or_default()
+        .eq("1")
+    {
+        return;
+    }
+
     match serde_json::to_string_pretty(result) {
         Ok(json) => println!("{json}"),
         Err(e) => {
@@ -121,6 +137,14 @@ fn print_json_result(result: &ScanResult) {
 }
 
 fn print_raw_json_result(result: &ScanResult) {
+    // Don't print anything in MCP stdio mode
+    if std::env::var("RAMPARTS_MCP_STDIO")
+        .unwrap_or_default()
+        .eq("1")
+    {
+        return;
+    }
+
     let raw_result = build_raw_json_result(result);
     println!(
         "{}",
@@ -659,6 +683,14 @@ fn add_errors_info(
 
 #[allow(clippy::too_many_lines)]
 fn print_table_result(result: &ScanResult, detailed: bool) {
+    // Don't print anything in MCP stdio mode
+    if std::env::var("RAMPARTS_MCP_STDIO")
+        .unwrap_or_default()
+        .eq("1")
+    {
+        return;
+    }
+
     println!("Ramparts MCP Server Scan Result");
 
     // Server Info
@@ -915,6 +947,14 @@ fn print_table_result(result: &ScanResult, detailed: bool) {
 
 #[allow(clippy::too_many_lines)]
 fn print_text_result(result: &ScanResult) {
+    // Don't print anything in MCP stdio mode
+    if std::env::var("RAMPARTS_MCP_STDIO")
+        .unwrap_or_default()
+        .eq("1")
+    {
+        return;
+    }
+
     println!("Scan Result for: {}", result.url);
     println!("Status: {}", format_status(&result.status));
     println!("Response Time: {}ms", result.response_time_ms);
@@ -1226,6 +1266,14 @@ fn print_enhanced_security_table(result: &ScanResult) {
 
 /// Print results from multiple MCP servers
 pub fn print_multi_server_results(results: &[ScanResult], format: &str, detailed: bool) {
+    // Don't print anything in MCP stdio mode
+    if std::env::var("RAMPARTS_MCP_STDIO")
+        .unwrap_or_default()
+        .eq("1")
+    {
+        return;
+    }
+
     match format.to_lowercase().as_str() {
         "json" => print_multi_server_json(results),
         "table" => print_multi_server_tree(results, detailed),

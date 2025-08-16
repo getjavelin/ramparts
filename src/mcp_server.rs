@@ -176,6 +176,9 @@ impl rmcp::ServerHandler for RampartsMcpServer {
 
 /// Run the MCP server over stdio transport.
 pub async fn run_stdio_server() -> Result<(), Box<dyn std::error::Error>> {
+    // Set environment variable to suppress stdout output that interferes with MCP protocol
+    std::env::set_var("RAMPARTS_MCP_STDIO", "1");
+
     let handler = RampartsMcpServer::new();
     let service = handler.serve(stdio()).await?;
     service.waiting().await?;

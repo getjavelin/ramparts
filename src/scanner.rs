@@ -93,6 +93,14 @@ fn is_yara_available(config_enabled: bool) -> bool {
 
 /// Print friendly message about YARA installation
 fn print_yara_install_message() {
+    // Only print to stdout if not in MCP stdio mode
+    if std::env::var("RAMPARTS_MCP_STDIO")
+        .unwrap_or_default()
+        .eq("1")
+    {
+        return;
+    }
+
     println!("📋 YARA-X Scanning Disabled");
     println!();
     println!("YARA-X rule scanning is enabled in your config but YARA-X is not available.");
@@ -1352,11 +1360,16 @@ impl MCPScanner {
 
         let config = config_manager.load_config();
 
-        // Debug: Show that we loaded MCP config
-        println!(
-            "🔍 Loaded MCP configuration with {} servers",
-            config.servers.as_ref().map(|s| s.len()).unwrap_or(0)
-        );
+        // Debug: Show that we loaded MCP config (only when not in MCP stdio mode)
+        if !std::env::var("RAMPARTS_MCP_STDIO")
+            .unwrap_or_default()
+            .eq("1")
+        {
+            println!(
+                "🔍 Loaded MCP configuration with {} servers",
+                config.servers.as_ref().map(|s| s.len()).unwrap_or(0)
+            );
+        }
 
         // =============================================================
         // Pre-connection static analysis of MCP server definitions
@@ -1666,10 +1679,15 @@ impl MCPScanner {
                 .collect();
 
             // Execute all scans in parallel and collect results
-            println!(
-                "🚀 Starting parallel scan of {} servers...",
-                scan_tasks.len()
-            );
+            if !std::env::var("RAMPARTS_MCP_STDIO")
+                .unwrap_or_default()
+                .eq("1")
+            {
+                println!(
+                    "🚀 Starting parallel scan of {} servers...",
+                    scan_tasks.len()
+                );
+            }
 
             // Add timeout to prevent tasks from hanging indefinitely
             let scan_results = tokio::time::timeout(
@@ -1698,7 +1716,7 @@ impl MCPScanner {
 
             // Clean up the main scanner after all parallel tasks complete
             if let Err(e) = self.mcp_client.cleanup_all_sessions().await {
-                warn!("Failed to clean up main scanner sessions after parallel scan: {e}");
+                warn!("Failed to clean up main scanner sessions after parallel scan: {} - this is usually harmless", e);
             }
         }
 
@@ -1801,7 +1819,10 @@ impl MCPScanner {
 
         // Add a small delay to allow the server to fully complete initialization
         // This prevents "Received request before initialization was complete" warnings
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(
+            crate::constants::timeouts::INITIALIZATION_DELAY_MS,
+        ))
+        .await;
 
         debug!("Starting to fetch tools, resources, and prompts after rmcp connection");
 
@@ -1860,7 +1881,10 @@ impl MCPScanner {
 
         // Clean up the session to prevent session deletion errors
         if let Err(e) = self.mcp_client.cleanup_session(&session).await {
-            warn!("Failed to clean up MCP session: {}", e);
+            warn!(
+                "Failed to clean up MCP session for {}: {} - this is usually harmless",
+                session.endpoint_url, e
+            );
         }
 
         Ok(scan_data)
@@ -1875,7 +1899,10 @@ impl MCPScanner {
         let mut scan_data = ScanData::new();
 
         // Add a small delay for initialization
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(
+            crate::constants::timeouts::INITIALIZATION_DELAY_MS,
+        ))
+        .await;
 
         debug!("Starting to fetch tools, resources, and prompts from existing session");
 
@@ -1937,7 +1964,10 @@ impl MCPScanner {
 
         // Clean up the session to prevent session deletion errors
         if let Err(e) = self.mcp_client.cleanup_session(session).await {
-            warn!("Failed to clean up MCP session: {}", e);
+            warn!(
+                "Failed to clean up MCP session for {}: {} - this is usually harmless",
+                session.endpoint_url, e
+            );
         }
 
         Ok(scan_data)

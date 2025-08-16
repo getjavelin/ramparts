@@ -1,0 +1,11 @@
+target/
+.git/
+.github/
+**/.DS_Store
+**/.env*
+**/node_modules
+**/dist
+**/build
+scan_*.md
+*.log
+

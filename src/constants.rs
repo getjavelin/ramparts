@@ -18,3 +18,12 @@ pub mod messages {
 pub mod protocol {
     pub const USER_AGENT: &str = concat!("ramparts/", env!("CARGO_PKG_VERSION"));
 }
+
+/// Timeout constants for various operations
+pub mod timeouts {
+    /// Initialization delay to prevent "request before initialization" warnings (milliseconds)
+    pub const INITIALIZATION_DELAY_MS: u64 = 500;
+
+    /// Default cleanup timeout for MCP services (milliseconds)
+    pub const DEFAULT_CLEANUP_TIMEOUT_MS: u64 = 1000;
+}
