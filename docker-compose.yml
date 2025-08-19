@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  ramparts-proxy:
+    build: .
+    container_name: ramparts-proxy
+    ports:
+      - "8080:8080"
+    environment:
+      # Required: Set your Javelin API key
+      - JAVELIN_API_KEY=${JAVELIN_API_KEY}
+      
+      # Optional: Javelin API configuration
+      - JAVELIN_API_URL=${JAVELIN_API_URL:-https://api-dev.javelin.live}
+      - JAVELIN_TIMEOUT_SECONDS=${JAVELIN_TIMEOUT_SECONDS:-30}
+      - JAVELIN_FAIL_OPEN=${JAVELIN_FAIL_OPEN:-true}
+      
+      # Optional: Proxy configuration
+      - PROXY_LOG_REQUESTS=${PROXY_LOG_REQUESTS:-true}
+      - PROXY_CACHE_VALIDATIONS=${PROXY_CACHE_VALIDATIONS:-false}
+      - PROXY_MAX_REQUEST_SIZE=${PROXY_MAX_REQUEST_SIZE:-1048576}
+      
+      # Optional: Logging
+      - RUST_LOG=${RUST_LOG:-info}
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Security
+    read_only: true
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # Optional: Nginx reverse proxy for production
+  nginx:
+    image: nginx:alpine
+    container_name: ramparts-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro  # Mount SSL certificates
+    depends_on:
+      - ramparts-proxy
+    restart: unless-stopped
+    profiles:
+      - production  # Only start with --profile production

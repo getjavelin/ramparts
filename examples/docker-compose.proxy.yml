@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  ramparts-proxy:
+    image: ramparts:latest
+    container_name: ramparts-proxy
+    ports:
+      - "8080:8080"
+    environment:
+      # Required: Javelin API key
+      - JAVELIN_API_KEY=${JAVELIN_API_KEY}
+      
+      # Optional: Javelin API configuration
+      - JAVELIN_API_URL=https://api.getjavelin.com
+      - JAVELIN_TIMEOUT_SECONDS=30
+      - JAVELIN_FAIL_OPEN=true
+      
+      # Proxy configuration
+      - PROXY_LISTEN_ADDRESS=0.0.0.0:8080
+      - PROXY_LOG_REQUESTS=true
+      - PROXY_CACHE_VALIDATIONS=false
+      - PROXY_MAX_REQUEST_SIZE=1048576
+      
+      # Logging
+      - RUST_LOG=info
+    
+    command: ["ramparts", "proxy", "0.0.0.0:8080"]
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Security
+    read_only: true
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # Optional: Load balancer for multiple proxy instances
+  nginx:
+    image: nginx:alpine
+    container_name: ramparts-proxy-lb
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - ramparts-proxy
+    restart: unless-stopped
+
+# Example nginx.conf for load balancing:
+# events {
+#     worker_connections 1024;
+# }
+# 
+# http {
+#     upstream ramparts_proxy {
+#         server ramparts-proxy:8080;
+#         # Add more instances for load balancing
+#         # server ramparts-proxy-2:8080;
+#         # server ramparts-proxy-3:8080;
+#     }
+# 
+#     server {
+#         listen 80;
+#         location / {
+#             proxy_pass http://ramparts_proxy;
+#             proxy_set_header Host $host;
+#             proxy_set_header X-Real-IP $remote_addr;
+#             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#             proxy_set_header X-Forwarded-Proto $scheme;
+#         }
+#     }
+# }

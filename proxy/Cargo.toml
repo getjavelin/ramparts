@@ -1,0 +1,66 @@
+[package]
+name = "ramparts-proxy"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "MCP proxy with Javelin Guardrails integration (Proprietary License)"
+license = "LicenseRef-Javelin-Proprietary"
+repository.workspace = true
+
+[dependencies]
+# Local workspace dependencies
+ramparts-common = { path = "../common" }
+
+# Async runtime
+tokio = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# JSON handling
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+chrono = { workspace = true }
+url = { workspace = true }
+
+# Official Rust MCP SDK
+rmcp = { workspace = true }
+
+# Async utilities
+async-trait = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+
+# Web framework for proxy server
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+hyper = { workspace = true }
+
+# HTTP utilities
+http = { workspace = true }
+http-body-util = { workspace = true }
+
+# Async channels
+tokio-stream = { workspace = true }
+
+# Random number generation
+rand = { workspace = true }
+
+# JSON Schema
+schemars = { workspace = true }
+
+# Performance optimizations
+moka = { version = "0.12", features = ["future"] }
+sha2 = "0.10"
+dashmap = "5.5"
