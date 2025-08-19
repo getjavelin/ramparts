@@ -3488,8 +3488,8 @@ impl ScannerConfigManager {
     /// Load configuration from config.yaml
     pub fn load_config(&self) -> Result<ScannerConfig> {
         if !self.config_path.exists() {
-            debug!("No config.yaml found, using default configuration");
-            return Ok(ScannerConfig::default());
+            debug!("No config.yaml found, creating configuration from environment variables");
+            return Ok(Self::config_from_env_vars());
         }
 
         let content = fs::read_to_string(&self.config_path)
@@ -3503,6 +3503,47 @@ impl ScannerConfigManager {
 
         debug!("Loaded configuration from config.yaml");
         Ok(config)
+    }
+
+    /// Create configuration from environment variables when config.yaml is missing
+    /// This ensures production containers work without config files
+    fn config_from_env_vars() -> ScannerConfig {
+        let mut config = ScannerConfig::default();
+
+        // Override LLM configuration with environment variables
+        if let Ok(provider) = std::env::var("LLM_PROVIDER") {
+            debug!("Using LLM_PROVIDER from environment: {}", provider);
+            config.llm.provider = provider;
+        }
+        if let Ok(model) = std::env::var("LLM_MODEL") {
+            debug!("Using LLM_MODEL from environment: {}", model);
+            config.llm.model = model;
+        }
+        if let Ok(url) = std::env::var("LLM_URL") {
+            debug!("Using LLM_URL from environment: {}", url);
+            config.llm.base_url = url;
+        }
+        if let Ok(key) = std::env::var("LLM_API_KEY") {
+            debug!(
+                "Using LLM_API_KEY from environment: {}...",
+                if key.len() > 8 { &key[..8] } else { &key }
+            );
+            config.llm.api_key = key;
+        }
+
+        // Also check legacy OPENAI_API_KEY for backward compatibility
+        if config.llm.api_key.is_empty() {
+            if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+                debug!(
+                    "Using OPENAI_API_KEY from environment for backward compatibility: {}...",
+                    if key.len() > 8 { &key[..8] } else { &key }
+                );
+                config.llm.api_key = key;
+            }
+        }
+
+        debug!("Created configuration from environment variables");
+        config
     }
 
     /// Expand environment variables in configuration content
@@ -3778,5 +3819,137 @@ performance:
         env::remove_var("TEST_SECURITY_LLM_MODEL");
         env::remove_var("TEST_SECURITY_LLM_URL");
         env::remove_var("TEST_SECURITY_LLM_API_KEY");
+    }
+
+    #[test]
+    fn test_config_from_env_vars_with_all_variables() {
+        // Clean up any existing environment variables first
+        env::remove_var("LLM_PROVIDER");
+        env::remove_var("LLM_MODEL");
+        env::remove_var("LLM_URL");
+        env::remove_var("LLM_API_KEY");
+        env::remove_var("OPENAI_API_KEY");
+
+        // Set the environment variables that config_from_env_vars reads
+        env::set_var("LLM_PROVIDER", "anthropic");
+        env::set_var("LLM_MODEL", "claude-3");
+        env::set_var("LLM_URL", "https://api.anthropic.com/v1/messages");
+        env::set_var("LLM_API_KEY", "test-anthropic-key");
+
+        let config = ScannerConfigManager::config_from_env_vars();
+
+        // Verify environment variables were used
+        assert_eq!(config.llm.provider, "anthropic");
+        assert_eq!(config.llm.model, "claude-3");
+        assert_eq!(config.llm.base_url, "https://api.anthropic.com/v1/messages");
+        assert_eq!(config.llm.api_key, "test-anthropic-key");
+
+        // Verify other defaults are preserved
+        assert_eq!(config.llm.timeout, 30);
+        assert_eq!(config.llm.max_tokens, 4000);
+        assert_eq!(config.scanner.http_timeout, 30);
+        assert!(config.security.enabled);
+
+        // Clean up
+        env::remove_var("LLM_PROVIDER");
+        env::remove_var("LLM_MODEL");
+        env::remove_var("LLM_URL");
+        env::remove_var("LLM_API_KEY");
+    }
+
+    #[test]
+    fn test_config_from_env_vars_with_partial_variables() {
+        // Clean up any existing environment variables first
+        env::remove_var("LLM_PROVIDER");
+        env::remove_var("LLM_MODEL");
+        env::remove_var("LLM_URL");
+        env::remove_var("LLM_API_KEY");
+        env::remove_var("OPENAI_API_KEY");
+
+        // Set only some environment variables
+        env::set_var("LLM_MODEL", "gpt-3.5-turbo");
+        env::set_var("LLM_API_KEY", "test-partial-key");
+
+        let config = ScannerConfigManager::config_from_env_vars();
+
+        // Verify set environment variables were used
+        assert_eq!(config.llm.model, "gpt-3.5-turbo");
+        assert_eq!(config.llm.api_key, "test-partial-key");
+
+        // Verify defaults were used for unset variables
+        assert_eq!(config.llm.provider, "openai"); // default
+        assert_eq!(
+            config.llm.base_url,
+            "https://api.openai.com/v1/chat/completions"
+        ); // default
+
+        // Clean up
+        env::remove_var("LLM_MODEL");
+        env::remove_var("LLM_API_KEY");
+    }
+
+    #[test]
+    fn test_config_from_env_vars_with_legacy_openai_key() {
+        // Clean up any existing environment variables first
+        env::remove_var("LLM_PROVIDER");
+        env::remove_var("LLM_MODEL");
+        env::remove_var("LLM_URL");
+        env::remove_var("LLM_API_KEY");
+        env::remove_var("OPENAI_API_KEY");
+
+        // Set legacy OPENAI_API_KEY but not LLM_API_KEY
+        env::set_var("OPENAI_API_KEY", "legacy-openai-key");
+
+        let config = ScannerConfigManager::config_from_env_vars();
+
+        // Verify legacy key was used
+        assert_eq!(config.llm.api_key, "legacy-openai-key");
+
+        // Clean up
+        env::remove_var("OPENAI_API_KEY");
+    }
+
+    #[test]
+    fn test_config_from_env_vars_llm_api_key_takes_precedence() {
+        // Clean up any existing environment variables first
+        env::remove_var("LLM_PROVIDER");
+        env::remove_var("LLM_MODEL");
+        env::remove_var("LLM_URL");
+        env::remove_var("LLM_API_KEY");
+        env::remove_var("OPENAI_API_KEY");
+
+        // Set both LLM_API_KEY and OPENAI_API_KEY
+        env::set_var("LLM_API_KEY", "new-llm-key");
+        env::set_var("OPENAI_API_KEY", "legacy-openai-key");
+
+        let config = ScannerConfigManager::config_from_env_vars();
+
+        // Verify LLM_API_KEY takes precedence
+        assert_eq!(config.llm.api_key, "new-llm-key");
+
+        // Clean up
+        env::remove_var("LLM_API_KEY");
+        env::remove_var("OPENAI_API_KEY");
+    }
+
+    #[test]
+    fn test_config_from_env_vars_no_variables() {
+        // Ensure no relevant environment variables are set
+        env::remove_var("LLM_PROVIDER");
+        env::remove_var("LLM_MODEL");
+        env::remove_var("LLM_URL");
+        env::remove_var("LLM_API_KEY");
+        env::remove_var("OPENAI_API_KEY");
+
+        let config = ScannerConfigManager::config_from_env_vars();
+
+        // Verify all defaults were used
+        assert_eq!(config.llm.provider, "openai");
+        assert_eq!(config.llm.model, "gpt-4o");
+        assert_eq!(
+            config.llm.base_url,
+            "https://api.openai.com/v1/chat/completions"
+        );
+        assert_eq!(config.llm.api_key, ""); // empty default
     }
 }
