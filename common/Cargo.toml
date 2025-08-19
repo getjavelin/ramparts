@@ -1,0 +1,43 @@
+[package]
+name = "ramparts-common"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Common types and utilities for Ramparts MCP tools"
+license = "Apache-2.0"
+repository.workspace = true
+
+[dependencies]
+# JSON handling
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+chrono = { workspace = true }
+url = { workspace = true }
+regex = { workspace = true }
+
+# Async utilities
+async-trait = { workspace = true }
+tokio = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# Official Rust MCP SDK
+rmcp = { workspace = true }
+
+# File system operations
+dirs = { workspace = true }
+
+# Random number generation
+rand = { workspace = true }

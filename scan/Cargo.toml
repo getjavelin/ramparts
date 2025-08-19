@@ -1,0 +1,130 @@
+[package]
+name = "ramparts"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "A CLI tool for scanning Model Context Protocol (MCP) servers"
+license = "Apache-2.0"
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+include = ["src/**/*", "../LICENSE", "../README.md", "../build.rs"]
+
+[features]
+default = ["yara-x-scanning"]
+yara-x-scanning = ["yara-x", "glob"]
+
+[dependencies]
+# Local workspace dependencies
+ramparts-common = { path = "../common" }
+ramparts-proxy = { path = "../proxy" }
+
+# CLI argument parsing
+clap = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# Async streams
+futures-util = { workspace = true }
+futures = { workspace = true }
+
+# JSON handling
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+chrono = { workspace = true }
+url = { workspace = true }
+regex = { workspace = true }
+glob = { workspace = true, optional = true }
+
+# Terminal and formatting
+colored = { workspace = true }
+tabled = { workspace = true }
+indicatif = { workspace = true }
+
+# File system operations
+walkdir = { workspace = true }
+dirs = { workspace = true }
+
+# Security scanning
+yara-x = { workspace = true, optional = true }
+
+# Official Rust MCP SDK
+rmcp = { workspace = true }
+
+# Random number generation
+rand = { workspace = true }
+
+# Async utilities
+async-trait = { workspace = true }
+
+# Markdown generation
+pulldown-cmark = { workspace = true }
+
+# Base64 encoding
+base64 = { workspace = true }
+
+# Compression
+flate2 = { workspace = true }
+
+# Archive handling
+tar = { workspace = true }
+
+# Temporary files
+tempfile = { workspace = true }
+
+# Process handling
+which = { workspace = true }
+
+# Networking
+local-ip-address = { workspace = true }
+
+# Async channels
+tokio-stream = { workspace = true }
+
+# HTTP utilities
+http = { workspace = true }
+http-body-util = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+
+# Web framework
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+
+# Mime type handling
+mime = { workspace = true }
+
+# Async recursion
+async-recursion = { workspace = true }
+
+# JSON Schema
+schemars = { workspace = true }
+
+# Spinners for progress indication
+spinners = { workspace = true }
+
+[build-dependencies]
+# Build utilities
+chrono = { workspace = true }
+
+[dev-dependencies]
+# Testing utilities
+tokio-test = { workspace = true }
+tempfile = { workspace = true }

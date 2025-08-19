@@ -1,0 +1,193 @@
+name: Build Multi-Platform Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scan/**'
+      - 'proxy/**'
+      - 'common/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-binaries:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: x86_64-pc-windows-gnu
+            os: windows-latest
+            archive: zip
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+
+    - name: Install cross-compilation tools (Linux ARM64)
+      if: matrix.target == 'aarch64-unknown-linux-gnu'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu
+
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo index
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v3
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build release binary
+      run: cargo build --release --target ${{ matrix.target }}
+
+    - name: Create archive (Unix)
+      if: matrix.archive == 'tar.gz'
+      run: |
+        BINARY_NAME="ramparts"
+        VERSION=${GITHUB_REF#refs/tags/}
+        if [[ -z "$VERSION" || "$VERSION" == "refs/heads/"* ]]; then
+          VERSION="dev-$(git rev-parse --short HEAD)"
+        fi
+        ARCHIVE_NAME="ramparts-$VERSION-${{ matrix.target }}.tar.gz"
+        cp "target/${{ matrix.target }}/release/$BINARY_NAME" .
+        tar -czf "$ARCHIVE_NAME" "$BINARY_NAME"
+        echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_ENV
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+    - name: Create archive (Windows)
+      if: matrix.archive == 'zip'
+      run: |
+        $BINARY_NAME = "ramparts.exe"
+        $VERSION = $env:GITHUB_REF -replace 'refs/tags/', ''
+        if (-not $VERSION -or $VERSION.StartsWith('refs/heads/')) {
+          $VERSION = "dev-$(git rev-parse --short HEAD)"
+        }
+        $ARCHIVE_NAME = "ramparts-$VERSION-${{ matrix.target }}.zip"
+        Copy-Item "target/${{ matrix.target }}/release/$BINARY_NAME" .
+        Compress-Archive -Path $BINARY_NAME -DestinationPath $ARCHIVE_NAME
+        echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $env:GITHUB_ENV
+        echo "VERSION=$VERSION" >> $env:GITHUB_ENV
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.ARCHIVE_NAME }}
+        path: ${{ env.ARCHIVE_NAME }}
+
+  create-checksums:
+    name: Create Checksums
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Create checksums
+      run: |
+        cd artifacts
+        find . -name "*.tar.gz" -o -name "*.zip" | while read file; do
+          sha256sum "$file" >> checksums.txt
+        done
+        cat checksums.txt
+
+    - name: Upload checksums
+      uses: actions/upload-artifact@v4
+      with:
+        name: checksums.txt
+        path: artifacts/checksums.txt
+
+  github-release:
+    name: Create GitHub Release
+    needs: [build-binaries, create-checksums]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Prepare release files
+      run: |
+        mkdir -p release-files
+        find artifacts -name "*.tar.gz" -o -name "*.zip" -o -name "checksums.txt" | while read file; do
+          cp "$file" release-files/
+        done
+        ls -la release-files/
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release-files/*
+        generate_release_notes: true
+        draft: false
+        prerelease: false
+        body: |
+          ## 🚀 Ramparts ${{ github.ref_name }}
+          
+          ### Installation
+          
+          **Quick Install:**
+          ```bash
+          curl -sSL https://raw.githubusercontent.com/getjavelin/ramparts/main/scripts/install.sh | bash
+          ```
+          
+          **Manual Download:**
+          - Download the appropriate binary for your platform below
+          - Extract the archive
+          - Move `ramparts` to your PATH
+          - Set `JAVELIN_API_KEY` environment variable
+          - Run: `ramparts proxy 127.0.0.1:8080`
+          
+          ### Checksums
+          Verify your download with the checksums.txt file.
+          
+          ### Docker
+          ```bash
+          docker run -d -p 8080:8080 -e JAVELIN_API_KEY="your-key" getjavelin/ramparts:${{ github.ref_name }} proxy 0.0.0.0:8080
+          ```
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

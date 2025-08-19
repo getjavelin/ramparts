@@ -1,8 +1,9 @@
 use clap::{Parser, Subcommand};
-use tracing::{debug, error, warn, Level};
+use tracing::{debug, error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
 use crate::config::ScannerConfig;
+
 
 mod banner;
 mod config;
@@ -19,7 +20,7 @@ mod utils;
 use banner::display_banner;
 use scanner::MCPScanner;
 use server::MCPScannerServer;
-use types::{config_utils, ScanConfigBuilder, ScanOptions};
+use types::{scan_config_utils, ScanConfigBuilder, ScanOptions};
 use utils::error_utils;
 
 #[derive(Parser)]
@@ -167,6 +168,13 @@ enum Commands {
         #[arg(short, long, default_value = "8081")]
         port: u16,
     },
+
+    /// Start MCP proxy server with Javelin Guardrails integration
+    Proxy {
+        /// Listen address and port for the proxy server (e.g., "127.0.0.1:8080")
+        #[arg(value_name = "ADDRESS:PORT")]
+        listen_address: String,
+    },
 }
 
 #[tokio::main]
@@ -295,6 +303,7 @@ async fn execute_command(
         Commands::McpStdio => handle_mcp_stdio_command().await,
         Commands::McpSse { host, port } => handle_mcp_sse_command(host, port).await,
         Commands::McpHttp { host, port } => handle_mcp_http_command(host, port).await,
+        Commands::Proxy { listen_address } => handle_proxy_command(listen_address).await,
     }
 }
 
@@ -469,9 +478,20 @@ fn build_scan_options(
         .build()
 }
 
+/// Handle proxy command
+async fn handle_proxy_command(listen_address: String) -> Result<(), Box<dyn std::error::Error>> {
+    info!("Starting MCP proxy server...");
+
+    // Create and start the proxy
+    let proxy = ramparts_proxy::MCPProxy::new(listen_address)?;
+    proxy.start().await?;
+
+    Ok(())
+}
+
 /// Validates scan configuration and exits on error
 fn validate_scan_config(options: &ScanOptions) {
-    if let Err(e) = config_utils::validate_scan_config(options) {
+    if let Err(e) = scan_config_utils::validate_scan_config(options) {
         error!("Invalid configuration: {}", e);
         std::process::exit(1);
     }

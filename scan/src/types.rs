@@ -4,6 +4,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// Re-export common types
+pub use ramparts_common::{
+    MCPServerInfo, MCPTool, MCPResource, MCPPrompt, MCPPromptArgument, MCPSession,
+};
+
 /// Original YARA rule metadata from the rule definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct YaraRuleMetadata {
@@ -131,8 +136,8 @@ impl ScanConfigBuilder {
     }
 }
 
-/// Configuration validation utilities
-pub mod config_utils {
+/// Configuration validation utilities specific to scanning
+pub mod scan_config_utils {
     use super::{Result, ScanOptions};
 
     pub fn validate_scan_config(options: &ScanOptions) -> Result<()> {
@@ -257,78 +262,7 @@ impl ScanResult {
     }
 }
 
-/// MCP server information
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MCPServerInfo {
-    pub name: String,
-    pub version: String,
-    pub description: Option<String>,
-    pub capabilities: Vec<String>,
-    pub metadata: HashMap<String, serde_json::Value>,
-}
 
-/// MCP tool definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MCPTool {
-    pub name: String,
-    pub description: Option<String>,
-    pub input_schema: Option<serde_json::Value>,
-    pub output_schema: Option<serde_json::Value>,
-    pub parameters: HashMap<String, serde_json::Value>,
-    pub category: Option<String>,
-    pub tags: Vec<String>,
-    pub deprecated: bool,
-    // Preserve the original JSON schema from the MCP server
-    pub raw_json: Option<serde_json::Value>,
-}
-
-/// MCP session information
-#[derive(Debug, Clone)]
-pub struct MCPSession {
-    pub server_info: Option<MCPServerInfo>,
-    pub endpoint_url: String, // Store the successful endpoint URL for reuse
-    pub auth_headers: Option<HashMap<String, String>>, // Store auth headers for reuse
-    pub session_id: Option<String>, // Store session ID for stateful MCP servers (e.g., GitHub Copilot)
-}
-
-/// MCP resource definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MCPResource {
-    #[serde(rename = "uri")]
-    pub uri: String,
-    #[serde(rename = "name")]
-    pub name: String,
-    #[serde(rename = "description")]
-    pub description: Option<String>,
-    #[serde(rename = "mimeType")]
-    pub mime_type: Option<String>,
-    #[serde(rename = "size")]
-    pub size: Option<u64>,
-    #[serde(rename = "metadata")]
-    pub metadata: HashMap<String, serde_json::Value>,
-    // Preserve the original JSON schema from the MCP server
-    #[serde(skip)]
-    pub raw_json: Option<serde_json::Value>,
-}
-
-/// MCP prompt argument definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MCPPromptArgument {
-    pub name: String,
-    pub description: Option<String>,
-    pub required: Option<bool>,
-}
-
-/// MCP prompt definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MCPPrompt {
-    pub name: String,
-    pub description: Option<String>,
-    pub arguments: Option<Vec<MCPPromptArgument>>,
-    // Preserve the original JSON schema from the MCP server
-    #[serde(skip)]
-    pub raw_json: Option<serde_json::Value>,
-}
 
 /// Tool response structure
 #[derive(Debug, Clone, Serialize, Deserialize)]

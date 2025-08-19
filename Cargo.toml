@@ -1,17 +1,18 @@
-[package]
-name = "ramparts"
+[workspace]
+members = ["scan", "proxy", "common"]
+default-members = ["scan"]
+resolver = "2"
+
+[workspace.package]
 version = "0.7.0"
 edition = "2021"
 authors = ["Sharath Rajasekar <sharath@getjavelin.com>"]
-description = "A CLI tool for scanning Model Context Protocol (MCP) servers"
-license = "Apache-2.0"
 repository = "https://github.com/getjavelin/ramparts"
 keywords = ["mcp", "scanner", "cli", "llm", "security"]
 categories = ["command-line-utilities", "network-programming"]
-include = ["src/**/*", "LICENSE", "README.md", "build.rs"]
 
 # Cargo-release configuration for semantic versioning
-[package.metadata.release]
+[workspace.metadata.release]
 # Allow releases from main/master branch
 allow-branch = ["main", "master"]
 # Create git tags
@@ -24,11 +25,7 @@ tag-name = "v{version}"
 sign-commit = false
 sign-tag = false
 
-[features]
-default = ["yara-x-scanning"]
-yara-x-scanning = ["yara-x", "glob"]
-
-[dependencies]
+[workspace.dependencies]
 # CLI argument parsing
 clap = { version = "4.4", features = ["derive"] }
 
@@ -75,7 +72,7 @@ config = "0.14"
 dirs = "5.0"
 
 # File pattern matching for dynamic YARA rules
-glob = { version = "0.3", optional = true }
+glob = "0.3"
 
 # Color output
 colored = "2.0"
@@ -88,7 +85,7 @@ tower = "0.4"
 
 # JSON-RPC handling for microservice
 jsonrpc-core = "18.0"
-yara-x = { version = "1.4", optional = true }
+yara-x = "1.4"
 
 # Official Rust MCP SDK
 # Official Rust MCP SDK (client + server)
@@ -115,9 +112,23 @@ rmcp = { version = "0.3.2", features = [
 # Random number generation for request IDs
 rand = "0.8"
 
-[build-dependencies]
-chrono = "0.4"
-
-[dev-dependencies]
-tokio-test = "0.4"
+# Additional dependencies for scan crate
+async-recursion = "1.0"
+async-trait = "0.1"
+mime = "0.3"
 tempfile = "3.8"
+tokio-test = "0.4"
+pulldown-cmark = "0.9"
+base64 = "0.21"
+flate2 = "1.0"
+tar = "0.4"
+which = "4.4"
+local-ip-address = "0.5"
+tokio-stream = "0.1"
+http = "0.2"
+http-body-util = "0.1"
+hyper = "0.14"
+hyper-util = "0.1"
+walkdir = "2.3"
+indicatif = "0.17"
+uuid = { version = "1.6", features = ["v4", "serde"] }

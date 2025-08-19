@@ -63,9 +63,24 @@ Ramparts provides **security scanning** of MCP servers by:
 ## Quick Start
 
 **Installation**
+
+Quick install (one-line):
+```bash
+curl -sSL https://raw.githubusercontent.com/getjavelin/ramparts/main/scripts/install.sh | bash
+```
+
+Or via Cargo:
 ```bash
 cargo install ramparts
 ```
+
+Or via Docker:
+```bash
+export JAVELIN_API_KEY="your-api-key"
+docker run -d -p 8080:8080 -e JAVELIN_API_KEY="$JAVELIN_API_KEY" getjavelin/ramparts:latest proxy 0.0.0.0:8080
+```
+
+📦 **[Complete Installation Guide](INSTALL.md)** - All methods, platforms, and configurations
 
 **Scan an MCP server**
 ```bash
@@ -88,7 +103,16 @@ ramparts scan-config
 ramparts scan-config --report
 ```
 
-> **💡 Did you know you can start Ramparts as a server?** Run `ramparts server` to get a REST API for continuous monitoring and CI/CD integration. See 📚 **[Ramparts Server Mode](docs/api.md)** 
+**Start MCP Proxy with Javelin Guardrails**
+```bash
+# Start proxy server (requires Javelin API key)
+export JAVELIN_API_KEY="your-api-key"
+ramparts proxy 127.0.0.1:8080
+```
+
+> **💡 Did you know you can start Ramparts as a server?** Run `ramparts server` to get a REST API for continuous monitoring and CI/CD integration. See 📚 **[Ramparts Server Mode](docs/api.md)**
+>
+> **🔒 New: MCP Proxy with Guardrails** The `ramparts proxy` command provides real-time MCP request validation using Javelin Guardrails. See 📚 **[Proxy Documentation](docs/proxy.md)**
 
 ### Run as an MCP server (stdio)
 
@@ -161,9 +185,35 @@ We welcome contributions to Ramparts mcp scan. If you have suggestions, bug repo
 - 🔍 **[Troubleshooting Guide](docs/troubleshooting.md)** - Solutions to common issues
 - ⚙️ **[Configuration Reference](docs/configuration.md)** - Complete configuration file documentation
 - 📖 **[CLI Reference](docs/cli.md)** - All commands, options, and usage examples
+- 🔒 **[Proxy Documentation](docs/proxy.md)** - MCP proxy with Javelin Guardrails integration
+
+## Project Structure
+
+Ramparts uses a Cargo workspace architecture for modular development:
+
+```
+ramparts/
+├── scan/           # Main CLI tool and scanning functionality (Apache 2.0)
+├── proxy/          # MCP proxy with Javelin Guardrails (Proprietary)
+├── common/         # Shared types and utilities (Apache 2.0)
+├── docs/           # Documentation
+└── examples/       # Configuration examples
+```
+
+### Components
+
+- **ramparts-scan**: Core scanning functionality with Apache 2.0 license
+- **ramparts-proxy**: MCP proxy with Javelin Guardrails integration (Proprietary license)
+- **ramparts-common**: Shared types and utilities used by both components
+
+### Licensing
+
+- **Scan functionality**: Apache 2.0 (free and open source)
+- **Proxy functionality**: Javelin Proprietary License (requires API key)
 
 ## Additional Resources
 - [Need Support?](https://github.com/getjavelin/ramparts/issues)
 - [MCP Protocol Documentation](https://modelcontextprotocol.io/)
 - [Configuration Examples](examples/config_example.json)
+- [Javelin Guardrails](https://www.getjavelin.com)
 

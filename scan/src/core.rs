@@ -1,6 +1,6 @@
 use crate::config::{ScannerConfig, ScannerConfigManager};
 use crate::scanner::MCPScanner;
-use crate::types::{config_utils, ScanConfigBuilder, ScanOptions, ScanResult};
+use crate::types::{scan_config_utils, ScanConfigBuilder, ScanOptions, ScanResult};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -152,7 +152,7 @@ impl MCPScannerCore {
         let scan_options = self.parse_scan_options(&request);
 
         // Validate configuration
-        config_utils::validate_scan_config(&scan_options)
+        scan_config_utils::validate_scan_config(&scan_options)
             .map_err(|e| anyhow!("Configuration validation failed: {}", e))?;
 
         // Perform scan
@@ -165,7 +165,7 @@ impl MCPScannerCore {
         let timestamp = chrono::Utc::now().to_rfc3339();
 
         let options = self.parse_scan_options(request); // No conversion for validation
-        match config_utils::validate_scan_config(&options) {
+        match scan_config_utils::validate_scan_config(&options) {
             Ok(()) => ValidationResponse {
                 success: true,
                 valid: true,
