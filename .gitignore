@@ -30,4 +30,11 @@ scan_*
 
 # Test artifacts
 test_output/
-scan_results/ 
+scan_results/
+
+# VS Code Extension build artifacts
+extensions/*/node_modules/
+extensions/*/out/
+extensions/*/*.vsix
+extensions/*/bin/ramparts
+extensions/*/bin/ramparts-mcp-proxy-stdio-*

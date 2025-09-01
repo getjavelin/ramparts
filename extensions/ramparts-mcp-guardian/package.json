@@ -1,0 +1,253 @@
+{
+  "name": "ramparts-mcp-guardian",
+  "displayName": "Ramparts MCP Guardian",
+  "description": "Automatic security for MCP servers with Javelin Guardrails - zero configuration required",
+  "version": "0.1.0",
+  "publisher": "getjavelin",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "mcp",
+    "security",
+    "ai",
+    "guardrails",
+    "ramparts"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ramparts.enable",
+        "title": "Enable Ramparts MCP Guardian",
+        "category": "Ramparts"
+      },
+      {
+        "command": "ramparts.disable", 
+        "title": "Disable Ramparts MCP Guardian",
+        "category": "Ramparts"
+      },
+      {
+        "command": "ramparts.status",
+        "title": "Show Ramparts Status",
+        "category": "Ramparts"
+      },
+      {
+        "command": "ramparts.openSettings",
+        "title": "Open Ramparts Settings",
+        "category": "Ramparts"
+      },
+      {
+        "command": "ramparts.viewLogs",
+        "title": "View Ramparts Logs",
+        "category": "Ramparts"
+      },
+      {
+        "command": "ramparts.scanServer",
+        "title": "Scan MCP Server",
+        "category": "Ramparts"
+      },
+      {
+        "command": "ramparts.scanAllServers",
+        "title": "Scan All MCP Servers",
+        "category": "Ramparts"
+      },
+      {
+        "command": "ramparts.scanConfig",
+        "title": "Scan IDE Configuration",
+        "category": "Ramparts"
+      }
+    ],
+    "configuration": {
+      "title": "Ramparts MCP Guardian",
+      "properties": {
+        "ramparts.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable automatic MCP request security validation"
+        },
+        "ramparts.javelinApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Javelin API key for guardrails validation (leave empty to use JAVELIN_API_KEY environment variable)"
+        },
+        "ramparts.failOpen": {
+          "type": "boolean", 
+          "default": false,
+          "description": "Allow requests when validation service is unavailable (fail-open vs fail-closed)"
+        },
+        "ramparts.logLevel": {
+          "type": "string",
+          "enum": ["error", "warn", "info", "debug"],
+          "default": "info",
+          "description": "Logging level for Ramparts proxy"
+        },
+        "ramparts.bypassedServers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "List of MCP server names to bypass (no security validation)"
+        },
+        "ramparts.policyFile": {
+          "type": "string",
+          "default": "",
+          "description": "Path to custom policy YAML file (optional)"
+        },
+        "ramparts.scan.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable automated security scanning of MCP servers"
+        },
+        "ramparts.scan.intervalMinutes": {
+          "type": "number",
+          "default": 240,
+          "minimum": 30,
+          "description": "Interval between automated scans in minutes (minimum 30)"
+        },
+        "ramparts.scan.onConfigChange": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan when MCP configuration changes"
+        },
+        "ramparts.scan.includeTargets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional MCP servers to scan (URLs or stdio:command format)"
+        },
+        "ramparts.scan.outputFormat": {
+          "type": "string",
+          "enum": ["json", "table"],
+          "default": "json",
+          "description": "Output format for scan results"
+        },
+        "ramparts.scan.generateReport": {
+          "type": "boolean",
+          "default": true,
+          "description": "Generate detailed markdown reports for scans"
+        },
+        "ramparts.scan.notifyMinSeverity": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"],
+          "default": "high",
+          "description": "Minimum severity level for notifications"
+        },
+        "ramparts.scan.useLLMChecks": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable LLM-based security checks (may incur API costs)"
+        },
+        "ramparts.scan.authHeaders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Authentication headers for scanning (format: 'Header: Value')"
+        },
+        "ramparts.scan.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to ramparts CLI binary (leave empty to use PATH)"
+        }
+      }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "rampartsServers",
+          "name": "Ramparts MCP Servers",
+          "when": "ramparts.enabled"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ramparts",
+          "title": "Ramparts",
+          "icon": "$(shield)"
+        }
+      ]
+    },
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "ramparts.bypassServer",
+          "when": "view == rampartsServers && viewItem == mcpServerProtected",
+          "group": "ramparts"
+        },
+        {
+          "command": "ramparts.unbypassServer",
+          "when": "view == rampartsServers && viewItem == mcpServerBypassed",
+          "group": "ramparts"
+        },
+        {
+          "command": "ramparts.scanServer",
+          "when": "view == rampartsServers && (viewItem == mcpServerProtected || viewItem == mcpServerBypassed)",
+          "group": "scan"
+        },
+        {
+          "command": "ramparts.scanAllServers",
+          "when": "view == rampartsServers",
+          "group": "scan"
+        },
+        {
+          "command": "ramparts.scanConfig",
+          "when": "view == rampartsServers",
+          "group": "scan"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "eslint": "^8.28.0",
+    "typescript": "^4.9.4",
+    "@vscode/test-electron": "^2.2.0",
+    "vsce": "^2.15.0"
+  },
+  "dependencies": {
+    "yaml": "^2.3.4",
+    "chokidar": "^3.5.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getjavelin/ramparts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/getjavelin/ramparts/issues"
+  },
+  "homepage": "https://github.com/getjavelin/ramparts#readme",
+  "license": "Apache-2.0",
+  "files": [
+    "out/**/*",
+    "bin/**/*",
+    "package.json",
+    "README.md",
+    "CHANGELOG.md"
+  ]
+}
