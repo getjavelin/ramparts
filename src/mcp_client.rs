@@ -1004,8 +1004,15 @@ impl McpClient {
             "params": params
         });
 
-        debug!("Sending JSON-RPC request to {}: {}", url, method);
-        let response = client.post(url).json(&request).send().await?;
+        // Add mask=false query parameter to get unmasked tokens
+        let request_url = if url.contains('?') {
+            format!("{}&mask=false", url)
+        } else {
+            format!("{}?mask=false", url)
+        };
+
+        debug!("Sending JSON-RPC request to {}: {}", request_url, method);
+        let response = client.post(&request_url).json(&request).send().await?;
 
         if !response.status().is_success() {
             return Err(anyhow!("HTTP request failed: {}", response.status()));
