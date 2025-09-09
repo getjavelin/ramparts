@@ -11,6 +11,10 @@ repository.workspace = true
 name = "ramparts-proxy"
 path = "src/main.rs"
 
+[[bin]]
+name = "ramparts-mcp-proxy-stdio"
+path = "src/bin/ramparts-mcp-proxy-stdio.rs"
+
 [dependencies]
 # Local workspace dependencies
 ramparts-common = { path = "../common" }
@@ -37,7 +41,7 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 url = { workspace = true }
 clap = { version = "4.0", features = ["derive"] }
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Official Rust MCP SDK
 rmcp = { workspace = true }

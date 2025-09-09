@@ -49,18 +49,23 @@ export class RampartsManager {
 
     async reloadConfiguration() {
         this.log('Reloading Ramparts configuration...');
-        
+
         const config = vscode.workspace.getConfiguration('ramparts');
         this.enabled = config.get<boolean>('enabled', true);
-        
+
         if (this.enabled) {
             this.status = 'Enabled';
             await this.ensureProxyBinary();
+            // Re-apply proxies when settings change (e.g., policy or API key updates)
+            try {
+                const mcpManager = new (require('./mcpConfigManager').McpConfigManager)(this.context);
+                await mcpManager.reapplyProxies?.();
+            } catch {}
         } else {
             this.status = 'Disabled';
             this.stopAllProxyProcesses();
         }
-        
+
         this.log('Configuration reloaded');
     }
 
@@ -937,6 +942,111 @@ Ramparts MCP Guardian Status:
         } else {
             const issueCount = results.security_issues ? results.security_issues.length : 0;
             return `${issueCount} security issues found`;
+        }
+    }
+
+    async autoProxyAllServers() {
+        this.log('Auto-proxying all MCP servers...');
+        try {
+            const { McpConfigManager } = require('./mcpConfigManager');
+            const mcpManager = new McpConfigManager(this.context);
+            await mcpManager.reapplyProxies();
+            vscode.window.showInformationMessage('All MCP servers have been wrapped with Ramparts proxy for runtime protection.');
+        } catch (error) {
+            this.log(`Failed to auto-proxy servers: ${error}`);
+            vscode.window.showErrorMessage(`Failed to auto-proxy servers: ${error}`);
+        }
+    }
+
+    async reloadPolicy() {
+        this.log('Reloading security policy...');
+        const config = vscode.workspace.getConfiguration('ramparts');
+        const policyFile = config.get<string>('policyFile');
+
+        if (!policyFile) {
+            vscode.window.showWarningMessage('No policy file configured. Set ramparts.policyFile in settings.');
+            return;
+        }
+
+        if (!fs.existsSync(policyFile)) {
+            vscode.window.showErrorMessage(`Policy file not found: ${policyFile}`);
+            return;
+        }
+
+        try {
+            // Re-apply proxies with updated policy
+            const { McpConfigManager } = require('./mcpConfigManager');
+            const mcpManager = new McpConfigManager(this.context);
+            await mcpManager.reapplyProxies();
+
+            this.log(`Policy reloaded from: ${policyFile}`);
+            vscode.window.showInformationMessage(`Security policy reloaded successfully from ${policyFile}`);
+        } catch (error) {
+            this.log(`Failed to reload policy: ${error}`);
+            vscode.window.showErrorMessage(`Failed to reload policy: ${error}`);
+        }
+    }
+
+    async testJavelinConnection() {
+        this.log('Testing Javelin API connection...');
+        const config = vscode.workspace.getConfiguration('ramparts');
+
+        let apiKey = config.get<string>('javelinApiKey');
+        if (!apiKey || apiKey.trim() === '') {
+            apiKey = process.env.JAVELIN_API_KEY;
+        }
+
+        if (!apiKey || apiKey.trim() === '') {
+            vscode.window.showWarningMessage('No Javelin API key configured. Set ramparts.javelinApiKey or JAVELIN_API_KEY environment variable.');
+            return;
+        }
+
+        const endpoint = config.get<string>('javelinEndpoint', 'https://api.getjavelin.com');
+
+        try {
+            // Use Node.js https module instead of fetch for compatibility
+            const https = require('https');
+            const url = require('url');
+
+            const testUrl = `${endpoint}/health`;
+            const parsedUrl = url.parse(testUrl);
+
+            const options = {
+                hostname: parsedUrl.hostname,
+                port: parsedUrl.port || 443,
+                path: parsedUrl.path,
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'User-Agent': 'Ramparts-MCP-Guardian/0.1.0'
+                }
+            };
+
+            const statusBarMessage = vscode.window.setStatusBarMessage('🔍 Testing Javelin connection...');
+
+            const response = await new Promise<{statusCode: number, data: string}>((resolve, reject) => {
+                const req = https.request(options, (res: any) => {
+                    let data = '';
+                    res.on('data', (chunk: any) => data += chunk);
+                    res.on('end', () => resolve({ statusCode: res.statusCode, data }));
+                });
+                req.on('error', reject);
+                req.setTimeout(10000, () => reject(new Error('Request timeout')));
+                req.end();
+            });
+
+            statusBarMessage.dispose();
+
+            if (response.statusCode === 200) {
+                this.log(`Javelin connection successful: ${testUrl}`);
+                vscode.window.showInformationMessage(`✅ Javelin API connection successful!\nEndpoint: ${endpoint}\nStatus: Connected`);
+            } else {
+                this.log(`Javelin connection failed: HTTP ${response.statusCode}`);
+                vscode.window.showWarningMessage(`⚠️ Javelin API returned HTTP ${response.statusCode}\nEndpoint: ${endpoint}\nCheck your API key and endpoint configuration.`);
+            }
+        } catch (error) {
+            this.log(`Javelin connection error: ${error}`);
+            vscode.window.showErrorMessage(`❌ Failed to connect to Javelin API\nEndpoint: ${endpoint}\nError: ${error}\n\nCheck your network connection and API configuration.`);
         }
     }
 }

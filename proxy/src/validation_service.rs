@@ -42,6 +42,27 @@ impl ValidationService {
         let request_id = uuid::Uuid::new_v4().to_string();
         let timestamp = chrono::Utc::now().to_rfc3339();
 
+        // Extract method for method-specific validation
+        let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("unknown");
+        debug!("Validating method: {}", method);
+
+        // Apply method-specific validation rules
+        if let Some(method_result) = self.validate_method_specific(request, method, &request_id, &timestamp).await? {
+            return Ok(method_result);
+        }
+
+        // Check if we're in test mode (no Javelin API key)
+        if self.config.javelin.api_key == "test-mode" {
+            debug!("Test mode: allowing all requests without Javelin validation");
+            return Ok(ValidationResult {
+                allowed: true,
+                reason: Some(format!("Test mode - {} validation bypassed", method)),
+                confidence: Some(1.0),
+                request_id,
+                timestamp,
+            });
+        }
+
         match self.javelin_client.validate_request(request).await {
             Ok(is_valid) => {
                 let result = ValidationResult {
@@ -174,6 +195,140 @@ impl ValidationService {
     /// Clear validation cache
     pub async fn clear_cache(&self) {
         self.javelin_client.clear_cache().await;
+    }
+
+    /// Apply method-specific validation rules
+    async fn validate_method_specific(
+        &self,
+        request: &Value,
+        method: &str,
+        request_id: &str,
+        timestamp: &str,
+    ) -> Result<Option<ValidationResult>> {
+        match method {
+            "tools/call" => {
+                debug!("Applying tools/call specific validation rules");
+                // Check for dangerous tool calls
+                if let Some(params) = request.get("params") {
+                    if let Some(name) = params.get("name").and_then(|n| n.as_str()) {
+                        // Block dangerous tools
+                        if self.is_dangerous_tool(name) {
+                            warn!("Blocked dangerous tool call: {}", name);
+                            return Ok(Some(ValidationResult {
+                                allowed: false,
+                                reason: Some(format!("Dangerous tool '{}' blocked by security policy", name)),
+                                confidence: Some(0.9),
+                                request_id: request_id.to_string(),
+                                timestamp: timestamp.to_string(),
+                            }));
+                        }
+
+                        // Check tool arguments for injection patterns
+                        if let Some(args) = params.get("arguments") {
+                            if self.contains_injection_patterns(args) {
+                                warn!("Blocked tool call with injection patterns: {}", name);
+                                return Ok(Some(ValidationResult {
+                                    allowed: false,
+                                    reason: Some(format!("Tool '{}' arguments contain injection patterns", name)),
+                                    confidence: Some(0.8),
+                                    request_id: request_id.to_string(),
+                                    timestamp: timestamp.to_string(),
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+            "resources/read" => {
+                debug!("Applying resources/read specific validation rules");
+                // Check for path traversal attempts
+                if let Some(params) = request.get("params") {
+                    if let Some(uri) = params.get("uri").and_then(|u| u.as_str()) {
+                        if self.contains_path_traversal(uri) {
+                            warn!("Blocked resource read with path traversal: {}", uri);
+                            return Ok(Some(ValidationResult {
+                                allowed: false,
+                                reason: Some(format!("Resource URI '{}' contains path traversal patterns", uri)),
+                                confidence: Some(0.9),
+                                request_id: request_id.to_string(),
+                                timestamp: timestamp.to_string(),
+                            }));
+                        }
+                    }
+                }
+            }
+            "prompts/get" => {
+                debug!("Applying prompts/get specific validation rules");
+                // Check for prompt injection attempts
+                if let Some(params) = request.get("params") {
+                    if let Some(name) = params.get("name").and_then(|n| n.as_str()) {
+                        if self.contains_prompt_injection(name) {
+                            warn!("Blocked prompt with injection patterns: {}", name);
+                            return Ok(Some(ValidationResult {
+                                allowed: false,
+                                reason: Some(format!("Prompt '{}' contains injection patterns", name)),
+                                confidence: Some(0.8),
+                                request_id: request_id.to_string(),
+                                timestamp: timestamp.to_string(),
+                            }));
+                        }
+                    }
+                }
+            }
+            _ => {
+                debug!("No specific validation rules for method: {}", method);
+            }
+        }
+
+        Ok(None) // No method-specific blocking, continue with general validation
+    }
+
+    /// Check if a tool name is considered dangerous
+    fn is_dangerous_tool(&self, tool_name: &str) -> bool {
+        let dangerous_tools = [
+            "exec", "shell", "bash", "cmd", "powershell", "eval", "system",
+            "subprocess", "popen", "spawn", "fork", "kill", "rm", "del",
+            "format", "fdisk", "mkfs", "dd", "nc", "netcat", "telnet",
+            "curl_exec", "wget_exec", "download_exec"
+        ];
+
+        dangerous_tools.iter().any(|&dangerous| {
+            tool_name.to_lowercase().contains(dangerous)
+        })
+    }
+
+    /// Check for injection patterns in tool arguments
+    fn contains_injection_patterns(&self, args: &Value) -> bool {
+        let args_str = args.to_string().to_lowercase();
+        let injection_patterns = [
+            "; ", "| ", "& ", "$(", "`", "&&", "||", "../", "..\\",
+            "rm -", "del ", "format ", "fdisk", "mkfs", "dd if=",
+            "curl ", "wget ", "nc ", "netcat", "telnet", "ssh ",
+            "base64", "eval", "exec", "system", "popen"
+        ];
+
+        injection_patterns.iter().any(|&pattern| args_str.contains(pattern))
+    }
+
+    /// Check for path traversal patterns
+    fn contains_path_traversal(&self, uri: &str) -> bool {
+        let uri_lower = uri.to_lowercase();
+        uri_lower.contains("../") || uri_lower.contains("..\\") ||
+        uri_lower.contains("%2e%2e") || uri_lower.contains("....") ||
+        uri_lower.contains("/etc/") || uri_lower.contains("\\windows\\") ||
+        uri_lower.contains("/proc/") || uri_lower.contains("/sys/")
+    }
+
+    /// Check for prompt injection patterns
+    fn contains_prompt_injection(&self, prompt_name: &str) -> bool {
+        let prompt_lower = prompt_name.to_lowercase();
+        let injection_patterns = [
+            "ignore", "forget", "disregard", "override", "bypass", "jailbreak",
+            "system:", "assistant:", "user:", "human:", "ai:", "chatgpt:",
+            "\\n\\n", "---", "###", "```", "exec", "eval", "script"
+        ];
+
+        injection_patterns.iter().any(|&pattern| prompt_lower.contains(pattern))
     }
 }
 

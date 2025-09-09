@@ -63,6 +63,21 @@
         "command": "ramparts.scanConfig",
         "title": "Scan IDE Configuration",
         "category": "Ramparts"
+      },
+      {
+        "command": "ramparts.autoProxyAll",
+        "title": "Auto-Proxy All MCP Servers",
+        "category": "Ramparts"
+      },
+      {
+        "command": "ramparts.reloadPolicy",
+        "title": "Reload Security Policy",
+        "category": "Ramparts"
+      },
+      {
+        "command": "ramparts.testJavelinConnection",
+        "title": "Test Javelin API Connection",
+        "category": "Ramparts"
       }
     ],
     "configuration": {
@@ -76,8 +91,16 @@
         "ramparts.javelinApiKey": {
           "type": "string",
           "default": "",
-          "description": "Javelin API key for guardrails validation (leave empty to use JAVELIN_API_KEY environment variable)"
+          "description": "Javelin API key for runtime guardrails validation (leave empty to use JAVELIN_API_KEY environment variable)",
+          "scope": "application"
         },
+        "ramparts.javelinEndpoint": {
+          "type": "string",
+          "default": "https://api.getjavelin.com",
+          "description": "Javelin API endpoint URL for guardrails validation",
+          "scope": "application"
+        },
+
         "ramparts.failOpen": {
           "type": "boolean", 
           "default": false,
@@ -100,7 +123,33 @@
         "ramparts.policyFile": {
           "type": "string",
           "default": "",
-          "description": "Path to custom policy YAML file (optional)"
+          "description": "Path to custom policy YAML file (reloadable without restart)"
+        },
+        "ramparts.startupScan": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan MCP servers on IDE startup"
+        },
+        "ramparts.autoProxy": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically wrap all MCP servers with Ramparts proxy for runtime protection"
+        },
+        "ramparts.autoProxy": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically proxy all MCP servers through Ramparts for runtime protection"
+        },
+        "ramparts.startupScan": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run security scan on all MCP servers at IDE startup"
+        },
+        "ramparts.proxyTimeout": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 5000,
+          "description": "Timeout for MCP proxy operations in milliseconds"
         },
         "ramparts.scan.enabled": {
           "type": "boolean",

@@ -33,22 +33,67 @@ export class McpConfigManager {
 
     async startWatching() {
         const configPaths = this.getConfigPaths();
-        
+
         for (const configPath of configPaths) {
             if (fs.existsSync(configPath)) {
                 console.log(`Watching MCP config: ${configPath}`);
-                
+
                 // Backup original config
                 await this.backupOriginalConfig(configPath);
-                
+
                 // Apply ramparts proxy if enabled
                 await this.applyRampartsProxy(configPath);
-                
+
                 // Watch for changes
                 const watcher = watch(configPath, { persistent: false });
                 watcher.on('change', () => this.onConfigChanged(configPath));
                 this.watchers.push(watcher);
             }
+        }
+
+        // Also watch the policy file if configured
+        this.watchPolicyFile();
+    }
+
+    async reapplyProxies() {
+        const configPaths = this.getConfigPaths();
+        for (const configPath of configPaths) {
+            if (fs.existsSync(configPath)) {
+                await this.applyRampartsProxy(configPath);
+            }
+        }
+        // Refresh policy watcher as well
+        this.watchPolicyFile(true);
+    }
+
+    private watchPolicyFile(forceRestart: boolean = false) {
+        const config = vscode.workspace.getConfiguration('ramparts');
+        const policyPath = config.get<string>('policyFile');
+        if (!policyPath) return;
+
+        // Restart watchers if requested
+        if (forceRestart) {
+            this.watchers = this.watchers.filter(w => {
+                if (w.__type === 'policy') {
+                    try { w.close(); } catch {}
+                    return false;
+                }
+                return true;
+            });
+        }
+
+        try {
+            if (fs.existsSync(policyPath)) {
+                const policyWatcher = watch(policyPath, { persistent: false });
+                (policyWatcher as any).__type = 'policy';
+                policyWatcher.on('change', async () => {
+                    console.log(`Policy file changed: ${policyPath}`);
+                    await this.reapplyProxies();
+                });
+                this.watchers.push(policyWatcher);
+            }
+        } catch (e) {
+            console.error('Failed to watch policy file:', e);
         }
     }
 
@@ -77,7 +122,7 @@ export class McpConfigManager {
 
     async applyRampartsProxy(configPath: string) {
         const config = vscode.workspace.getConfiguration('ramparts');
-        if (!config.get<boolean>('enabled', true)) {
+        if (!config.get<boolean>('enabled', true) || !config.get<boolean>('autoProxy', true)) {
             return;
         }
 
@@ -119,19 +164,32 @@ export class McpConfigManager {
     private shouldProxyServer(serverName: string, serverConfig: McpServerConfig): boolean {
         const config = vscode.workspace.getConfiguration('ramparts');
         const bypassedServers = config.get<string[]>('bypassedServers', []);
-        
+
         // Skip if server is bypassed
         if (bypassedServers.includes(serverName)) {
+            console.log(`Skipping proxy for bypassed server: ${serverName}`);
             return false;
         }
 
         // Skip if already using ramparts proxy
         if (serverConfig.command?.includes('ramparts-mcp-proxy')) {
+            console.log(`Server ${serverName} already proxied`);
             return false;
         }
 
-        // Only proxy stdio servers for now
-        return !!serverConfig.command;
+        // Proxy stdio servers (command-based)
+        if (serverConfig.command) {
+            console.log(`Will proxy stdio server: ${serverName}`);
+            return true;
+        }
+
+        // For HTTP/SSE servers, we'll log but not proxy yet (future enhancement)
+        if (serverConfig.url) {
+            console.log(`HTTP/SSE server ${serverName} found but not proxied yet (future feature)`);
+            return false;
+        }
+
+        return false;
     }
 
     private wrapServerWithProxy(serverConfig: McpServerConfig) {
@@ -164,6 +222,9 @@ export class McpConfigManager {
         }
         if (config.get<string>('policyFile')) {
             serverConfig.env.RAMPARTS_POLICY_FILE = config.get<string>('policyFile')!;
+        }
+        if (config.get<string>('javelinEndpoint')) {
+            serverConfig.env.JAVELIN_BASE_URL = config.get<string>('javelinEndpoint')!;
         }
 
         // Clear original args since they're now in env

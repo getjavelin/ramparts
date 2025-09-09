@@ -37,4 +37,5 @@ extensions/*/node_modules/
 extensions/*/out/
 extensions/*/*.vsix
 extensions/*/bin/ramparts
+extensions/*/bin/ramparts-mcp-proxy-stdio
 extensions/*/bin/ramparts-mcp-proxy-stdio-*

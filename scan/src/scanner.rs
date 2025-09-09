@@ -272,10 +272,43 @@ impl ThreatRules {
     #[cfg(feature = "yara-x-scanning")]
     fn new_enabled(rules_dir: &str) -> Result<Self> {
         let start_time = std::time::Instant::now();
+        // Resolve rules directory to a real path to support running from crate or workspace root
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        // Allow override via environment for tests/integration
+        if let Ok(override_dir) = std::env::var("RAMPARTS_RULES_DIR") {
+            let override_path = std::path::PathBuf::from(&override_dir);
+            if override_path.join("pre").exists() || override_path.join("post").exists() {
+                let mut scanner = Self {
+                    pre_scan_rules: Vec::new(),
+                    post_scan_rules: Vec::new(),
+                    rules_dir: override_path.to_string_lossy().to_string(),
+                    rule_metadata: HashMap::new(),
+                    memory_usage_bytes: 0,
+                    last_load_time: start_time,
+                };
+
+                scanner.load_rules()?;
+                scanner.last_load_time = start_time;
+                return Ok(scanner);
+            }
+        }
+
+        let candidates = [
+            std::path::PathBuf::from(rules_dir),
+            std::path::Path::new(manifest_dir).join(rules_dir),
+            std::path::Path::new(manifest_dir).join("..").join(rules_dir),
+        ];
+
+        let resolved_rules_dir = candidates
+            .iter()
+            .find(|p| p.join("pre").exists() || p.join("post").exists())
+            .cloned()
+            .unwrap_or_else(|| std::path::PathBuf::from(rules_dir));
+
         let mut scanner = Self {
             pre_scan_rules: Vec::new(),
             post_scan_rules: Vec::new(),
-            rules_dir: rules_dir.to_string(),
+            rules_dir: resolved_rules_dir.to_string_lossy().to_string(),
             rule_metadata: HashMap::new(),
             memory_usage_bytes: 0,
             last_load_time: start_time,
@@ -2246,7 +2279,27 @@ mod tests {
         #[cfg(feature = "yara-x-scanning")]
         {
             // Load rules from .yar source file (YARA-X compiles on-the-fly)
-            let rule_content = std::fs::read_to_string("rules/pre/secrets_leakage.yar")
+            use std::path::{Path, PathBuf};
+            let manifest_dir = env!("CARGO_MANIFEST_DIR");
+            let candidates = [
+                Path::new("rules").join("pre").join("secrets_leakage.yar"),
+                Path::new(manifest_dir)
+                    .join("rules")
+                    .join("pre")
+                    .join("secrets_leakage.yar"),
+                Path::new(manifest_dir)
+                    .join("..")
+                    .join("rules")
+                    .join("pre")
+                    .join("secrets_leakage.yar"),
+            ];
+
+            let rule_path: PathBuf = candidates
+                .into_iter()
+                .find(|p| p.exists())
+                .expect("Should find secrets_leakage.yar in known locations");
+
+            let rule_content = std::fs::read_to_string(&rule_path)
                 .expect("Should be able to read secrets_leakage.yar test rule file");
 
             let mut compiler = yara_x::Compiler::new();

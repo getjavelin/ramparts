@@ -159,6 +159,9 @@ pub mod scan_config_utils {
     }
 }
 
+// Backward-compat alias to avoid breaking existing references
+pub use scan_config_utils as config_utils;
+
 /// Scan options configuration
 #[derive(Debug, Clone)]
 pub struct ScanOptions {

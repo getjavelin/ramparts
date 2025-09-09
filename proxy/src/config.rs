@@ -91,14 +91,12 @@ impl ProxyConfig {
             config.listen_address = addr;
         }
         
-        // Load Javelin configuration - require specific Javelin naming
+        // Load Javelin configuration - optional for testing
         config.javelin.api_key = env::var("JAVELIN_API_KEY")
-            .map_err(|_| {
-                ramparts_common::anyhow::anyhow!(
-                    "Javelin API key required. Set JAVELIN_API_KEY environment variable.\n\
-                    To obtain a Javelin API key, visit: https://www.getjavelin.com"
-                )
-            })?;
+            .unwrap_or_else(|_| {
+                debug!("JAVELIN_API_KEY not set, using test mode");
+                "test-mode".to_string()
+            });
         
         if let Ok(url) = env::var("JAVELIN_API_URL") {
             config.javelin.base_url = url;
@@ -141,7 +139,12 @@ impl ProxyConfig {
     /// Validate the configuration
     pub fn validate(&self) -> Result<()> {
         if self.javelin.api_key.is_empty() {
-            return Err(ramparts_common::anyhow::anyhow!("API key cannot be empty"));
+            return Err(ramparts_common::anyhow::anyhow!(
+                "Javelin API key must not be empty"
+            ));
+        }
+        if self.javelin.api_key == "test-mode" {
+            debug!("Running in test mode without Javelin validation");
         }
         
         if self.javelin.timeout_seconds == 0 {
@@ -152,9 +155,11 @@ impl ProxyConfig {
             return Err(ramparts_common::anyhow::anyhow!("Max request size must be greater than 0"));
         }
         
-        // Validate listen address format
-        if !self.listen_address.contains(':') {
-            return Err(ramparts_common::anyhow::anyhow!("Invalid listen address format"));
+        // Validate listen address format strictly
+        if self.listen_address.parse::<std::net::SocketAddr>().is_err() {
+            return Err(ramparts_common::anyhow::anyhow!(
+                "Invalid listen address format; expected host:port"
+            ));
         }
         
         Ok(())

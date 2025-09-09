@@ -72,6 +72,18 @@ export async function activate(context: vscode.ExtensionContext) {
 
         vscode.commands.registerCommand('ramparts.scanConfig', async () => {
             await rampartsManager.scanConfig();
+        }),
+
+        vscode.commands.registerCommand('ramparts.autoProxyAll', async () => {
+            await rampartsManager.autoProxyAllServers();
+        }),
+
+        vscode.commands.registerCommand('ramparts.reloadPolicy', async () => {
+            await rampartsManager.reloadPolicy();
+        }),
+
+        vscode.commands.registerCommand('ramparts.testJavelinConnection', async () => {
+            await rampartsManager.testJavelinConnection();
         })
     ];
 
@@ -97,8 +109,17 @@ export async function activate(context: vscode.ExtensionContext) {
         statusBar.updateStatus(false, 'Disabled');
     }
 
-    // Start watching for MCP config changes
+    // Start watching for MCP config changes and policy reloads
     await mcpConfigManager.startWatching();
+
+    // Run scan on IDE startup if enabled
+    if (config.get<boolean>('startupScan', true)) {
+        try {
+            await rampartsManager.scanConfig();
+        } catch (e) {
+            console.error('Startup scan failed:', e);
+        }
+    }
 
     console.log('Ramparts MCP Guardian activated successfully');
 }

@@ -159,9 +159,9 @@ Content-Type: application/json
 }
 ```
 
-#### MCP Proxy
+#### MCP Protocol Endpoint
 ```bash
-POST /proxy/{target}
+POST /mcp
 Content-Type: application/json
 
 {
@@ -305,7 +305,7 @@ Configure your MCP client to use the proxy:
 {
   "mcpServers": {
     "proxied-server": {
-      "url": "http://localhost:8080/proxy/target-server",
+      "url": "http://localhost:8080/mcp",
       "headers": {
         "Content-Type": "application/json"
       }
