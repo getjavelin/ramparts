@@ -2,6 +2,7 @@
 ///
 /// This module provides full MCP protocol support using the official rmcp SDK with
 /// all available transport types: subprocess, SSE, and streamable HTTP.
+use crate::cache::ToolCache;
 use crate::types::{MCPPrompt, MCPPromptArgument, MCPResource, MCPServerInfo, MCPSession, MCPTool};
 use anyhow::{anyhow, Result};
 use reqwest::{
@@ -26,12 +27,24 @@ use tracing::{debug, warn};
 pub struct McpClient {
     /// Store active MCP services by endpoint
     services: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    /// Tool cache with TTL support
+    tool_cache: ToolCache,
 }
 
+#[allow(dead_code)] // Future feature - will be used when cache is integrated
 impl McpClient {
     pub fn new() -> Self {
         Self {
             services: Arc::new(Mutex::new(HashMap::new())),
+            tool_cache: ToolCache::default(), // 1 hour default TTL
+        }
+    }
+
+    /// Create a new MCP client with custom cache TTL
+    pub fn with_cache_ttl(cache_ttl_seconds: u64) -> Self {
+        Self {
+            services: Arc::new(Mutex::new(HashMap::new())),
+            tool_cache: ToolCache::new(cache_ttl_seconds),
         }
     }
 
@@ -991,8 +1004,15 @@ impl McpClient {
             "params": params
         });
 
-        debug!("Sending JSON-RPC request to {}: {}", url, method);
-        let response = client.post(url).json(&request).send().await?;
+        // Add mask=false query parameter to get unmasked tokens
+        let request_url = {
+            let mut url = url::Url::parse(url)?;
+            url.query_pairs_mut().append_pair("mask", "false");
+            url
+        };
+
+        debug!("Sending JSON-RPC request to {}: {}", request_url, method);
+        let response = client.post(request_url).json(&request).send().await?;
 
         if !response.status().is_success() {
             return Err(anyhow!("HTTP request failed: {}", response.status()));
@@ -1010,6 +1030,96 @@ impl McpClient {
             .get("result")
             .cloned()
             .ok_or_else(|| anyhow!("Missing result in JSON-RPC response"))
+    }
+    /// Get tools from cache or fetch from server if not cached or expired
+    pub async fn get_tools_cached(
+        &self,
+        url: &str,
+        auth_headers: Option<HashMap<String, String>>,
+    ) -> Result<Vec<MCPTool>> {
+        // Check cache first
+        if let Some(cached_tools) = self.tool_cache.get(url).await {
+            debug!("Using cached tools for {}", url);
+            return Ok(cached_tools);
+        }
+
+        // Not in cache or expired, fetch fresh tools
+        debug!("Cache miss for {}, fetching fresh tools", url);
+        let tools = self.refresh_tools(url, auth_headers).await?;
+
+        // Cache the fresh tools
+        self.tool_cache.put(url.to_string(), tools.clone()).await;
+
+        Ok(tools)
+    }
+
+    /// Refresh tools from an MCP server by reconnecting and fetching latest tool descriptions
+    pub async fn refresh_tools(
+        &self,
+        url: &str,
+        auth_headers: Option<HashMap<String, String>>,
+    ) -> Result<Vec<MCPTool>> {
+        debug!("Refreshing tools from MCP server: {}", url);
+
+        // Connect to the server (this will create a fresh connection)
+        let session = self.connect_smart(url, auth_headers).await?;
+
+        // Fetch the latest tools
+        let tools = self.list_tools(&session).await?;
+
+        // Update cache with fresh tools
+        self.tool_cache.put(url.to_string(), tools.clone()).await;
+
+        // Clean up the session
+        if let Err(e) = self.cleanup_session(&session).await {
+            warn!("Failed to clean up session after refreshing tools: {}", e);
+        }
+
+        debug!("Successfully refreshed {} tools from {}", tools.len(), url);
+        Ok(tools)
+    }
+
+    /// Refresh tools from multiple MCP servers concurrently
+    pub async fn refresh_tools_batch(
+        &self,
+        servers: Vec<(String, Option<HashMap<String, String>>)>,
+    ) -> Vec<(String, Result<Vec<MCPTool>>)> {
+        debug!("Refreshing tools from {} servers", servers.len());
+
+        let mut results = Vec::new();
+
+        // Process servers sequentially to avoid overwhelming them
+        for (url, auth_headers) in servers {
+            let result = self.refresh_tools(&url, auth_headers).await;
+            results.push((url, result));
+        }
+
+        results
+    }
+
+    /// Clear tool cache for a specific URL
+    pub async fn clear_cache(&self, url: &str) -> bool {
+        self.tool_cache.remove(url).await
+    }
+
+    /// Clear all cached tools
+    pub async fn clear_all_cache(&self) {
+        self.tool_cache.clear().await;
+    }
+
+    /// Clean up expired cache entries
+    pub async fn cleanup_expired_cache(&self) -> usize {
+        self.tool_cache.cleanup_expired().await
+    }
+
+    /// Get cache statistics
+    pub async fn cache_stats(&self) -> crate::cache::CacheStats {
+        self.tool_cache.stats().await
+    }
+
+    /// Get all cached URLs
+    pub async fn get_cached_urls(&self) -> Vec<String> {
+        self.tool_cache.get_cached_urls().await
     }
 }
 

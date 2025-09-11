@@ -1,8 +1,9 @@
 llm:
-  provider: openai
-  model: gpt-4o
-  base_url: https://api.openai.com/v1/chat/completions
-  api_key: your-openai-api-key-here
+  provider: ${LLM_PROVIDER:-openai}
+  model: ${LLM_MODEL:-gpt-4o}
+  base_url: ${LLM_URL:-https://api.openai.com/v1/chat/completions}
+  # Use environment variable to provide API key at runtime
+  api_key: ${LLM_API_KEY:-}
   timeout: 30
   max_tokens: 4000
   temperature: 0.1
@@ -36,3 +37,5 @@ logging:
 performance:
   tracking: true
   slow_threshold_ms: 5000
+# Tool storage directory for change detection (automatically created)
+# tool_storage: "./tool_storage"

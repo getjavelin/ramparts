@@ -434,7 +434,7 @@ integration-test: ## Run integration tests (CLI, config, server startup)
 		# Wait for server to start (max 10 seconds)
 		sleep 2; \
 		# Test if server is responding
-		if curl -s http://localhost:3000/health > /dev/null 2>&1; then \
+		if curl -s http://localhost:3000/v1/ramparts/health > /dev/null 2>&1; then \
 			echo "✅ Server is responding on port 3000"; \
 		else \
 			echo "❌ Server not responding on port 3000"; \

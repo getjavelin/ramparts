@@ -1954,6 +1954,25 @@ impl MCPScanner {
 
         normalized_url
     }
+
+    /// Connect to an MCP server and return a session
+    #[allow(dead_code)] // Future feature - will be used when scheduler is re-enabled
+    pub async fn connect_to_server(
+        &self,
+        url: &str,
+        auth_headers: Option<HashMap<String, String>>,
+    ) -> Result<crate::types::MCPSession> {
+        self.mcp_client.connect_smart(url, auth_headers).await
+    }
+
+    /// List tools from an MCP server session
+    #[allow(dead_code)] // Future feature - will be used when scheduler is re-enabled
+    pub async fn list_tools_from_session(
+        &self,
+        session: &crate::types::MCPSession,
+    ) -> Result<Vec<crate::types::MCPTool>> {
+        self.mcp_client.list_tools(session).await
+    }
 }
 
 // Clone the MCPScanner

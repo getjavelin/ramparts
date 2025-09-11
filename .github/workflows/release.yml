@@ -1,4 +1,4 @@
-name: Release Build - Ramparts
+name: Release Build - Ramparts and Javelin Ramparts Server
 
 on:
   release:
@@ -10,8 +10,22 @@ env:
   RELEASE_BRANCH: "main"
   REGEX_PATTERN: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
   RELEASE_NAME: ${{ github.event.release.name }}
+  DEVOPS_REPO: "javelin-cloud"
+  DEVOPS_BRANCH: "main"
+  RELEASE_TRIGGER: "enable"
+  RELEASE_WORKFLOW: "trigger-release-deploy-ramparts-server.yml"
 
 jobs:
+  reusable-vars:
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: reusable variables
+        run: echo "Exposing env vars"
+    outputs:
+      RELEASE_TRIGGER: ${{ env.RELEASE_TRIGGER }}
+
   javelin-validate:
     permissions:
       contents: 'read'
@@ -53,8 +67,6 @@ jobs:
           fi
 
       - name: Setting up the Crate Version
-        env:
-          RELEASE_NAME: ${{ github.event.release.name }}
         shell: bash
         run: |-
           sed -i 's/^version = ".*"/version = "${{ env.RELEASE_NAME }}"/' Cargo.toml
@@ -209,6 +221,7 @@ jobs:
 
   javelin-crate:
     needs:
+      - javelin-validate
       - javelin-artifact
     permissions:
       contents: 'read'
@@ -218,6 +231,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Download cargo-toml
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-toml
+
+      - name: Check Cargo.toml
+        shell: bash
+        run: |-
+          cat Cargo.toml
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -264,4 +287,31 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |-
-          cargo publish
+          # cargo publish --allow-dirty Cargo.toml --allow-dirty Cargo.lock
+          cargo publish --allow-dirty
+
+  javelin-trigger:
+    needs:
+      - reusable-vars
+      - javelin-crate
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    runs-on: ubuntu-24.04
+    if: (needs.reusable-vars.outputs.RELEASE_TRIGGER == 'enable')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install GitHub CLI
+        run: sudo apt install gh -y
+
+      - name: Trigger private repo workflow
+        env:
+          GITHUB_TOKEN: ${{ secrets.DEVOPS_GITHUB_TOKEN }}
+        run: |
+          gh workflow run ${{ env.RELEASE_WORKFLOW }} \
+            --repo ${{ github.repository_owner }}/${{ env.DEVOPS_REPO }} \
+            --ref ${{ env.DEVOPS_BRANCH }} -f RELEASE_TAG=${{ env.RELEASE_NAME }}

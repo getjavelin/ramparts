@@ -4,6 +4,7 @@ LABEL maintainer="Akhil Raj"
 WORKDIR /app
 COPY target/release/ramparts /app/
 COPY rules /app/rules
+COPY config.yaml /app/
 
 EXPOSE 8080
 

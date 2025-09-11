@@ -1,10 +1,32 @@
 use crate::config::{ScannerConfig, ScannerConfigManager};
 use crate::scanner::MCPScanner;
-use crate::types::{config_utils, ScanConfigBuilder, ScanOptions, ScanResult};
+
+use crate::types::{config_utils, MCPTool, ScanConfigBuilder, ScanOptions, ScanResult};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
 use tracing::warn;
+
+/// Summary of changes detected between tool sets
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ChangeSummary {
+    pub tools_added: Vec<String>,
+    pub tools_removed: Vec<String>,
+    pub tools_modified: Vec<ToolChange>,
+    pub total_changes: usize,
+    pub change_types: Vec<String>,
+}
+
+/// Details of a specific tool modification
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolChange {
+    pub tool_name: String,
+    pub field: String,
+    pub old_value: Option<serde_json::Value>,
+    pub new_value: Option<serde_json::Value>,
+    pub diff: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ScanRequest {
@@ -16,6 +38,9 @@ pub struct ScanRequest {
     pub auth_headers: Option<HashMap<String, String>>,
     /// If true, do not call the LLM; return prompts instead
     pub return_prompts: Option<bool>,
+
+    // 🆕 Simplified change detection
+    pub reference_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +49,13 @@ pub struct ScanResponse {
     pub result: Option<ScanResult>,
     pub error: Option<String>,
     pub timestamp: String,
+
+    // 🆕 NEW FIELDS for change detection
+    pub refresh_happened: bool,
+    pub changes_detected: bool,
+    pub change_summary: Option<ChangeSummary>,
+    pub scan_skipped: bool,
+    pub cache_hit: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +79,54 @@ pub struct ValidationResponse {
     pub success: bool,
     pub valid: bool,
     pub error: Option<String>,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefreshToolsRequest {
+    pub urls: Vec<String>,
+    pub auth_headers: Option<HashMap<String, String>>,
+    pub timeout: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefreshToolsResponse {
+    pub success: bool,
+    pub results: Vec<RefreshToolsResult>,
+    pub total: usize,
+    pub successful: usize,
+    pub failed: usize,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefreshToolsResult {
+    pub url: String,
+    pub success: bool,
+    pub tools_count: usize,
+    pub tools: Vec<crate::types::MCPTool>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterServerRequest {
+    pub url: String,
+    pub auth_headers: Option<HashMap<String, String>>,
+    pub timeout: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterServerResponse {
+    pub success: bool,
+    pub message: String,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListRegisteredServersResponse {
+    pub success: bool,
+    pub servers: Vec<crate::config::ToolRefreshServerConfig>,
+    pub count: usize,
     pub timestamp: String,
 }
 
@@ -126,23 +206,131 @@ impl MCPScannerCore {
         builder.build()
     }
 
-    /// Perform a scan with the given options
+    /// Perform a scan with the given options and change detection
     pub async fn scan(&self, request: ScanRequest) -> ScanResponse {
         let timestamp = chrono::Utc::now().to_rfc3339();
 
+        // Check if change detection is requested
+        if request.reference_url.is_some() {
+            return self.scan_with_change_detection(request).await;
+        }
+
+        // Fallback to traditional scan
         match self.perform_scan_internal(request).await {
             Ok(result) => ScanResponse {
                 success: true,
                 result: Some(result),
                 error: None,
                 timestamp,
+                refresh_happened: false,
+                changes_detected: false,
+                change_summary: None,
+                scan_skipped: false,
+                cache_hit: false,
             },
             Err(e) => ScanResponse {
                 success: false,
                 result: None,
                 error: Some(e.to_string()),
                 timestamp,
+                refresh_happened: false,
+                changes_detected: false,
+                change_summary: None,
+                scan_skipped: false,
+                cache_hit: false,
             },
+        }
+    }
+
+    /// Enhanced scan with change detection
+    async fn scan_with_change_detection(&self, request: ScanRequest) -> ScanResponse {
+        let timestamp = chrono::Utc::now().to_rfc3339();
+
+        if let Some(ref_url) = &request.reference_url {
+            // Case 1: Reference URL provided - scan BOTH URLs and compare
+
+            // Scan main URL
+            let main_scan_result = match self.perform_scan_internal(request.clone()).await {
+                Ok(result) => result,
+                Err(e) => {
+                    return ScanResponse {
+                        success: false,
+                        result: None,
+                        error: Some(format!("Failed to scan main URL: {e}")),
+                        timestamp,
+                        refresh_happened: false,
+                        changes_detected: false,
+                        change_summary: None,
+                        scan_skipped: false,
+                        cache_hit: false,
+                    }
+                }
+            };
+
+            // Scan reference URL
+            let reference_tools = match self
+                .fetch_tools_from_url(ref_url, &request.auth_headers)
+                .await
+            {
+                Ok(tools) => tools,
+                Err(e) => {
+                    return ScanResponse {
+                        success: false,
+                        result: Some(main_scan_result), // Still return main scan result
+                        error: Some(format!("Failed to scan reference URL: {e}")),
+                        timestamp,
+                        refresh_happened: true,
+                        changes_detected: false,
+                        change_summary: None,
+                        scan_skipped: false,
+                        cache_hit: false,
+                    };
+                }
+            };
+
+            // Compare the two scans
+            let changes_detected =
+                self.tools_have_changed(&reference_tools, &main_scan_result.tools);
+            let change_summary =
+                Some(self.generate_change_summary(&reference_tools, &main_scan_result.tools));
+
+            ScanResponse {
+                success: true,
+                result: Some(main_scan_result),
+                error: None,
+                timestamp,
+                refresh_happened: true,
+                changes_detected,
+                change_summary,
+                scan_skipped: false,
+                cache_hit: false,
+            }
+        } else {
+            // Case 2: No reference URL - just scan main URL
+            match self.perform_scan_internal(request).await {
+                Ok(result) => ScanResponse {
+                    success: true,
+                    result: Some(result),
+                    error: None,
+                    timestamp,
+                    refresh_happened: false,
+                    changes_detected: false,
+                    change_summary: None,
+                    scan_skipped: false,
+                    cache_hit: false,
+                },
+                Err(e) => ScanResponse {
+                    success: false,
+                    result: None,
+                    error: Some(e.to_string()),
+                    timestamp,
+                    refresh_happened: false,
+                    changes_detected: false,
+                    change_summary: None,
+                    scan_skipped: false,
+                    cache_hit: false,
+                },
+            }
         }
     }
 
@@ -210,6 +398,192 @@ impl MCPScannerCore {
             timestamp,
         }
     }
+
+    /// Register a server for automatic daily refresh (DEPRECATED)
+    pub async fn register_server(&self, _request: RegisterServerRequest) -> RegisterServerResponse {
+        let timestamp = chrono::Utc::now().to_rfc3339();
+        RegisterServerResponse {
+            success: false,
+            message: "Server registration is deprecated. Use enhanced scan API with change detection instead.".to_string(),
+            timestamp,
+        }
+    }
+
+    /// List all registered servers for automatic refresh (DEPRECATED)
+    pub async fn list_registered_servers(&self) -> ListRegisteredServersResponse {
+        let timestamp = chrono::Utc::now().to_rfc3339();
+        ListRegisteredServersResponse {
+            success: false,
+            servers: Vec::new(),
+            count: 0,
+            timestamp,
+        }
+    }
+
+    /// Unregister a server (DEPRECATED)
+    pub async fn unregister_server(&self, _url: &str) -> RegisterServerResponse {
+        let timestamp = chrono::Utc::now().to_rfc3339();
+        RegisterServerResponse {
+            success: false,
+            message: "Server unregistration is deprecated. Use enhanced scan API instead."
+                .to_string(),
+            timestamp,
+        }
+    }
+
+    /// Refresh tools from MCP servers (DEPRECATED - use enhanced scan API)
+    pub async fn refresh_tools(&self, _request: RefreshToolsRequest) -> RefreshToolsResponse {
+        let timestamp = chrono::Utc::now().to_rfc3339();
+        RefreshToolsResponse {
+            success: false,
+            results: Vec::new(),
+            total: 0,
+            successful: 0,
+            failed: 0,
+            timestamp,
+        }
+    }
+
+    /// Fetch tools from a specific URL
+    async fn fetch_tools_from_url(
+        &self,
+        url: &str,
+        auth_headers: &Option<HashMap<String, String>>,
+    ) -> Result<Vec<MCPTool>> {
+        let scan_options = ScanOptions {
+            timeout: 30,
+            http_timeout: 30,
+            detailed: false,
+            format: "json".to_string(),
+            auth_headers: auth_headers.clone(),
+            return_prompts: false,
+        };
+
+        let result = self.scanner.scan_single(url, scan_options).await?;
+        Ok(result.tools)
+    }
+
+    /// Check if tools have changed (simplified)
+    fn tools_have_changed(&self, old_tools: &[MCPTool], new_tools: &[MCPTool]) -> bool {
+        // Quick count check
+        if old_tools.len() != new_tools.len() {
+            return true;
+        }
+
+        // Compare each tool
+        for new_tool in new_tools {
+            if let Some(old_tool) = old_tools.iter().find(|t| t.name == new_tool.name) {
+                if self.tool_has_changed(old_tool, new_tool) {
+                    return true;
+                }
+            } else {
+                // New tool added
+                return true;
+            }
+        }
+
+        // Check for removed tools
+        for old_tool in old_tools {
+            if !new_tools.iter().any(|t| t.name == old_tool.name) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Check if individual tool has changed (simplified)
+    fn tool_has_changed(&self, old_tool: &MCPTool, new_tool: &MCPTool) -> bool {
+        // Compare key fields that matter for change detection
+        old_tool.description != new_tool.description
+            || old_tool.input_schema != new_tool.input_schema
+            || old_tool.output_schema != new_tool.output_schema
+            || old_tool.parameters != new_tool.parameters
+            || old_tool.deprecated != new_tool.deprecated
+    }
+
+    /// Generate change summary
+    fn generate_change_summary(
+        &self,
+        old_tools: &[MCPTool],
+        new_tools: &[MCPTool],
+    ) -> ChangeSummary {
+        let mut summary = ChangeSummary::default();
+
+        // Find added tools
+        for new_tool in new_tools {
+            if !old_tools.iter().any(|t| t.name == new_tool.name) {
+                summary.tools_added.push(new_tool.name.clone());
+            }
+        }
+
+        // Find removed tools
+        for old_tool in old_tools {
+            if !new_tools.iter().any(|t| t.name == old_tool.name) {
+                summary.tools_removed.push(old_tool.name.clone());
+            }
+        }
+
+        // Find modified tools
+        for new_tool in new_tools {
+            if let Some(old_tool) = old_tools.iter().find(|t| t.name == new_tool.name) {
+                let changes = self.detect_tool_modifications(old_tool, new_tool);
+                summary.tools_modified.extend(changes);
+            }
+        }
+
+        summary.total_changes =
+            summary.tools_added.len() + summary.tools_removed.len() + summary.tools_modified.len();
+
+        summary.change_types = self.categorize_changes(&summary);
+        summary
+    }
+
+    /// Detect modifications in a specific tool
+    fn detect_tool_modifications(&self, old_tool: &MCPTool, new_tool: &MCPTool) -> Vec<ToolChange> {
+        let mut changes = Vec::new();
+
+        // Check description changes
+        if old_tool.description != new_tool.description {
+            changes.push(ToolChange {
+                tool_name: new_tool.name.clone(),
+                field: "description".to_string(),
+                old_value: old_tool.description.clone().map(serde_json::Value::String),
+                new_value: new_tool.description.clone().map(serde_json::Value::String),
+                diff: Some("Description changed".to_string()),
+            });
+        }
+
+        // Check schema changes
+        if old_tool.input_schema != new_tool.input_schema {
+            changes.push(ToolChange {
+                tool_name: new_tool.name.clone(),
+                field: "input_schema".to_string(),
+                old_value: old_tool.input_schema.clone(),
+                new_value: new_tool.input_schema.clone(),
+                diff: Some("Input schema modified".to_string()),
+            });
+        }
+
+        changes
+    }
+
+    /// Categorize types of changes
+    fn categorize_changes(&self, summary: &ChangeSummary) -> Vec<String> {
+        let mut types = Vec::new();
+
+        if !summary.tools_added.is_empty() {
+            types.push("tools_added".to_string());
+        }
+        if !summary.tools_removed.is_empty() {
+            types.push("tools_removed".to_string());
+        }
+        if !summary.tools_modified.is_empty() {
+            types.push("tools_modified".to_string());
+        }
+
+        types
+    }
 }
 
 #[cfg(test)]
@@ -230,6 +604,7 @@ mod tests {
                 "Bearer token".to_string(),
             )])),
             return_prompts: Some(false),
+            reference_url: None,
         };
 
         assert_eq!(request.url, "http://example.com");
@@ -259,6 +634,11 @@ mod tests {
             result: Some(result),
             error: None,
             timestamp: "2024-01-01T00:00:00Z".to_string(),
+            refresh_happened: false,
+            changes_detected: false,
+            change_summary: None,
+            scan_skipped: false,
+            cache_hit: false,
         };
 
         assert!(response.success);
@@ -274,6 +654,11 @@ mod tests {
             result: None,
             error: Some("Test error".to_string()),
             timestamp: "2024-01-01T00:00:00Z".to_string(),
+            refresh_happened: false,
+            changes_detected: false,
+            change_summary: None,
+            scan_skipped: false,
+            cache_hit: false,
         };
 
         assert!(!response.success);
@@ -295,6 +680,7 @@ mod tests {
             format: Some("text".to_string()),
             auth_headers: None,
             return_prompts: Some(false),
+            reference_url: None,
         };
 
         let request = BatchScanRequest {
@@ -316,12 +702,22 @@ mod tests {
                 result: Some(ScanResult::new("http://example1.com".to_string())),
                 error: None,
                 timestamp: "2024-01-01T00:00:00Z".to_string(),
+                refresh_happened: false,
+                changes_detected: false,
+                change_summary: None,
+                scan_skipped: false,
+                cache_hit: false,
             },
             ScanResponse {
                 success: false,
                 result: None,
                 error: Some("Failed".to_string()),
                 timestamp: "2024-01-01T00:00:01Z".to_string(),
+                refresh_happened: false,
+                changes_detected: false,
+                change_summary: None,
+                scan_skipped: false,
+                cache_hit: false,
             },
         ];
 
@@ -349,12 +745,22 @@ mod tests {
                 result: Some(ScanResult::new("http://example1.com".to_string())),
                 error: None,
                 timestamp: "2024-01-01T00:00:00Z".to_string(),
+                refresh_happened: false,
+                changes_detected: false,
+                change_summary: None,
+                scan_skipped: false,
+                cache_hit: false,
             },
             ScanResponse {
                 success: true,
                 result: Some(ScanResult::new("http://example2.com".to_string())),
                 error: None,
                 timestamp: "2024-01-01T00:00:01Z".to_string(),
+                refresh_happened: false,
+                changes_detected: false,
+                change_summary: None,
+                scan_skipped: false,
+                cache_hit: false,
             },
         ];
 
@@ -423,6 +829,7 @@ mod tests {
                 "Bearer token".to_string(),
             )])),
             return_prompts: Some(false),
+            reference_url: None,
         };
 
         let options = core.parse_scan_options(&request); // No conversion for test
@@ -444,6 +851,7 @@ mod tests {
             format: None,
             auth_headers: None,
             return_prompts: None,
+            reference_url: None,
         };
 
         let options = core.parse_scan_options(&request); // No conversion for test

@@ -97,7 +97,7 @@ With config file containing STDIO servers:
 cargo run -- server --port 3001
 
 # Scan STDIO server via HTTP API
-curl -X POST http://localhost:3001/scan \
+curl -X POST http://localhost:3001/v1/ramparts/scan \
   -H "Content-Type: application/json" \
   -d '{
     "url": "stdio:///usr/local/bin/mcp-server",
@@ -181,7 +181,7 @@ RUST_LOG=debug cargo run -- scan stdio:///usr/local/bin/mcp-server
 ### Validation
 ```bash
 # Validate STDIO configuration
-curl -X POST http://localhost:3001/validate \
+curl -X POST http://localhost:3001/v1/ramparts/validate \
   -H "Content-Type: application/json" \
   -d '{
     "url": "stdio:///usr/local/bin/mcp-server"

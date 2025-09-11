@@ -5,14 +5,18 @@ use tracing_subscriber::FmtSubscriber;
 use crate::config::ScannerConfig;
 
 mod banner;
+mod cache;
 mod config;
 mod constants;
 mod core;
+#[cfg(test)]
+mod integration_tests;
 mod mcp_client;
 mod mcp_server;
 mod scanner;
 mod security;
 mod server;
+
 mod types;
 mod utils;
 

@@ -1,6 +1,7 @@
 use crate::core::{
-    BatchScanRequest, BatchScanResponse, MCPScannerCore, ScanRequest, ScanResponse,
-    ValidationResponse,
+    BatchScanRequest, BatchScanResponse, ListRegisteredServersResponse, MCPScannerCore,
+    RefreshToolsRequest, RefreshToolsResponse, RegisterServerRequest, RegisterServerResponse,
+    ScanRequest, ScanResponse, ValidationResponse,
 };
 use axum::{
     extract::State,
@@ -13,6 +14,8 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::signal;
+use tokio::sync::RwLock;
+use tokio::time::{Duration, Instant};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, warn};
@@ -20,6 +23,7 @@ use tracing::{debug, error, info, warn};
 #[derive(Clone)]
 pub struct ServerState {
     core: Arc<MCPScannerCore>,
+    rate_limiter: Arc<RwLock<HashMap<String, Vec<Instant>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,8 +65,10 @@ impl MCPScannerServer {
     }
 
     pub async fn start(self) -> anyhow::Result<()> {
+        let core = Arc::new(self.core);
         let state = ServerState {
-            core: Arc::new(self.core),
+            core: core.clone(),
+            rate_limiter: Arc::new(RwLock::new(HashMap::new())),
         };
 
         // Configure CORS
@@ -73,12 +79,22 @@ impl MCPScannerServer {
 
         // Create router with routes
         let app = Router::new()
-            .route("/", get(api_docs))
-            .route("/health", get(health_check))
-            .route("/protocol", get(protocol_info))
-            .route("/scan", post(scan_endpoint))
-            .route("/validate", post(validate_endpoint))
-            .route("/batch-scan", post(batch_scan_endpoint))
+            .route("/v1/ramparts/", get(api_docs))
+            .route("/v1/ramparts/health", get(health_check))
+            .route("/v1/ramparts/protocol", get(protocol_info))
+            .route("/v1/ramparts/scan", post(scan_endpoint))
+            .route("/v1/ramparts/validate", post(validate_endpoint))
+            .route("/v1/ramparts/batch-scan", post(batch_scan_endpoint))
+            .route("/v1/ramparts/refresh-tools", post(refresh_tools_endpoint))
+            .route(
+                "/v1/ramparts/register-server",
+                post(register_server_endpoint),
+            )
+            .route(
+                "/v1/ramparts/unregister-server",
+                post(unregister_server_endpoint),
+            )
+            .route("/v1/ramparts/list-servers", get(list_servers_endpoint))
             .layer(cors)
             .layer(TraceLayer::new_for_http())
             .with_state(state);
@@ -218,12 +234,16 @@ async fn api_docs() -> Json<Value> {
         "version": "0.2.0",
         "protocol_version": "2025-06-18",
         "endpoints": {
-            "GET /health": "Health check with protocol info",
-            "GET /protocol": "MCP protocol information",
-            "POST /scan": "Scan a single MCP server",
-            "POST /validate": "Validate scan configuration",
-            "POST /batch-scan": "Scan multiple MCP servers",
-            "GET /": "API documentation"
+            "GET /v1/ramparts/health": "Health check with protocol info",
+            "GET /v1/ramparts/protocol": "MCP protocol information",
+            "POST /v1/ramparts/scan": "Scan a single MCP server",
+            "POST /v1/ramparts/validate": "Validate scan configuration",
+            "POST /v1/ramparts/batch-scan": "Scan multiple MCP servers",
+            "POST /v1/ramparts/refresh-tools": "Refresh tool descriptions from MCP servers",
+            "POST /v1/ramparts/register-server": "Register a server for automatic daily refresh",
+            "POST /v1/ramparts/unregister-server": "Unregister a server from automatic refresh",
+            "GET /v1/ramparts/list-servers": "List all registered servers for automatic refresh",
+            "GET /v1/ramparts/": "API documentation"
         },
         "transports": {
             "http": {
@@ -249,7 +269,7 @@ async fn api_docs() -> Json<Value> {
         },
 
         "example": {
-            "POST /scan": {
+            "POST /v1/ramparts/scan": {
                 "url": "http://localhost:3000",
                 "timeout": 180,
                 "http_timeout": 30,
@@ -424,6 +444,185 @@ async fn batch_scan_endpoint(
             })),
         ))
     }
+}
+
+/// Refresh tools endpoint - refreshes tool descriptions from MCP servers
+async fn refresh_tools_endpoint(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Json(mut request): Json<RefreshToolsRequest>,
+) -> Result<Json<RefreshToolsResponse>, (StatusCode, Json<Value>)> {
+    // Apply rate limiting
+    if let Err(status) = check_rate_limit(&state, &request.urls).await {
+        return Err((
+            status,
+            Json(json!({
+                "success": false,
+                "error": "Rate limit exceeded. Please try again later.",
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            })),
+        ));
+    }
+
+    // Extract Javelin API key from headers using helper function
+    extract_and_add_api_key_to_refresh_request(&headers, &mut request);
+
+    // Validate request
+    if request.urls.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "error": "At least one URL must be provided",
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            })),
+        ));
+    }
+
+    debug!(
+        "Received refresh tools request for {} URLs",
+        request.urls.len()
+    );
+
+    let response = state.core.refresh_tools(request).await;
+
+    if response.success {
+        Ok(Json(response))
+    } else {
+        error!(
+            "Refresh tools failed: {} successful, {} failed",
+            response.successful, response.failed
+        );
+        Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "error": "Refresh tools failed",
+                "timestamp": response.timestamp
+            })),
+        ))
+    }
+}
+
+/// Helper function to extract Javelin API key and add to refresh tools request
+fn extract_and_add_api_key_to_refresh_request(
+    headers: &HeaderMap,
+    request: &mut RefreshToolsRequest,
+) {
+    let mut auth_headers = request.auth_headers.clone().unwrap_or_default();
+
+    // Apply environment variable mappings first
+    auth_headers = crate::config::apply_env_mappings(auth_headers);
+
+    // Then add Javelin API key if present
+    if let Some(api_key) = headers.get("x-javelin-apikey") {
+        if let Ok(api_key_str) = api_key.to_str() {
+            debug!("Found Javelin API key in headers");
+            auth_headers.insert("Authorization".to_string(), format!("Bearer {api_key_str}"));
+        }
+    }
+
+    request.auth_headers = Some(auth_headers);
+}
+
+/// Register server endpoint - register a server for automatic daily refresh
+async fn register_server_endpoint(
+    State(state): State<ServerState>,
+    Json(request): Json<RegisterServerRequest>,
+) -> Result<Json<RegisterServerResponse>, (StatusCode, Json<Value>)> {
+    debug!("Received register server request for: {}", request.url);
+
+    let response = state.core.register_server(request).await;
+
+    if response.success {
+        Ok(Json(response))
+    } else {
+        error!("Server registration failed: {}", response.message);
+        Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "message": response.message,
+                "timestamp": response.timestamp
+            })),
+        ))
+    }
+}
+
+/// Unregister server endpoint - remove a server from automatic refresh
+async fn unregister_server_endpoint(
+    State(state): State<ServerState>,
+    Json(request): Json<serde_json::Value>,
+) -> Result<Json<RegisterServerResponse>, (StatusCode, Json<Value>)> {
+    let url = match request.get("url").and_then(|v| v.as_str()) {
+        Some(url) => url,
+        None => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false,
+                    "message": "URL is required",
+                    "timestamp": chrono::Utc::now().to_rfc3339()
+                })),
+            ));
+        }
+    };
+
+    debug!("Received unregister server request for: {}", url);
+
+    let response = state.core.unregister_server(url).await;
+
+    if response.success {
+        Ok(Json(response))
+    } else {
+        error!("Server unregistration failed: {}", response.message);
+        Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "message": response.message,
+                "timestamp": response.timestamp
+            })),
+        ))
+    }
+}
+
+/// List servers endpoint - list all registered servers for automatic refresh
+async fn list_servers_endpoint(
+    State(state): State<ServerState>,
+) -> Json<ListRegisteredServersResponse> {
+    debug!("Received list servers request");
+    let response = state.core.list_registered_servers().await;
+    Json(response)
+}
+
+/// Check rate limit for refresh requests
+async fn check_rate_limit(state: &ServerState, urls: &[String]) -> Result<(), StatusCode> {
+    let now = Instant::now();
+    let mut rate_limiter = state.rate_limiter.write().await;
+
+    // Load rate limit config (default values if config loading fails)
+    let max_requests_per_minute = 10u64; // Default from config
+    let window_duration = Duration::from_secs(60); // 1 minute window
+
+    for url in urls {
+        // Get or create request history for this URL
+        let requests = rate_limiter.entry(url.clone()).or_insert_with(Vec::new);
+
+        // Remove old requests outside the time window
+        requests.retain(|&timestamp| now.duration_since(timestamp) < window_duration);
+
+        // Check if we're at the rate limit
+        if requests.len() >= max_requests_per_minute as usize {
+            warn!("Rate limit exceeded for URL: {}", url);
+            return Err(StatusCode::TOO_MANY_REQUESTS);
+        }
+
+        // Add current request to history
+        requests.push(now);
+    }
+
+    Ok(())
 }
 
 // Tests removed for now - would need axum-test dependency

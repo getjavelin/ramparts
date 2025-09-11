@@ -483,15 +483,15 @@ mod tests {
         assert_eq!(contamination_result.status, Some("warning".to_string()));
 
         // Verify the metadata severity
-        if let Some(metadata) = &contamination_result.rule_metadata {
-            assert_eq!(
-                metadata.severity,
-                Some("HIGH".to_string()),
-                "Should be HIGH severity"
-            );
-        } else {
-            panic!("Should have metadata");
-        }
+        let metadata = contamination_result
+            .rule_metadata
+            .as_ref()
+            .expect("CrossDomainContamination result should have metadata");
+        assert_eq!(
+            metadata.severity,
+            Some("HIGH".to_string()),
+            "Should be HIGH severity"
+        );
 
         // Find outlier results
         let outlier_results: Vec<_> = scan_data
@@ -608,15 +608,15 @@ mod tests {
         );
 
         let mixed_schemes_result = mixed_schemes_result.unwrap();
-        if let Some(metadata) = &mixed_schemes_result.rule_metadata {
-            assert_eq!(
-                metadata.severity,
-                Some("MEDIUM".to_string()),
-                "Should be MEDIUM severity"
-            );
-        } else {
-            panic!("Should have metadata");
-        }
+        let metadata = mixed_schemes_result
+            .rule_metadata
+            .as_ref()
+            .expect("MixedSecuritySchemes result should have metadata");
+        assert_eq!(
+            metadata.severity,
+            Some("MEDIUM".to_string()),
+            "Should be MEDIUM severity"
+        );
     }
 
     #[test]

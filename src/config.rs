@@ -3422,6 +3422,112 @@ pub struct PerformanceConfig {
     pub slow_threshold_ms: u64,
 }
 
+/// Tool Refresh Configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolRefreshConfig {
+    /// Enable/disable automatic tool refresh
+    pub enabled: bool,
+    /// Refresh interval in hours
+    pub interval_hours: u64,
+    /// Start time for daily refresh (HH:MM format, UTC)
+    pub start_time: String,
+    /// List of servers to refresh automatically (empty = refresh discovered servers)
+    pub servers: Vec<ToolRefreshServerConfig>,
+    /// Rate limiting configuration
+    #[serde(default)]
+    pub rate_limit: RateLimitConfig,
+}
+
+/// Rate limiting configuration for tool refresh
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RateLimitConfig {
+    /// Maximum number of concurrent server refreshes
+    pub max_concurrent: usize,
+    /// Delay between server refreshes in milliseconds
+    pub delay_between_servers_ms: u64,
+    /// Maximum requests per minute per server
+    pub max_requests_per_minute: u64,
+}
+
+/// Tool refresh server configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolRefreshServerConfig {
+    /// Server URL
+    pub url: String,
+    /// Authentication headers
+    #[serde(default)]
+    pub auth_headers: HashMap<String, String>,
+    /// Connection timeout in seconds
+    #[serde(default = "default_refresh_timeout")]
+    pub timeout: u64,
+}
+
+impl ToolRefreshServerConfig {
+    /// Apply environment variable mappings to auth headers
+    #[allow(dead_code)] // Future feature - will be used when scheduler is re-enabled
+    pub fn with_env_mappings(mut self) -> Self {
+        self.auth_headers = apply_env_mappings(self.auth_headers);
+        self
+    }
+}
+
+fn default_refresh_timeout() -> u64 {
+    30
+}
+
+/// Apply environment variable mappings to auth headers
+/// Maps generic environment variables to standard auth headers
+pub fn apply_env_mappings(mut headers: HashMap<String, String>) -> HashMap<String, String> {
+    // Check for LLM_API_KEY environment variable
+    if let Ok(llm_api_key) = std::env::var("LLM_API_KEY") {
+        // Only add if Authorization header is not already set
+        if !headers.contains_key("Authorization") && !headers.contains_key("authorization") {
+            headers.insert("Authorization".to_string(), format!("Bearer {llm_api_key}"));
+            debug!("Applied LLM_API_KEY environment variable to Authorization header");
+        }
+    }
+
+    // Check for other common generic environment variables
+    if let Ok(api_key) = std::env::var("API_KEY") {
+        if !headers.contains_key("Authorization") && !headers.contains_key("authorization") {
+            headers.insert("Authorization".to_string(), format!("Bearer {api_key}"));
+            debug!("Applied API_KEY environment variable to Authorization header");
+        }
+    }
+
+    // Check for X-API-Key style headers
+    if let Ok(x_api_key) = std::env::var("X_API_KEY") {
+        if !headers.contains_key("X-API-Key") && !headers.contains_key("x-api-key") {
+            headers.insert("X-API-Key".to_string(), x_api_key);
+            debug!("Applied X_API_KEY environment variable to X-API-Key header");
+        }
+    }
+
+    headers
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent: 3,              // Max 3 concurrent refreshes
+            delay_between_servers_ms: 1000, // 1 second delay between servers
+            max_requests_per_minute: 10,    // Max 10 requests per minute per server
+        }
+    }
+}
+
+impl Default for ToolRefreshConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            interval_hours: 24,              // Daily refresh
+            start_time: "02:00".to_string(), // 2 AM UTC
+            servers: Vec::new(),
+            rate_limit: RateLimitConfig::default(),
+        }
+    }
+}
+
 impl Default for ScannerConfig {
     fn default() -> Self {
         Self {
@@ -3495,11 +3601,50 @@ impl ScannerConfigManager {
         let content = fs::read_to_string(&self.config_path)
             .map_err(|e| anyhow!("Failed to read config.yaml: {}", e))?;
 
-        let config: ScannerConfig = serde_yaml::from_str(&content)
+        // Expand environment variables in the content
+        let expanded_content = Self::expand_env_vars(&content)?;
+
+        let config: ScannerConfig = serde_yaml::from_str(&expanded_content)
             .map_err(|e| anyhow!("Failed to parse config.yaml: {}", e))?;
 
         debug!("Loaded configuration from config.yaml");
         Ok(config)
+    }
+
+    /// Expand environment variables in configuration content
+    /// Supports ${VAR:-default} syntax for environment variable substitution
+    fn expand_env_vars(content: &str) -> Result<String> {
+        use regex::Regex;
+
+        // Regex to match ${VAR:-default} or ${VAR} patterns
+        let env_var_regex = Regex::new(r"\$\{([A-Z_][A-Z0-9_]*)(:-([^}]*))?\}")
+            .map_err(|e| anyhow!("Failed to compile environment variable regex: {}", e))?;
+
+        // Use replace_all for efficient single-pass replacement
+        let result = env_var_regex.replace_all(content, |caps: &regex::Captures| {
+            let var_name = &caps[1];
+            let default_value = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+
+            // Get environment variable value or use default
+            let replacement = match std::env::var(var_name) {
+                Ok(value) if !value.is_empty() => value,
+                _ => default_value.to_string(),
+            };
+
+            debug!(
+                "Expanding environment variable: {} -> {}",
+                var_name,
+                if replacement.is_empty() {
+                    "<empty>"
+                } else {
+                    "<set>"
+                }
+            );
+
+            replacement
+        });
+
+        Ok(result.into_owned())
     }
 
     /// Save configuration to config.yaml
@@ -3517,5 +3662,227 @@ impl ScannerConfigManager {
     /// Check if config.yaml exists
     pub fn has_config_file(&self) -> bool {
         self.config_path.exists()
+    }
+}
+
+#[cfg(test)]
+mod scanner_config_tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_expand_env_vars_with_defaults() {
+        let content = r#"
+llm:
+  provider: ${LLM_PROVIDER:-openai}
+  model: ${LLM_MODEL:-gpt-4o}
+  base_url: ${LLM_URL:-https://api.openai.com/v1/chat/completions}
+  api_key: ${LLM_API_KEY:-}
+"#;
+
+        let result = ScannerConfigManager::expand_env_vars(content).unwrap();
+
+        // Should use defaults when environment variables are not set
+        assert!(result.contains("provider: openai"));
+        assert!(result.contains("model: gpt-4o"));
+        assert!(result.contains("base_url: https://api.openai.com/v1/chat/completions"));
+        assert!(result.contains("api_key: "));
+    }
+
+    #[test]
+    fn test_expand_env_vars_with_env_values() {
+        // Set test environment variables
+        env::set_var("TEST_LLM_PROVIDER", "anthropic");
+        env::set_var("TEST_LLM_MODEL", "claude-3");
+        env::set_var("TEST_LLM_URL", "https://api.anthropic.com/v1/messages");
+        env::set_var("TEST_LLM_API_KEY", "test-key-123");
+
+        let content = r#"
+llm:
+  provider: ${TEST_LLM_PROVIDER:-openai}
+  model: ${TEST_LLM_MODEL:-gpt-4o}
+  base_url: ${TEST_LLM_URL:-https://api.openai.com/v1/chat/completions}
+  api_key: ${TEST_LLM_API_KEY:-}
+"#;
+
+        let result = ScannerConfigManager::expand_env_vars(content).unwrap();
+
+        // Should use environment variable values
+        assert!(result.contains("provider: anthropic"));
+        assert!(result.contains("model: claude-3"));
+        assert!(result.contains("base_url: https://api.anthropic.com/v1/messages"));
+        assert!(result.contains("api_key: test-key-123"));
+
+        // Clean up test environment variables
+        env::remove_var("TEST_LLM_PROVIDER");
+        env::remove_var("TEST_LLM_MODEL");
+        env::remove_var("TEST_LLM_URL");
+        env::remove_var("TEST_LLM_API_KEY");
+    }
+
+    #[test]
+    fn test_expand_env_vars_mixed_content() {
+        env::set_var("TEST_MIXED_VAR", "test-value");
+
+        let content = r#"
+normal_field: regular_value
+env_field: ${TEST_MIXED_VAR:-default}
+another_field: ${NONEXISTENT_VAR:-fallback}
+"#;
+
+        let result = ScannerConfigManager::expand_env_vars(content).unwrap();
+
+        assert!(result.contains("normal_field: regular_value"));
+        assert!(result.contains("env_field: test-value"));
+        assert!(result.contains("another_field: fallback"));
+
+        env::remove_var("TEST_MIXED_VAR");
+    }
+
+    #[test]
+    fn test_config_loading_with_env_vars() {
+        // Set test environment variables
+        env::set_var("TEST_CONFIG_LLM_PROVIDER", "test-provider");
+        env::set_var("TEST_CONFIG_LLM_MODEL", "test-model");
+        env::set_var("TEST_CONFIG_LLM_API_KEY", "test-key");
+
+        // Create a temporary config content
+        let config_content = r#"
+llm:
+  provider: ${TEST_CONFIG_LLM_PROVIDER:-openai}
+  model: ${TEST_CONFIG_LLM_MODEL:-gpt-4o}
+  base_url: ${TEST_CONFIG_LLM_URL:-https://api.openai.com/v1/chat/completions}
+  api_key: ${TEST_CONFIG_LLM_API_KEY:-}
+  timeout: 30
+  max_tokens: 4000
+  temperature: 0.1
+scanner:
+  http_timeout: 30
+  scan_timeout: 60
+  detailed: false
+  format: table
+  parallel: true
+  max_retries: 3
+  retry_delay_ms: 1000
+  llm_batch_size: 10
+  enable_yara: true
+security:
+  enabled: true
+  min_severity: low
+  checks:
+    tool_poisoning: true
+    secrets_leakage: true
+    sql_injection: true
+    command_injection: true
+    path_traversal: true
+    auth_bypass: true
+    prompt_injection: true
+    pii_leakage: true
+    jailbreak: true
+logging:
+  level: warn
+  colored: true
+  timestamps: true
+performance:
+  tracking: true
+  slow_threshold_ms: 5000
+"#;
+
+        // Expand environment variables
+        let expanded = ScannerConfigManager::expand_env_vars(config_content).unwrap();
+
+        // Parse the expanded configuration
+        let config: ScannerConfig = serde_yaml::from_str(&expanded).unwrap();
+
+        // Verify the environment variables were used
+        assert_eq!(config.llm.provider, "test-provider");
+        assert_eq!(config.llm.model, "test-model");
+        assert_eq!(
+            config.llm.base_url,
+            "https://api.openai.com/v1/chat/completions"
+        ); // default used
+        assert_eq!(config.llm.api_key, "test-key");
+
+        // Clean up
+        env::remove_var("TEST_CONFIG_LLM_PROVIDER");
+        env::remove_var("TEST_CONFIG_LLM_MODEL");
+        env::remove_var("TEST_CONFIG_LLM_API_KEY");
+    }
+
+    #[test]
+    fn test_security_scanner_with_env_config() {
+        use crate::security::SecurityScanner;
+
+        // Set test environment variables
+        env::set_var("TEST_SECURITY_LLM_PROVIDER", "test-provider");
+        env::set_var("TEST_SECURITY_LLM_MODEL", "test-model");
+        env::set_var("TEST_SECURITY_LLM_URL", "https://test.api.com/v1/chat");
+        env::set_var("TEST_SECURITY_LLM_API_KEY", "test-security-key");
+
+        // Create a config with environment variables
+        let config_content = r#"
+llm:
+  provider: ${TEST_SECURITY_LLM_PROVIDER:-openai}
+  model: ${TEST_SECURITY_LLM_MODEL:-gpt-4o}
+  base_url: ${TEST_SECURITY_LLM_URL:-https://api.openai.com/v1/chat/completions}
+  api_key: ${TEST_SECURITY_LLM_API_KEY:-}
+  timeout: 30
+  max_tokens: 4000
+  temperature: 0.1
+scanner:
+  http_timeout: 30
+  scan_timeout: 60
+  detailed: false
+  format: table
+  parallel: true
+  max_retries: 3
+  retry_delay_ms: 1000
+  llm_batch_size: 10
+  enable_yara: true
+security:
+  enabled: true
+  min_severity: low
+  checks:
+    tool_poisoning: true
+    secrets_leakage: true
+    sql_injection: true
+    command_injection: true
+    path_traversal: true
+    auth_bypass: true
+    prompt_injection: true
+    pii_leakage: true
+    jailbreak: true
+logging:
+  level: warn
+  colored: true
+  timestamps: true
+performance:
+  tracking: true
+  slow_threshold_ms: 5000
+"#;
+
+        // Expand environment variables and parse config
+        let expanded = ScannerConfigManager::expand_env_vars(config_content).unwrap();
+        let config: ScannerConfig = serde_yaml::from_str(&expanded).unwrap();
+
+        // Create SecurityScanner with the config
+        let security_scanner = SecurityScanner::with_config(config);
+
+        // Verify the SecurityScanner has the correct configuration
+        assert_eq!(security_scanner.model_name, "test-model");
+        assert_eq!(
+            security_scanner.model_endpoint,
+            Some("https://test.api.com/v1/chat".to_string())
+        );
+        assert_eq!(
+            security_scanner.api_key,
+            Some("test-security-key".to_string())
+        );
+
+        // Clean up
+        env::remove_var("TEST_SECURITY_LLM_PROVIDER");
+        env::remove_var("TEST_SECURITY_LLM_MODEL");
+        env::remove_var("TEST_SECURITY_LLM_URL");
+        env::remove_var("TEST_SECURITY_LLM_API_KEY");
     }
 }

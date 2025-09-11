@@ -10,7 +10,7 @@ Think of Ramparts server mode as your security scanner running as a service inst
 
 If you're running `ramparts scan` more than once, you probably want server mode. Here are some common scenarios:
 
-**You're building CI/CD pipelines** and want to fail builds when MCP servers have critical security issues. Instead of installing and running the CLI in every pipeline, just POST to `/scan` and check the response.
+**You're building CI/CD pipelines** and want to fail builds when MCP servers have critical security issues. Instead of installing and running the CLI in every pipeline, just POST to `/v1/ramparts/scan` and check the response.
 
 **Your team is using multiple MCP servers** and you want a centralized way to monitor their security posture. Start one Ramparts server, point it at all your MCP endpoints, and you've got a security dashboard.
 
@@ -22,7 +22,17 @@ If you're running `ramparts scan` more than once, you probably want server mode.
 
 Server mode handles multiple requests concurrently, so your team can scan different servers simultaneously without waiting. The JSON responses are consistent and easy to parse, making it simple to build automation around the results.
 
-You also get health check endpoints for monitoring, batch scanning for efficiency, and all the same security detection capabilities as the CLI—just wrapped in a REST API that plays nicely with modern development workflows.
+You also get health check endpoints for monitoring, batch scanning for efficiency, intelligent change detection to avoid unnecessary scans, and all the same security detection capabilities as the CLI—just wrapped in a REST API that plays nicely with modern development workflows.
+
+### 🆕 Intelligent Change Detection
+
+The enhanced scan API includes intelligent change detection that automatically tracks tool changes and skips scans when nothing has changed. This reduces network overhead and provides detailed change tracking for monitoring tool evolution.
+
+**Key Benefits:**
+- **Efficiency**: Skip scans when tools haven't changed
+- **Monitoring**: Track tool evolution with detailed change summaries
+- **Integration**: Works seamlessly with Javelin MCP for tool refresh
+- **Flexibility**: Configurable sensitivity levels for different use cases
 
 ## Starting the Server
 
@@ -43,7 +53,7 @@ Once started, the server provides a REST API with the following endpoints:
 ## API Endpoints
 
 ### 1. Health Check
-**GET /health**
+**GET /v1/ramparts/health**
 
 Check server health and protocol information.
 
@@ -59,7 +69,7 @@ Check server health and protocol information.
 ```
 
 ### 2. Protocol Information
-**GET /protocol**
+**GET /v1/ramparts/protocol**
 
 Get detailed MCP protocol information and supported capabilities.
 
@@ -98,7 +108,7 @@ Get detailed MCP protocol information and supported capabilities.
 ```
 
 ### 3. API Documentation
-**GET /**
+**GET /v1/ramparts/**
 
 Get interactive API documentation with examples.
 
@@ -109,12 +119,13 @@ Get interactive API documentation with examples.
   "version": "0.2.0",
   "protocol_version": "2025-06-18",
   "endpoints": {
-    "GET /health": "Health check with protocol info",
-    "GET /protocol": "MCP protocol information",
-    "POST /scan": "Scan a single MCP server",
-    "POST /validate": "Validate scan configuration",
-    "POST /batch-scan": "Scan multiple MCP servers",
-    "GET /": "API documentation"
+    "GET /v1/ramparts/health": "Health check with protocol info",
+    "GET /v1/ramparts/protocol": "MCP protocol information",
+    "POST /v1/ramparts/scan": "Scan a single MCP server",
+    "POST /v1/ramparts/validate": "Validate scan configuration",
+    "POST /v1/ramparts/batch-scan": "Scan multiple MCP servers",
+    "POST /v1/ramparts/refresh-tools": "Refresh tool descriptions from MCP servers",
+    "GET /v1/ramparts/": "API documentation"
   },
   "transports": {
     "http": {
@@ -141,11 +152,11 @@ Get interactive API documentation with examples.
 ```
 
 ### 4. Single Server Scan
-**POST /scan**
+**POST /v1/ramparts/scan**
 
-Scan a single MCP server for security vulnerabilities.
+Scan a single MCP server for security vulnerabilities with intelligent change detection.
 
-**Request Body:**
+**Basic Request:**
 ```json
 {
   "url": "https://api.githubcopilot.com/mcp/",
@@ -160,12 +171,69 @@ Scan a single MCP server for security vulnerabilities.
 }
 ```
 
+**Enhanced Request with Change Detection:**
+```json
+{
+  "url": "https://api.githubcopilot.com/mcp/",
+  "timeout": 180,
+  "http_timeout": 30,
+  "detailed": true,
+  "format": "json",
+  "auth_headers": {
+    "Authorization": "Bearer your-token-here"
+  },
+  "javelin_mcp_url": "https://javelin.live/mcp/example/",
+  "reference_mcp_url": "https://api.githubcopilot.com/mcp/",
+  "force_scan": false,
+  "include_diff": true,
+  "change_detection": {
+    "enabled": true,
+    "compare_schemas": true,
+    "compare_descriptions": true,
+    "ignore_fields": ["timestamp"],
+    "sensitivity": "moderate"
+  }
+}
+```
+
+**Request Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `url` | string | Yes | MCP server URL to scan |
+| `timeout` | number | No | Overall scan timeout in seconds (default: 180) |
+| `http_timeout` | number | No | HTTP request timeout in seconds (default: 30) |
+| `detailed` | boolean | No | Include detailed vulnerability information (default: false) |
+| `format` | string | No | Response format: "json" or "text" (default: "json") |
+| `auth_headers` | object | No | Authentication headers for the MCP server |
+| `return_prompts` | boolean | No | Return prompts instead of LLM analysis (default: false) |
+
+**🆕 Change Detection Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `javelin_mcp_url` | string | No | Javelin MCP URL for tool refresh |
+| `reference_mcp_url` | string | No | Reference URL for comparison baseline |
+| `force_scan` | boolean | No | Force scan even if no changes detected (default: false) |
+| `include_diff` | boolean | No | Include detailed change summary (default: false) |
+| `change_detection` | object | No | Change detection configuration |
+
+**Change Detection Configuration:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enabled` | boolean | Enable change detection (default: true when javelin_mcp_url provided) |
+| `compare_schemas` | boolean | Compare tool input/output schemas (default: true) |
+| `compare_descriptions` | boolean | Compare tool descriptions (default: true) |
+| `ignore_fields` | array | Fields to ignore during comparison |
+| `sensitivity` | string | Comparison sensitivity: "strict", "moderate", "loose" (default: "moderate") |
+
 **Javelin Integration Headers:**
 
 For Javelin MCP servers, you can include the `X-Javelin-Apikey` header which will be automatically converted to the appropriate authentication formats:
 
 ```bash
-curl -X POST http://localhost:3000/scan \
+curl -X POST http://localhost:3000/v1/ramparts/scan \
   -H "Content-Type: application/json" \
   -H "X-Javelin-Apikey: your-javelin-key" \
   -d '{
@@ -301,9 +369,56 @@ curl -X POST http://localhost:3000/scan \
     "errors": []
   },
   "error": null,
-  "timestamp": "2024-01-01T12:00:00.000Z"
+  "timestamp": "2024-01-01T12:00:00.000Z",
+
+  // 🆕 Change Detection Fields
+  "refresh_happened": true,
+  "changes_detected": true,
+  "change_summary": {
+    "total_changes": 3,
+    "tools_added": ["new_tool"],
+    "tools_removed": ["old_tool"],
+    "tools_modified": [
+      {
+        "tool_name": "existing_tool",
+        "change_type": "description",
+        "old_value": "Old description",
+        "new_value": "New description",
+        "diff": "Description changed"
+      }
+    ],
+    "change_types": ["tools_added", "tools_removed", "tools_modified"]
+  },
+  "scan_skipped": false,
+  "cache_hit": false
 }
 ```
+
+**🆕 Change Detection Response Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `refresh_happened` | boolean | Whether tools were refreshed from Javelin MCP |
+| `changes_detected` | boolean | Whether changes were detected compared to baseline |
+| `change_summary` | object | Detailed summary of changes (when `include_diff: true`) |
+| `scan_skipped` | boolean | Whether scan was skipped due to no changes |
+| `cache_hit` | boolean | Whether cached results were used |
+
+**Change Summary Object:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total_changes` | number | Total number of changes detected |
+| `tools_added` | array | Names of tools that were added |
+| `tools_removed` | array | Names of tools that were removed |
+| `tools_modified` | array | Details of tools that were modified |
+| `change_types` | array | Types of changes detected |
+
+**Benefits of Change Detection:**
+- **Efficiency**: Skip scans when tools haven't changed
+- **Monitoring**: Track tool evolution over time
+- **Alerting**: Get notified only when changes occur
+- **Debugging**: Understand what changed between scans
 
 **Error Response (400):**
 ```json
@@ -315,7 +430,7 @@ curl -X POST http://localhost:3000/scan \
 ```
 
 ### 5. Configuration Validation
-**POST /validate**
+**POST /v1/ramparts/validate**
 
 Validate scan configuration without performing actual scan.
 
@@ -351,7 +466,7 @@ Validate scan configuration without performing actual scan.
 ```
 
 ### 6. Batch Scan
-**POST /batch-scan**
+**POST /v1/ramparts/batch-scan**
 
 Scan multiple MCP servers with shared configuration.
 
@@ -378,7 +493,7 @@ Scan multiple MCP servers with shared configuration.
 
 **Javelin Integration:**
 ```bash
-curl -X POST http://localhost:3000/batch-scan \
+curl -X POST http://localhost:3000/v1/ramparts/batch-scan \
   -H "Content-Type: application/json" \
   -H "X-Javelin-Apikey: your-javelin-key" \
   -d '{
@@ -445,12 +560,12 @@ curl -X POST http://localhost:3000/batch-scan \
 
 ### Example: Basic Health Check
 ```bash
-curl -X GET http://localhost:3000/health
+curl -X GET http://localhost:3000/v1/ramparts/health
 ```
 
 ### Example: Single Server Scan
 ```bash
-curl -X POST http://localhost:3000/scan \
+curl -X POST http://localhost:3000/v1/ramparts/scan \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://api.githubcopilot.com/mcp/",
@@ -463,9 +578,85 @@ curl -X POST http://localhost:3000/scan \
   }'
 ```
 
+### 7. Refresh Tools
+**POST /v1/ramparts/refresh-tools**
+
+Refresh tool descriptions from one or more MCP servers. This endpoint fetches the latest tool definitions from the specified servers and updates the internal cache.
+
+**Request Body:**
+```json
+{
+  "urls": [
+    "https://api.githubcopilot.com/mcp/",
+    "https://api.openai.com/mcp/"
+  ],
+  "auth_headers": {
+    "Authorization": "Bearer your-token"
+  },
+  "timeout": 60
+}
+```
+
+**Request Fields:**
+- `urls` (required): Array of MCP server URLs to refresh tools from
+- `auth_headers` (optional): Authentication headers for the MCP servers
+- `timeout` (optional): Timeout in seconds for each server connection (default: 30)
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "results": [
+    {
+      "url": "https://api.githubcopilot.com/mcp/",
+      "success": true,
+      "tools_count": 5,
+      "tools": [
+        {
+          "name": "create_file",
+          "description": "Create a new file",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "path": { "type": "string" },
+              "content": { "type": "string" }
+            }
+          }
+        }
+      ],
+      "error": null
+    }
+  ],
+  "total": 1,
+  "successful": 1,
+  "failed": 0,
+  "timestamp": "2024-01-01T12:00:00.000Z"
+}
+```
+
+**Error Response (400):**
+```json
+{
+  "success": false,
+  "error": "At least one URL must be provided",
+  "timestamp": "2024-01-01T12:00:00.000Z"
+}
+```
+
+**Javelin Integration:**
+```bash
+curl -X POST http://localhost:3000/v1/ramparts/refresh-tools \
+  -H "Content-Type: application/json" \
+  -H "X-Javelin-Apikey: your-javelin-key" \
+  -d '{
+    "urls": ["https://api.githubcopilot.com/mcp/"],
+    "timeout": 60
+  }'
+```
+
 ### Example: STDIO Server Scan
 ```bash
-curl -X POST http://localhost:3000/scan \
+curl -X POST http://localhost:3000/v1/ramparts/scan \
   -H "Content-Type: application/json" \
   -d '{
     "url": "stdio:///usr/local/bin/my-mcp-server",
@@ -476,7 +667,7 @@ curl -X POST http://localhost:3000/scan \
 
 ### Example: Batch Scan
 ```bash
-curl -X POST http://localhost:3000/batch-scan \
+curl -X POST http://localhost:3000/v1/ramparts/batch-scan \
   -H "Content-Type: application/json" \
   -d '{
     "urls": [
@@ -494,7 +685,7 @@ curl -X POST http://localhost:3000/batch-scan \
 
 ### Example: Configuration Validation
 ```bash
-curl -X POST http://localhost:3000/validate \
+curl -X POST http://localhost:3000/v1/ramparts/validate \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://api.githubcopilot.com/mcp/",

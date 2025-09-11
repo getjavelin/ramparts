@@ -32,10 +32,10 @@ Ramparts looks for configuration files in the following order:
 
 # LLM Configuration for AI-powered security analysis
 llm:
-  provider: "openai"                    # LLM provider: "openai"
-  model: "gpt-4o"                      # Model name
-  base_url: "https://api.openai.com/v1/chat/completions" # Complete API endpoint URL
-  api_key: ""                          # API key (use environment variable OPENAI_API_KEY)
+  provider: "${LLM_PROVIDER:-openai}"                    # LLM provider: "openai"
+  model: "${LLM_MODEL:-gpt-4o}"                         # Model name
+  base_url: "${LLM_URL:-https://api.openai.com/v1/chat/completions}" # Complete API endpoint URL
+  api_key: "${LLM_API_KEY:-}"                           # API key (use environment variable LLM_API_KEY)
   timeout: 30                          # Request timeout in seconds
   max_tokens: 4000                     # Maximum tokens in response
   temperature: 0.1                     # Temperature for randomness (0.0-1.0)
@@ -90,13 +90,31 @@ The `llm` section configures AI-powered security analysis:
 
 ```yaml
 llm:
-  provider: "openai"
-  model: "gpt-4o"
-  base_url: "https://api.openai.com/v1/chat/completions"  # Complete endpoint URL
-  api_key: ""  # Use OPENAI_API_KEY environment variable
+  provider: "${LLM_PROVIDER:-openai}"
+  model: "${LLM_MODEL:-gpt-4o}"
+  base_url: "${LLM_URL:-https://api.openai.com/v1/chat/completions}"  # Complete endpoint URL
+  api_key: "${LLM_API_KEY:-}"  # Use LLM_API_KEY environment variable
   timeout: 30
   max_tokens: 4000
   temperature: 0.1
+```
+
+#### Environment Variable Support
+
+Ramparts supports environment variable interpolation using the `${VAR:-default}` syntax:
+
+- `${LLM_PROVIDER:-openai}` - Uses `LLM_PROVIDER` environment variable, defaults to "openai"
+- `${LLM_MODEL:-gpt-4o}` - Uses `LLM_MODEL` environment variable, defaults to "gpt-4o"
+- `${LLM_URL:-https://api.openai.com/v1/chat/completions}` - Uses `LLM_URL` environment variable, defaults to OpenAI endpoint
+- `${LLM_API_KEY:-}` - Uses `LLM_API_KEY` environment variable, no default (empty if not set)
+
+Example usage:
+```bash
+export LLM_PROVIDER="anthropic"
+export LLM_MODEL="claude-3-sonnet-20240229"
+export LLM_URL="https://api.anthropic.com/v1/messages"
+export LLM_API_KEY="your-anthropic-api-key"
+ramparts scan https://example.com
 ```
 
 **Important Notes:**
@@ -117,13 +135,21 @@ For Azure OpenAI, provide the complete endpoint URL including the api-version pa
 
 ```yaml
 llm:
-  provider: "openai"
-  model: "gpt-4"  # Your Azure deployment name
-  base_url: "https://your-resource.openai.azure.com/openai/deployments/your-deployment/chat/completions?api-version=2024-02-15-preview"
-  api_key: "your-azure-api-key"
+  provider: "${LLM_PROVIDER:-openai}"
+  model: "${LLM_MODEL:-gpt-4}"  # Your Azure deployment name
+  base_url: "${LLM_URL:-https://your-resource.openai.azure.com/openai/deployments/your-deployment/chat/completions?api-version=2024-02-15-preview}"
+  api_key: "${LLM_API_KEY:-}"
   timeout: 30
   max_tokens: 4000
   temperature: 0.1
+```
+
+Example environment variables for Azure OpenAI:
+```bash
+export LLM_PROVIDER="openai"
+export LLM_MODEL="gpt-4"
+export LLM_URL="https://your-resource.openai.azure.com/openai/deployments/your-deployment/chat/completions?api-version=2024-02-15-preview"
+export LLM_API_KEY="your-azure-api-key"
 ```
 
 #### Model Recommendations
@@ -223,7 +249,31 @@ performance:
   slow_threshold_ms: 5000 # Warn about slow operations
 ```
 
-## Environment Variable Override
+## Environment Variable Configuration
+
+Ramparts supports two methods for environment variable configuration:
+
+### 1. Inline Environment Variable Substitution (Recommended)
+
+Use `${VAR:-default}` syntax directly in your `config.yaml`:
+
+```yaml
+llm:
+  provider: ${LLM_PROVIDER:-openai}
+  model: ${LLM_MODEL:-gpt-4o}
+  base_url: ${LLM_URL:-https://api.openai.com/v1/chat/completions}
+  api_key: ${LLM_API_KEY:-}
+```
+
+```bash
+# Set environment variables
+export LLM_PROVIDER="anthropic"
+export LLM_MODEL="claude-3-sonnet-20240229"
+export LLM_URL="https://api.anthropic.com/v1/messages"
+export LLM_API_KEY="your-anthropic-api-key"
+```
+
+### 2. Legacy Environment Variable Override
 
 Any configuration value can be overridden with environment variables using the format `RAMPARTS_SECTION_KEY`:
 

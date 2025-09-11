@@ -268,9 +268,14 @@ pub struct SecurityScanner {
 
 impl Default for SecurityScanner {
     fn default() -> Self {
+        // Try LLM_API_KEY first, then fall back to OPENAI_API_KEY for backward compatibility
+        let api_key = std::env::var("LLM_API_KEY")
+            .ok()
+            .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+
         Self {
             model_endpoint: Some("https://api.openai.com/v1/chat/completions".to_string()),
-            api_key: std::env::var("OPENAI_API_KEY").ok(),
+            api_key,
             model_name: "gpt-4o".to_string(),
             config: None,
         }
@@ -281,7 +286,10 @@ impl SecurityScanner {
     /// Create a new `SecurityScanner` with configuration
     pub fn with_config(config: crate::config::ScannerConfig) -> Self {
         let api_key = if config.llm.api_key.is_empty() {
-            std::env::var("OPENAI_API_KEY").ok()
+            // Try LLM_API_KEY first, then fall back to OPENAI_API_KEY for backward compatibility
+            std::env::var("LLM_API_KEY")
+                .ok()
+                .or_else(|| std::env::var("OPENAI_API_KEY").ok())
         } else {
             Some(config.llm.api_key.clone())
         };
@@ -708,7 +716,7 @@ If no genuine security issues found, return empty array []."
                 }
             );
             error!(
-                "   💡 Hint: Set OPENAI_API_KEY environment variable or configure in ramparts.yaml"
+                "   💡 Hint: Set LLM_API_KEY environment variable or configure in ramparts.yaml"
             );
 
             return Err(anyhow!(
