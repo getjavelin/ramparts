@@ -37,21 +37,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Validate Release Branch
-        id: validate_branch
-        shell: bash
-        run: |-
-          export TAG_COMMIT=$(git rev-list -n 1 ${{ github.ref_name }})
-          export TAG_BRANCH=$(git branch -r --contains ${TAG_COMMIT} | grep -v HEAD | head -n 1 | sed 's/origin\///' | sed 's/^[ \t]*//')
-          if [[ "${TAG_BRANCH}" == "${{ env.RELEASE_BRANCH }}" ]] ; then
-            echo "Valid Branch for Release : ${TAG_BRANCH}"
-            echo "enable_branch_build=true" >> ${GITHUB_OUTPUT}
-          else
-            echo "Invalid Branch for Release : ${TAG_BRANCH}"
-            echo "enable_branch_build=false" >> ${GITHUB_OUTPUT}
-            exit 1
-          fi
-
       - name: Validate Release Tag
         if: ${{ steps.validate_branch.outputs.enable_branch_build == 'true' }}
         id: validate_tag
