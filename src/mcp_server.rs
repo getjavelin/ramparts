@@ -21,7 +21,6 @@ use rmcp::{
 };
 use serde::Deserialize;
 use std::future::Future;
-use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 struct ScanParams {
@@ -58,20 +57,10 @@ struct ScanConfigParams {
     return_prompts: Option<bool>,
 }
 
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
-struct RefreshToolsParams {
-    urls: Vec<String>,
-    #[serde(default)]
-    auth_headers: Option<std::collections::HashMap<String, String>>,
-    #[serde(default)]
-    timeout: Option<u64>,
-}
-
-/// Minimal MCP server that exposes basic tools. Extend to integrate scanner endpoints as tools.
+/// Minimal MCP server that exposes scan and scan-config tools only.
 #[derive(Clone)]
 pub struct RampartsMcpServer {
     tool_router: ToolRouter<Self>,
-    counter: Arc<Mutex<i32>>,
     core: Arc<MCPScannerCore>,
 }
 
@@ -81,23 +70,8 @@ impl RampartsMcpServer {
         let core = MCPScannerCore::new().expect("core init");
         Self {
             tool_router: Self::tool_router(),
-            counter: Arc::new(Mutex::new(0)),
             core: Arc::new(core),
         }
-    }
-
-    #[tool(description = "Healthcheck for the Ramparts MCP server")]
-    async fn health(&self) -> Result<CallToolResult, ErrorData> {
-        Ok(CallToolResult::success(vec![Content::text("ok")]))
-    }
-
-    #[tool(description = "Increment an internal counter and return its value")]
-    async fn increment_counter(&self) -> Result<CallToolResult, ErrorData> {
-        let mut guard = self.counter.lock().await;
-        *guard += 1;
-        Ok(CallToolResult::success(vec![Content::text(
-            guard.to_string(),
-        )]))
     }
 
     #[tool(
@@ -131,7 +105,6 @@ impl RampartsMcpServer {
         }
     }
 
-    // New: scan-config tool
     #[tool(
         name = "scan-config",
         description = "Scan MCP servers from IDE configuration files and return results as JSON"
@@ -171,42 +144,13 @@ impl RampartsMcpServer {
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
-
-    #[tool(
-        name = "refresh-tools",
-        description = "Refresh tool descriptions from one or more MCP servers"
-    )]
-    async fn refresh_tools(
-        &self,
-        params: Parameters<RefreshToolsParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let p = params.0;
-
-        if p.urls.is_empty() {
-            return Err(ErrorData::invalid_request(
-                "At least one URL must be provided".to_string(),
-                None,
-            ));
-        }
-
-        let request = crate::core::RefreshToolsRequest {
-            urls: p.urls,
-            auth_headers: p.auth_headers,
-            timeout: p.timeout,
-        };
-
-        let resp = self.core.refresh_tools(request).await;
-        let json = serde_json::to_string(&resp)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
 }
 
 #[tool_handler]
 impl rmcp::ServerHandler for RampartsMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
-            instructions: Some("Ramparts MCP server".into()),
+            instructions: Some("Ramparts MCP server - provides scan and scan-config tools for MCP security scanning".into()),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }
