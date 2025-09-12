@@ -165,5 +165,5 @@ We welcome contributions to Ramparts mcp scan. If you have suggestions, bug repo
 ## Additional Resources
 - [Need Support?](https://github.com/getjavelin/ramparts/issues)
 - [MCP Protocol Documentation](https://modelcontextprotocol.io/)
-- [Configuration Examples](examples/config_example.json)
-
+// Examples folder was removed to reduce branch diff; see configuration docs instead.
+- [Configuration Guide](docs/configuration.md)

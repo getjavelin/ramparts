@@ -11,6 +11,9 @@ mcp_test_requests.json
 run_mcp_test.py
 test_mcp_client.py
 test_mcp_ecosystem.py
+examples/
+testing/
+docs/proxy/*TEST*_RESULTS*.md
 /dist/
 **/*.rs.bk
 *.pdb
