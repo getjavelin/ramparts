@@ -72,4 +72,3 @@ mod tests {
         assert!(s["nested"]["ok"].as_str().unwrap().len() <= 160);
     }
 }
-

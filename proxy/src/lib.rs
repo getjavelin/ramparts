@@ -2,18 +2,18 @@ pub mod cache;
 pub mod config;
 pub mod javelin;
 pub mod licensing;
+pub mod logging;
 pub mod mcp_server;
 pub mod proxy;
 pub mod validation_service;
-pub mod logging;
 
 pub use config::*;
 pub use javelin::*;
 pub use licensing::*;
+pub use logging::*;
 pub use mcp_server::*;
 pub use proxy::*;
 pub use validation_service::*;
-pub use logging::*;
 
 #[cfg(test)]
 mod tests {

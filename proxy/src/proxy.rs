@@ -168,7 +168,10 @@ async fn validate_request(
 ) -> Result<Json<Value>, StatusCode> {
     // Redact sensitive values before logging
     let redacted = crate::logging::sanitize_json_for_log(&request);
-    debug!("Validating request: {}", serde_json::to_string_pretty(&redacted).unwrap_or_default());
+    debug!(
+        "Validating request: {}",
+        serde_json::to_string_pretty(&redacted).unwrap_or_default()
+    );
 
     match state.validation_service.validate_request(&request).await {
         Ok(result) => {

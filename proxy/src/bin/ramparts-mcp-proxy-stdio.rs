@@ -139,7 +139,10 @@ async fn proxy_client_to_server(
                 if let Ok(json) = serde_json::from_str::<Value>(&payload) {
                     let redacted = ramparts_proxy::logging::sanitize_json_for_log(&json);
                     if let Ok(s) = serde_json::to_string(&redacted) {
-                        debug!("Received request: {}", ramparts_proxy::logging::truncate_for_log(&s));
+                        debug!(
+                            "Received request: {}",
+                            ramparts_proxy::logging::truncate_for_log(&s)
+                        );
                     } else {
                         debug!("Received request (redacted)");
                     }
@@ -255,7 +258,8 @@ async fn proxy_server_to_client(
                                 if validation_result.allowed {
                                     // Response approved - forward to client
                                     debug!("Response approved, forwarding to client");
-                                    write_jsonrpc_message(&mut tokio::io::stdout(), &payload).await?;
+                                    write_jsonrpc_message(&mut tokio::io::stdout(), &payload)
+                                        .await?;
                                 } else {
                                     // Response blocked
                                     warn!(
@@ -356,7 +360,10 @@ async fn read_jsonrpc_message<R: AsyncReadExt + Unpin>(
 }
 
 /// Write a JSON-RPC message using Content-Length framing.
-async fn write_jsonrpc_message<W: AsyncWriteExt + Unpin>(writer: &mut W, payload: &str) -> Result<()> {
+async fn write_jsonrpc_message<W: AsyncWriteExt + Unpin>(
+    writer: &mut W,
+    payload: &str,
+) -> Result<()> {
     let bytes = payload.as_bytes();
     let header = format!("Content-Length: {}\r\n\r\n", bytes.len());
     writer.write_all(header.as_bytes()).await?;

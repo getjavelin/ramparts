@@ -144,31 +144,29 @@ impl JavelinClient {
 
         if self.cache_enabled {
             // Use cache with deduplication
-            let cache_result =
-                self.cache
-                    .get_or_compute(request, || {
-                        let api_key = self.api_key.clone();
-                        let base_url = self.base_url.clone();
-                        let client = self.client.clone();
-                        let request = request.clone();
+            let cache_result = self
+                .cache
+                .get_or_compute(request, || {
+                    let api_key = self.api_key.clone();
+                    let base_url = self.base_url.clone();
+                    let client = self.client.clone();
+                    let request = request.clone();
 
-                        async move {
-                            Self::validate_request_uncached(api_key, base_url, client, request)
-                                .await
-                        }
-                    })
-                    .await?;
+                    async move {
+                        Self::validate_request_uncached(api_key, base_url, client, request).await
+                    }
+                })
+                .await?;
             Ok(cache_result.allowed)
         } else {
             // Bypass cache entirely
-            let result =
-                Self::validate_request_uncached(
-                    self.api_key.clone(),
-                    self.base_url.clone(),
-                    self.client.clone(),
-                    request.clone(),
-                )
-                .await?;
+            let result = Self::validate_request_uncached(
+                self.api_key.clone(),
+                self.base_url.clone(),
+                self.client.clone(),
+                request.clone(),
+            )
+            .await?;
             Ok(result.allowed)
         }
     }
