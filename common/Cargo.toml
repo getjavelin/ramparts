@@ -1,0 +1,57 @@
+[package]
+name = "ramparts-common"
+version = "0.7.0"
+edition = "2021"
+authors = ["Sharath Rajasekar <sharath@getjavelin.com>"]
+description = "Common types and utilities for Ramparts MCP tools"
+license = "Apache-2.0"
+repository = "https://github.com/getjavelin/ramparts"
+
+[dependencies]
+# JSON handling
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+
+# Utilities
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+url = "2.4"
+regex = "1.10"
+
+# Async utilities
+async-trait = "0.1"
+tokio = { version = "1.35", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
+
+# Official Rust MCP SDK
+rmcp = { version = "0.3.2", features = [
+    "client",
+    "server",
+    "macros",
+    "schemars",
+    "reqwest",
+    "transport-child-process",
+    "transport-streamable-http-client",
+    "transport-sse-client",
+    "transport-worker",
+    "transport-io",
+    "transport-sse-server",
+    "transport-streamable-http-server",
+    "transport-streamable-http-server-session"
+] }
+
+# File system operations
+dirs = "5.0"
+
+# Random number generation
+rand = "0.8"

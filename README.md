@@ -32,8 +32,9 @@ MCP servers expose powerful capabilities—file systems, databases, APIs, and sy
 
 ### What Ramparts Does
 
-Ramparts provides **security scanning** of MCP servers by:
+Ramparts provides **security scanning and proxying** of MCP servers by:
 
+#### Security Scanning
 1. **Discovering Capabilities**: Scans all MCP endpoints to identify available tools, resources, and prompts
 2. **Multi-Transport Support**: Supports HTTP, SSE, stdio, and subprocess transports with intelligent fallback
 3. **Session Management**: Handles stateful MCP servers with automatic session ID management
@@ -41,9 +42,16 @@ Ramparts provides **security scanning** of MCP servers by:
 5. **Cross-Origin Analysis**: Detects when tools span multiple domains, which could enable context hijacking or injection attacks
 6. **LLM-Powered Analysis**: Uses AI models to detect sophisticated security issues
 7. **Risk Assessment**: Categorizes findings by severity and provides actionable recommendations
+
+#### Security Proxying
+1. **HTTP Proxy Mode**: Web-based proxy with REST endpoints for API integration
+2. **STDIO Proxy Mode**: Process wrapper for CLI tools and containers
+3. **Real-time Validation**: Multi-layer security validation with Javelin Guardrails
+4. **Threat Prevention**: Blocks dangerous tools, injection attacks, and policy violations
 >
-> **💡 Jump directly to detailed Rampart features?**
-> [**📚 Detailed Features**](docs/features.md)
+> **💡 Jump directly to detailed documentation?**
+> - [**📚 Detailed Features**](docs/features.md)
+> - [**🛡️ Security Proxy**](docs/proxy/README.md)
 
 ## Who Ramparts is For
 
@@ -88,7 +96,17 @@ ramparts scan-config
 ramparts scan-config --report
 ```
 
-> **💡 Did you know you can start Ramparts as a server?** Run `ramparts server` to get a REST API for continuous monitoring and CI/CD integration. See 📚 **[Ramparts Server Mode](docs/api.md)** 
+**Run security proxy**
+```bash
+# HTTP proxy mode (for web applications)
+ramparts proxy 127.0.0.1:8080
+
+# STDIO proxy mode (for CLI tools)
+cargo build --bin ramparts-mcp-proxy-stdio
+./target/debug/ramparts-mcp-proxy-stdio
+```
+
+> **💡 Multiple modes available:** Ramparts can run as a scanner, server, or security proxy. See 📚 **[Documentation](docs/)** for all modes.
 
 ### Run as an MCP server (stdio)
 
