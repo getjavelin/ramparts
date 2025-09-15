@@ -12,15 +12,10 @@ include = ["src/**/*", "LICENSE", "README.md", "build.rs"]
 
 # Cargo-release configuration for semantic versioning
 [package.metadata.release]
-# Allow releases from main/master branch
 allow-branch = ["main", "master"]
-# Create git tags
 tag = true
-# Push to remote
 push = true
-# Tag name format
 tag-name = "v{version}"
-# Sign commits and tags
 sign-commit = false
 sign-tag = false
 
@@ -92,22 +87,17 @@ jsonrpc-core = "18.0"
 yara-x = { version = "1.4", optional = true }
 
 # Official Rust MCP SDK
-# Official Rust MCP SDK (client + server)
-# Enable server + macros and server stdio transport for MCP server implementation
 rmcp = { version = "0.3.2", features = [
     "client",
     "server",
     "macros",
     "schemars",
     "reqwest",
-    # client transports already used by scanner
     "transport-child-process",
     "transport-streamable-http-client",
     "transport-sse-client",
     "transport-worker",
-    # server transports for MCP server (starting with stdio)
     "transport-io",
-    # add SSE and streamable HTTP server transports
     "transport-sse-server",
     "transport-streamable-http-server",
     "transport-streamable-http-server-session"
@@ -116,10 +106,13 @@ rmcp = { version = "0.3.2", features = [
 # Random number generation for request IDs
 rand = "0.8"
 
+# Bring in proxy + common as path dependencies (minimal change)
+ramparts-proxy = { path = "proxy" }
+ramparts-common = { path = "common" }
+
 [build-dependencies]
 chrono = "0.4"
 
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.8"
-axum = "0.7"

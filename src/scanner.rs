@@ -1799,9 +1799,51 @@ impl MCPScanner {
             .connect_smart(url, options.auth_headers.clone())
             .await?;
 
-        // Add a small delay to allow the server to fully complete initialization
-        // This prevents "Received request before initialization was complete" warnings
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        // After connection, some servers need a brief settling period.
+        // Instead of a fixed sleep, use a short exponential backoff on the first request.
+        async fn fetch_with_backoff<T, F, Fut>(mut op: F, label: &str) -> anyhow::Result<T>
+        where
+            F: FnMut() -> Fut,
+            Fut: std::future::Future<Output = anyhow::Result<T>>,
+        {
+            use std::time::Duration;
+            use tokio::time::sleep;
+
+            let mut delay = Duration::from_millis(100);
+            let max_delay = Duration::from_millis(1000);
+            let max_attempts = 5;
+
+            for attempt in 1..=max_attempts {
+                match op().await {
+                    Ok(v) => return Ok(v),
+                    Err(e) => {
+                        let msg = e.to_string();
+                        // Retry on likely initialization/transient errors
+                        let retryable = msg.contains("initialization")
+                            || msg.contains("before initialization was complete")
+                            || msg.contains("transport")
+                            || msg.contains("Failed to create MCP service")
+                            || msg.contains("connection")
+                            || msg.contains("temporarily");
+
+                        if retryable && attempt < max_attempts {
+                            tracing::warn!(
+                                "{} attempt {} failed: {}. Retrying in {}ms",
+                                label,
+                                attempt,
+                                msg,
+                                delay.as_millis()
+                            );
+                            sleep(delay).await;
+                            delay = std::cmp::min(delay * 2, max_delay);
+                            continue;
+                        }
+                        return Err(e);
+                    }
+                }
+            }
+            unreachable!("backoff loop should return on success or error");
+        }
 
         debug!("Starting to fetch tools, resources, and prompts after rmcp connection");
 
@@ -1813,18 +1855,19 @@ impl MCPScanner {
         // Fetch tools, resources, and prompts using rmcp SDK with proper error handling
         let mut fetch_errors = Vec::new();
 
-        scan_data.tools = match self.mcp_client.list_tools(&session).await {
-            Ok(tools) => {
-                debug!("Successfully fetched {} tools via rmcp", tools.len());
-                tools
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to fetch tools via rmcp: {e}");
-                warn!("{}", error_msg);
-                fetch_errors.push(error_msg);
-                Vec::new()
-            }
-        };
+        scan_data.tools =
+            match fetch_with_backoff(|| self.mcp_client.list_tools(&session), "list_tools").await {
+                Ok(tools) => {
+                    debug!("Successfully fetched {} tools via rmcp", tools.len());
+                    tools
+                }
+                Err(e) => {
+                    let error_msg = format!("Failed to fetch tools via rmcp: {e}");
+                    warn!("{}", error_msg);
+                    fetch_errors.push(error_msg);
+                    Vec::new()
+                }
+            };
 
         scan_data.resources = match self.mcp_client.list_resources(&session).await {
             Ok(resources) => {
@@ -1874,8 +1917,47 @@ impl MCPScanner {
     ) -> Result<ScanData> {
         let mut scan_data = ScanData::new();
 
-        // Add a small delay for initialization
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        async fn fetch_with_backoff<T, F, Fut>(mut op: F, label: &str) -> anyhow::Result<T>
+        where
+            F: FnMut() -> Fut,
+            Fut: std::future::Future<Output = anyhow::Result<T>>,
+        {
+            use std::time::Duration;
+            use tokio::time::sleep;
+
+            let mut delay = Duration::from_millis(100);
+            let max_delay = Duration::from_millis(1000);
+            let max_attempts = 5;
+
+            for attempt in 1..=max_attempts {
+                match op().await {
+                    Ok(v) => return Ok(v),
+                    Err(e) => {
+                        let msg = e.to_string();
+                        let retryable = msg.contains("initialization")
+                            || msg.contains("before initialization was complete")
+                            || msg.contains("transport")
+                            || msg.contains("Failed to create MCP service")
+                            || msg.contains("connection")
+                            || msg.contains("temporarily");
+                        if retryable && attempt < max_attempts {
+                            tracing::warn!(
+                                "{} attempt {} failed: {}. Retrying in {}ms",
+                                label,
+                                attempt,
+                                msg,
+                                delay.as_millis()
+                            );
+                            sleep(delay).await;
+                            delay = std::cmp::min(delay * 2, max_delay);
+                            continue;
+                        }
+                        return Err(e);
+                    }
+                }
+            }
+            unreachable!("backoff loop should return on success or error");
+        }
 
         debug!("Starting to fetch tools, resources, and prompts from existing session");
 
@@ -1887,18 +1969,19 @@ impl MCPScanner {
         // Fetch tools, resources, and prompts using existing session with proper error handling
         let mut fetch_errors = Vec::new();
 
-        scan_data.tools = match self.mcp_client.list_tools(session).await {
-            Ok(tools) => {
-                debug!("Successfully fetched {} tools from session", tools.len());
-                tools
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to fetch tools from session: {e}");
-                warn!("{}", error_msg);
-                fetch_errors.push(error_msg);
-                Vec::new()
-            }
-        };
+        scan_data.tools =
+            match fetch_with_backoff(|| self.mcp_client.list_tools(session), "list_tools").await {
+                Ok(tools) => {
+                    debug!("Successfully fetched {} tools from session", tools.len());
+                    tools
+                }
+                Err(e) => {
+                    let error_msg = format!("Failed to fetch tools from session: {e}");
+                    warn!("{}", error_msg);
+                    fetch_errors.push(error_msg);
+                    Vec::new()
+                }
+            };
 
         scan_data.resources = match self.mcp_client.list_resources(session).await {
             Ok(resources) => {
