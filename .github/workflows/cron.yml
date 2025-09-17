@@ -3,7 +3,7 @@ name: Cron Build - Javelin Ramparts Server
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 2 * * 5'  # Every Friday at 2:30 AM UTC = 8:00 AM IST
+    - cron: '30 2 * * 1'  # Every Friday at 2:30 AM UTC = 8:00 AM IST
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
