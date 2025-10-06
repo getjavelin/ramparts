@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "main"
+      - "devops-docker"
     paths-ignore:
       - "**/*CHANGELOG.md"
       - "*CHANGELOG.md"

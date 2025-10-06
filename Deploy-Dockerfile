@@ -1,11 +1,17 @@
 FROM ubuntu:24.04
 LABEL maintainer="Akhil Raj"
 
+RUN apt-get update \
+    && groupadd -g 1001 javelin \
+    && useradd -u 1001 -g javelin -m -s /bin/bash javelin
+    
 WORKDIR /app
 COPY target/release/ramparts /app/
 COPY rules /app/rules
 COPY config.yaml /app/
 
+RUN chown -R javelin:javelin /app
+USER javelin
 EXPOSE 8080
 
 ENTRYPOINT [ "/app/ramparts", "server", "--port", "8080", "--host", "0.0.0.0" ]
