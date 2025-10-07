@@ -1,17 +1,20 @@
 FROM ubuntu:24.04
 LABEL maintainer="Akhil Raj"
 
+ARG APP_USER="javelin"
+ARG APP_GROUP="javelin"
+
 RUN apt-get update \
-    && groupadd -g 1001 javelin \
-    && useradd -u 1001 -g javelin -m -s /bin/bash javelin
+    && groupadd -g 1001 ${APP_GROUP} \
+    && useradd -u 1001 -g ${APP_GROUP} -m -s /bin/bash ${APP_USER}
     
 WORKDIR /app
 COPY target/release/ramparts /app/
 COPY rules /app/rules
 COPY config.yaml /app/
 
-RUN chown -R javelin:javelin /app
-USER javelin
+RUN chown -R ${APP_USER}:${APP_GROUP} /app
+USER ${APP_USER}
 EXPOSE 8080
 
 ENTRYPOINT [ "/app/ramparts", "server", "--port", "8080", "--host", "0.0.0.0" ]
