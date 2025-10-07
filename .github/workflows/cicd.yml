@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - "main"
-      - "devops-docker"
     paths-ignore:
       - "**/*CHANGELOG.md"
       - "*CHANGELOG.md"
@@ -54,3 +53,4 @@ jobs:
           gh workflow run ${{ env.CICD_WORKFLOW }} \
             --repo ${{ github.repository_owner }}/${{ env.DEVOPS_REPO }} \
             --ref ${{ env.DEVOPS_BRANCH }}
+
