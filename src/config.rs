@@ -299,6 +299,7 @@ pub struct VSCodeServerConfig {
 
 /// Cursor server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct CursorServerConfig {
     pub command: String,
     pub args: Vec<String>,
@@ -3424,6 +3425,7 @@ pub struct PerformanceConfig {
 
 /// Tool Refresh Configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ToolRefreshConfig {
     /// Enable/disable automatic tool refresh
     pub enabled: bool,
@@ -3440,6 +3442,7 @@ pub struct ToolRefreshConfig {
 
 /// Rate limiting configuration for tool refresh
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct RateLimitConfig {
     /// Maximum number of concurrent server refreshes
     pub max_concurrent: usize,
