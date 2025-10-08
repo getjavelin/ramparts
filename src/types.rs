@@ -332,6 +332,7 @@ pub struct MCPPrompt {
 
 /// Tool response structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ToolResponse {
     pub tools: Vec<MCPTool>,
     pub total_count: usize,
@@ -340,6 +341,7 @@ pub struct ToolResponse {
 
 /// Prompt response structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct PromptResponse {
     pub prompts: Vec<MCPPrompt>,
     pub total_count: usize,
